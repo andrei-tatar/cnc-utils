@@ -1,0 +1,10 @@
+<div class="layout">
+  <div class="menu">
+    <app-model-editor
+      [model]="model$.value"
+      (modelChange)="model$.next($event)"
+    />
+  </div>
+
+  <app-viewer [shapes]="drawShapes$" />
+</div>

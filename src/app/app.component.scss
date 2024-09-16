@@ -1,0 +1,17 @@
+.layout {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.menu {
+  width: 400px;
+  overflow-y: auto;
+  display: block;
+}
+
+app-viewer {
+  flex: 1;
+  min-width: 0;
+}
