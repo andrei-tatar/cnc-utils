@@ -20,6 +20,10 @@ import {
   Definition as FlipDefinition,
   ModelType as FlipModelType,
 } from './transform-flip';
+import {
+  Definition as ClipperInflateDefinition,
+  ModelType as ClipperInflateModelType,
+} from './transform-clipper-inflate';
 
 export type ModelType = {
   transforms: Array<
@@ -29,6 +33,7 @@ export type ModelType = {
       | RotateModelType
       | ScaleModelType
       | FlipModelType
+      | ClipperInflateModelType
     ) & {
       id: string;
       expanded: boolean;
@@ -42,6 +47,7 @@ const transforms = [
   RotateDefinition,
   ScaleDefinition,
   FlipDefinition,
+  ClipperInflateDefinition,
 ];
 
 export const field: FormlyFieldConfig = {

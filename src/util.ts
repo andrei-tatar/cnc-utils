@@ -51,3 +51,17 @@ export async function generateId() {
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 }
+
+export function lazy<T>(factory: () => T) {
+  let val: T;
+  let isInitialized = false;
+  return {
+    get value() {
+      if (!isInitialized) {
+        val = factory();
+        isInitialized = true;
+      }
+      return val;
+    },
+  };
+}

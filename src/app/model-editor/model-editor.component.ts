@@ -9,8 +9,8 @@ import {
 } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { FormlyFieldConfig, FormlyModule } from '@ngx-formly/core';
-import { ModelType, field as shapesField } from './shapes';
 import { debounceTime, Subject, takeUntil } from 'rxjs';
+import { ModelType, ModelFieldConfig } from './model';
 
 @Component({
   selector: 'app-model-editor',
@@ -30,11 +30,12 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<any>();
 
   form = new FormGroup({});
-  fields: FormlyFieldConfig[] = [shapesField];
+  fields: FormlyFieldConfig[] = ModelFieldConfig;
 
   @Input()
   model: ModelType = {
     shapes: [],
+    tools: [],
   };
 
   @Output()

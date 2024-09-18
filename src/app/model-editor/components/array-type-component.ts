@@ -80,7 +80,14 @@ import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
     <div class="fields">
       @for (field of field.fieldGroup; track $index) {
         <div class="field_item-expansion" (click)="toggleExpanded($index)">
-          {{ (field.model.name ?? field.model.type) || 'unknown' }}
+          {{ $index + 1 }} -
+          {{
+            (field.model.name ??
+              field.model.type ??
+              field.parent?.props?.label ??
+              field.parent?.key) ||
+              'unknown'
+          }}
 
           @if (field.props?.['removable'] !== false) {
             <button

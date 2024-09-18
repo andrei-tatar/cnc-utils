@@ -3,10 +3,8 @@ import { RouterOutlet } from '@angular/router';
 import { ViewerComponent } from './viewer/viewer.component';
 import {
   BehaviorSubject,
-  catchError,
   combineLatest,
   distinctUntilChanged,
-  EMPTY,
   ignoreElements,
   map,
   merge,
@@ -23,9 +21,10 @@ import {
 import { CamShape, ShapeSource } from '../cam/types';
 import { AsyncPipe } from '@angular/common';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
-import { ModelType } from './model-editor/shapes';
+import { ModelType } from './model-editor/model';
 import { importSvg } from '../cam/svg-import';
 import { Matrix3, Vector2 } from 'three';
+import { clipperInflate } from '../cam/clipper';
 
 type OmitUnion<T, K extends keyof T> = T extends any ? Omit<T, K> : never;
 type ShapeType = ModelType['shapes'][number];
@@ -102,7 +101,6 @@ export class AppComponent implements OnInit, OnDestroy {
                 }),
                 distinctUntilChanged(),
                 map((svg) => importSvg(svg, shapeId)),
-                catchError((_) => EMPTY),
                 share({
                   connector: () => new ReplaySubject(1),
                   resetOnRefCountZero: () => timer(0),
@@ -140,8 +138,9 @@ export class AppComponent implements OnInit, OnDestroy {
                           switchMap((transform) => {
                             return input.pipe(
                               distinctUntilChanged(),
-                              map((shape) =>
-                                this.applyTransform(shape, transform),
+                              switchMap(
+                                async (shape) =>
+                                  await this.applyTransform(shape, transform),
                               ),
                             );
                           }),
@@ -218,16 +217,16 @@ export class AppComponent implements OnInit, OnDestroy {
   private loadModel(): ModelType {
     const model = localStorage.getItem('model');
     if (!model) {
-      return { shapes: [] };
+      return { shapes: [], tools: [] };
     }
 
     return JSON.parse(model);
   }
 
-  private applyTransform(
+  private async applyTransform(
     input: CamShape[],
     transform: TransformParameters,
-  ): CamShape[] {
+  ): Promise<CamShape[]> {
     try {
       switch (transform.type) {
         case 'translate':
@@ -292,7 +291,12 @@ export class AppComponent implements OnInit, OnDestroy {
           }
 
           return input.map((i) => this.applyMatrixTransform(i, matrix));
+
+        case 'clipper-inflate':
+          return await clipperInflate(input, transform);
       }
+
+      return input;
     } catch (err) {
       console.error(err);
     }
