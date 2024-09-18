@@ -20,6 +20,7 @@ import {
 type CommonShape = {
   id: string;
   name: string;
+  expanded: boolean;
 } & TransformsModelType;
 
 type ShapeType = CircleModelType | RectangleModelType | SvgModelType;
@@ -34,7 +35,6 @@ export const field: FormlyFieldConfig = {
   key: 'shapes',
   type: 'repeat',
   defaultValue: [],
-
   props: {
     label: 'shapes',
   },
@@ -51,6 +51,11 @@ export const field: FormlyFieldConfig = {
           label: 'name',
           required: true,
         },
+      },
+      {
+        key: 'expanded',
+        type: 'hidden',
+        defaultValue: false,
       },
       {
         key: 'type',

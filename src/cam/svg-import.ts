@@ -1,18 +1,15 @@
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
 import { CamShape } from './types';
-import { Matrix3 } from 'three';
-import { transformPath } from './path-transform';
 
 const svgLoader = new SVGLoader();
 
-export function importSvg(svg: string, transform: Matrix3) {
+export function importSvg(svg: string, sourceId: string) {
   const shapes: CamShape[] = [];
 
   const parsed = svgLoader.parse(svg);
   for (const path of parsed.paths) {
-    transformPath(path, transform);
-
     const camShape: CamShape = {
+      sourceShapeId: sourceId,
       polygons: [],
     };
     shapes.push(camShape);

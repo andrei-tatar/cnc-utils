@@ -31,6 +31,7 @@ export type ModelType = {
       | FlipModelType
     ) & {
       id: string;
+      expanded: boolean;
     }
   >;
 };
@@ -54,6 +55,11 @@ export const field: FormlyFieldConfig = {
       {
         key: 'id',
         type: 'hidden',
+      },
+      {
+        key: 'expanded',
+        type: 'hidden',
+        defaultValue: false,
       },
       {
         key: 'type',

@@ -11,6 +11,7 @@ import {
   BufferGeometry,
   Line,
   LineBasicMaterial,
+  Material,
   OrthographicCamera,
   Scene,
   Vector2,
@@ -23,13 +24,18 @@ import { watchElementResize } from '../../util';
 import {
   debounceTime,
   distinctUntilChanged,
+  map,
+  merge,
   Observable,
   ReplaySubject,
+  scan,
+  share,
   Subject,
   Subscription,
   switchMap,
   takeUntil,
   tap,
+  timer,
 } from 'rxjs';
 
 import { GridHelper } from './helpers/grid-helper';
@@ -63,6 +69,7 @@ import { CamShape } from '../../cam/types';
 export class ViewerComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<any>();
   private shapes$ = new ReplaySubject<Observable<CamShape[]>>(1);
+  private highlightShapes$ = new ReplaySubject<string[]>(1);
 
   @ViewChild('canvas', { static: true })
   canvas!: ElementRef<HTMLCanvasElement>;
@@ -73,6 +80,11 @@ export class ViewerComponent implements OnInit, OnDestroy {
   @Input()
   set shapes(value: Observable<CamShape[]>) {
     this.shapes$.next(value);
+  }
+
+  @Input()
+  set highlightShapes(value: string[]) {
+    this.highlightShapes$.next(value);
   }
 
   constructor(private host: ElementRef) {}
@@ -131,32 +143,54 @@ export class ViewerComponent implements OnInit, OnDestroy {
       renderer.render(scene, this.camera);
     });
 
+    const material = new LineBasicMaterial({
+      transparent: true,
+      color: 'orange',
+      opacity: 0.2,
+    });
+    const materialHighlight = new LineBasicMaterial({
+      color: 'orange',
+    });
+
     this.shapes$
       .pipe(
         switchMap((paths$) => paths$),
-        switchMap(
-          (shapes) =>
-            new Observable<never>((_) => {
-              const material = new LineBasicMaterial({ color: 0xffffff });
-              const clean = new Subscription();
-
-              for (const shape of shapes) {
-                for (const poly of shape.polygons) {
-                  const points = poly.points.map(
-                    ({ x, y }) => new Vector2(x, y),
-                  );
-                  const geometry = new BufferGeometry().setFromPoints(points);
-
-                  const line = new Line(geometry, material);
-                  scene.add(line);
-
-                  clean.add(() => scene.remove(line));
+        scan(
+          (ctx, shapes) =>
+            shapes
+              // .filter((v) => !!v) //TODO: where is undefined coming from?
+              .map((shape) => {
+                const existing = ctx.find((c) => c.shape === shape);
+                if (existing) {
+                  return existing;
                 }
-              }
 
-              return clean;
-            }),
+                const isHighlighted$ = this.highlightShapes$.pipe(
+                  map((h) => h.length === 0 || h.includes(shape.sourceShapeId)),
+                  distinctUntilChanged(),
+                );
+
+                return {
+                  shape,
+                  draw$: this.drawShape({
+                    shape,
+                    scene,
+                    material,
+                    materialHighlight,
+                    highlight$: isHighlighted$,
+                  }).pipe(
+                    share({
+                      resetOnRefCountZero: () => timer(0),
+                    }),
+                  ),
+                };
+              }),
+          [] as Array<{
+            shape: CamShape;
+            draw$: Observable<never>;
+          }>,
         ),
+        switchMap((all) => merge(...all.map((a) => a.draw$))),
         takeUntil(this.destroy$),
       )
       .subscribe();
@@ -164,5 +198,45 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroy$.next(1);
+  }
+
+  private drawShape(o: {
+    shape: CamShape;
+    scene: Scene;
+    material: Material;
+    materialHighlight: Material;
+    highlight$: Observable<boolean>;
+  }) {
+    return timer(0).pipe(
+      switchMap(
+        () =>
+          new Observable<never>((_) => {
+            const clean = new Subscription();
+
+            const lines: Line[] = [];
+
+            for (const poly of o.shape.polygons) {
+              const points = poly.points.map(({ x, y }) => new Vector2(x, y));
+              const geometry = new BufferGeometry().setFromPoints(points);
+
+              const line = new Line(geometry, o.material);
+              lines.push(line);
+              o.scene.add(line);
+
+              clean.add(() => o.scene.remove(line));
+            }
+
+            clean.add(
+              o.highlight$.subscribe((h) => {
+                lines.forEach(
+                  (l) => (l.material = h ? o.materialHighlight : o.material),
+                );
+              }),
+            );
+
+            return clean;
+          }),
+      ),
+    );
   }
 }

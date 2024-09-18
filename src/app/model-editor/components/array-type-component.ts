@@ -16,7 +16,21 @@ import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
     }
 
     .fields {
+    }
+
+    .field_item-expansion {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+
+    .fields_item {
       position: relative;
+      display: none;
+      &.visible {
+        display: flex;
+      }
 
       &:before {
         content: ' ';
@@ -27,11 +41,9 @@ import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
         position: absolute;
         background-color: green;
       }
-    }
 
-    .fields_item {
-      display: flex;
       flex-direction: row;
+
       // align-items: center;
 
       formly-field {
@@ -65,10 +77,11 @@ import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
       </button>
     </div>
 
-    <div class="fields ps-2">
+    <div class="fields">
       @for (field of field.fieldGroup; track $index) {
-        <div class="fields_item">
-          <formly-field [field]="field"></formly-field>
+        <div class="field_item-expansion" (click)="toggleExpanded($index)">
+          {{ (field.model.name ?? field.model.type) || 'unknown' }}
+
           @if (field.props?.['removable'] !== false) {
             <button
               class="btn btn-sm btn-outline-danger ms-1 mt-1"
@@ -78,6 +91,10 @@ import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
               -
             </button>
           }
+        </div>
+
+        <div class="fields_item ps-2" [class.visible]="field.model.expanded">
+          <formly-field [field]="field"></formly-field>
         </div>
       }
     </div>
@@ -89,7 +106,21 @@ export class ArrayTypeComponent extends FieldArrayType {
   }
 
   async addNewItem() {
+    this.collapseAllItems();
     const id = await generateId();
-    this.add(undefined, { id });
+    this.add(undefined, { id, expanded: true });
+  }
+
+  toggleExpanded(index: number) {
+    this.collapseAllItems(index);
+    const expandedControl = this.formControl.controls[index]?.get('expanded')!;
+    expandedControl?.setValue(!expandedControl.value);
+  }
+
+  private collapseAllItems(except?: number) {
+    for (let i = 0; i < this.formControl.controls.length; i++) {
+      if (i === except) continue;
+      this.formControl.controls[i].get('expanded')?.setValue(false);
+    }
   }
 }

@@ -8,6 +8,7 @@ export type CamPolygon = {
 };
 
 export type CamShape = {
+  sourceShapeId: string;
   polygons: CamPolygon[];
 };
 

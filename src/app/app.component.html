@@ -6,5 +6,8 @@
     />
   </div>
 
-  <app-viewer [shapes]="drawShapes$" />
+  <app-viewer
+    [shapes]="drawShapes$"
+    [highlightShapes]="(expandedShapes$ | async) ?? []"
+  />
 </div>

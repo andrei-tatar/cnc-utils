@@ -3,6 +3,7 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 export interface ModelType {
   type: 'rotate';
   rotateAngle: number;
+  around: `${'xmin' | 'xmax' | 'xcenter'}-${'ymin' | 'ymax' | 'ycenter'}`;
 }
 
 const field: FormlyFieldConfig = {
@@ -14,6 +15,26 @@ const field: FormlyFieldConfig = {
       props: {
         label: 'angle',
         required: true,
+      },
+    },
+    {
+      key: 'around',
+      type: 'enum',
+      defaultValue: 'xcenter-ycenter',
+      props: {
+        label: 'around',
+        required: true,
+        options: [
+          { value: 'xcenter-ycenter', label: 'center' },
+          { value: 'xmin-ymin', label: 'xmin ymin' },
+          { value: 'xmax-ymin', label: 'xmax ymin' },
+          { value: 'xcenter-ymin', label: 'xcenter ymin' },
+          { value: 'xmin-ymax', label: 'xmin ymax' },
+          { value: 'xmax-ymax', label: 'xmax ymax' },
+          { value: 'xcenter-ymax', label: 'xcenter ymax' },
+          { value: 'xmin-ycenter', label: 'xmin ycenter' },
+          { value: 'xmax-ycenter', label: 'xmax ycenter' },
+        ],
       },
     },
   ],

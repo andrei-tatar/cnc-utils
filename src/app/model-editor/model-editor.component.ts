@@ -43,9 +43,7 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.form.valueChanges
       .pipe(debounceTime(100), takeUntil(this.destroy$))
-      .subscribe((v) => {
-        this.modelChange.next(v as ModelType);
-      });
+      .subscribe((v) => this.modelChange.next(v as ModelType));
   }
 
   ngOnDestroy() {

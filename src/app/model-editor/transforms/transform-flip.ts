@@ -2,8 +2,8 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 
 export interface ModelType {
   type: 'flip';
-  flipHorizontal: false;
-  flipVertical: false;
+  flipHorizontal: boolean;
+  flipVertical: boolean;
 }
 
 const field: FormlyFieldConfig = {
