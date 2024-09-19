@@ -1,12 +1,23 @@
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
-import { CamShape } from './types';
+import { CamShape } from '../../cam/types';
+import { lazy } from '../../util';
+
+const patchApi = lazy(async () => {
+  const { DOMParser } = await import('xmldom' as any);
+  globalThis.DOMParser = DOMParser;
+});
 
 const svgLoader = new SVGLoader();
 
-export function importSvg(svg: string, sourceId: string) {
+export async function importSvg(
+  svgText: string,
+  sourceId: string,
+): Promise<CamShape[]> {
+  await patchApi.value;
+
   const shapes: CamShape[] = [];
 
-  const parsed = svgLoader.parse(svg);
+  const parsed = svgLoader.parse(svgText);
   for (const path of parsed.paths) {
     const camShape: CamShape = {
       sourceShapeId: sourceId,

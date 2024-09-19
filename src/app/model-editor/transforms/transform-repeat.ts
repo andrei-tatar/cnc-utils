@@ -6,6 +6,8 @@ export interface ModelType {
   repeatCountY: number;
   repeatSpaceX: number;
   repeatSpaceY: number;
+  repeatTypeX: 'each' | 'within';
+  repeatTypeY: 'each' | 'within';
 }
 
 const field: FormlyFieldConfig = {
@@ -16,11 +18,33 @@ const field: FormlyFieldConfig = {
       defaultValue: 1,
       props: {
         min: 1,
-        label: 'count x',
+        label: 'x count',
         required: true,
       },
       validators: {
         validation: ['whole-number'],
+      },
+    },
+    {
+      key: 'repeatTypeX',
+      type: 'enum',
+      defaultValue: 'each',
+      props: {
+        label: 'x type',
+        required: true,
+        options: [
+          { value: 'each', label: 'each' },
+          { value: 'within', label: 'within' },
+        ],
+      },
+    },
+    {
+      key: 'repeatSpaceX',
+      type: 'number',
+      defaultValue: 100,
+      props: {
+        label: 'x space',
+        required: true,
       },
     },
     {
@@ -29,7 +53,7 @@ const field: FormlyFieldConfig = {
       defaultValue: 1,
       props: {
         min: 1,
-        label: 'count y',
+        label: 'y count',
         required: true,
       },
       validators: {
@@ -37,12 +61,16 @@ const field: FormlyFieldConfig = {
       },
     },
     {
-      key: 'repeatSpaceX',
-      type: 'number',
-      defaultValue: 100,
+      key: 'repeatTypeY',
+      type: 'enum',
+      defaultValue: 'each',
       props: {
-        label: 'space x',
+        label: 'y type',
         required: true,
+        options: [
+          { value: 'each', label: 'each' },
+          { value: 'within', label: 'within' },
+        ],
       },
     },
     {
@@ -50,7 +78,7 @@ const field: FormlyFieldConfig = {
       type: 'number',
       defaultValue: 100,
       props: {
-        label: 'space y',
+        label: 'y space',
         required: true,
       },
     },

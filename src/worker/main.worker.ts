@@ -1,23 +1,42 @@
 /// <reference lib="webworker" />
 
-import { Observable } from 'rxjs';
+import {
+  defer,
+  filter,
+  map,
+  materialize,
+  Observable,
+  switchMap,
+  take,
+} from 'rxjs';
+import { Contract, MessageToWorker } from './types';
+import * as work from './work';
 
-new Observable((observer) => {
-  observer.next('worker response from observable');
-  observer.complete();
-}).subscribe((v) => postMessage(v));
-
-addEventListener('message', ({ data }) => {
-  const response = `worker response to ${data}`;
-  postMessage(response);
-});
-
-/*
-
-  const worker = new Worker(new URL('./main.worker', import.meta.url));
-  worker.onmessage = ({ data }) => {
-    console.log(`page got message: ${data}`);
+new Observable<MessageToWorker>((observer) => {
+  const handler = ({ data }: MessageEvent) => {
+    observer.next(data);
   };
-  worker.postMessage('hello');
+  addEventListener('message', handler);
+  return () => removeEventListener('message', handler);
+})
+  .pipe(
+    filter((m) => m.type === 'work'),
+    switchMap((w) => {
+      const key: keyof Contract = w.work as any;
+      const found: Function = work[key];
+      if (!found) {
+        throw new Error(`no contract registration found for ${w.work}`);
+      }
 
-*/
+      return defer(() => found.apply(null, w.args)).pipe(take(1));
+    }),
+    materialize(),
+    map(
+      (result) =>
+        ({
+          type: 'result',
+          result,
+        }) as const,
+    ),
+  )
+  .subscribe((msg) => postMessage(msg));

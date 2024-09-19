@@ -21,16 +21,13 @@ import {
 import { CamShape, ShapeSource } from '../cam/types';
 import { AsyncPipe } from '@angular/common';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
-import { ModelType } from './model-editor/model';
-import { importSvg } from '../cam/svg-import';
-import { Matrix3, Vector2 } from 'three';
-import { clipperInflate } from '../cam/clipper';
-
-type OmitUnion<T, K extends keyof T> = T extends any ? Omit<T, K> : never;
-type ShapeType = ModelType['shapes'][number];
-type ShapeParameters = OmitUnion<ShapeType, 'id' | 'transforms' | 'expanded'>;
-type TransformType = ShapeType['transforms'][number];
-type TransformParameters = OmitUnion<TransformType, 'id' | 'expanded'>;
+import {
+  ModelType,
+  ShapeParameters,
+  ShapeType,
+  TransformParameters,
+} from './model-editor/model';
+import worker from '../worker';
 
 @Component({
   selector: 'app-root',
@@ -86,21 +83,19 @@ export class AppComponent implements OnInit, OnDestroy {
 
               const shape$ = shapeParameters$.pipe(
                 map((t) => {
-                  let svg: string;
                   switch (t.type) {
                     case 'circle':
-                      svg = `<svg><circle r="${t.diameter / 2}"/></svg>`;
-                      break;
+                      return `<svg><circle r="${t.diameter / 2}"/></svg>`;
                     case 'rectangle':
-                      svg = `<svg><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></svg>`;
-                      break;
+                      return `<svg><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></svg>`;
                     case 'svg':
-                      svg = t.svg;
+                      return t.svg;
+                    default:
+                      return `<svg></svg>`;
                   }
-                  return svg;
                 }),
                 distinctUntilChanged(),
-                map((svg) => importSvg(svg, shapeId)),
+                switchMap((svg) => worker.importSvg(svg, shapeId)),
                 share({
                   connector: () => new ReplaySubject(1),
                   resetOnRefCountZero: () => timer(0),
@@ -138,9 +133,8 @@ export class AppComponent implements OnInit, OnDestroy {
                           switchMap((transform) => {
                             return input.pipe(
                               distinctUntilChanged(),
-                              switchMap(
-                                async (shape) =>
-                                  await this.applyTransform(shape, transform),
+                              switchMap((shape) =>
+                                worker.applyTransform(shape, transform),
                               ),
                             );
                           }),
@@ -221,134 +215,5 @@ export class AppComponent implements OnInit, OnDestroy {
     }
 
     return JSON.parse(model);
-  }
-
-  private async applyTransform(
-    input: CamShape[],
-    transform: TransformParameters,
-  ): Promise<CamShape[]> {
-    try {
-      switch (transform.type) {
-        case 'translate':
-          const translateMatrix = new Matrix3().translate(
-            transform.translateX,
-            transform.translateY,
-          );
-          return input.map((i) =>
-            this.applyMatrixTransform(i, translateMatrix),
-          );
-        case 'rotate': {
-          const box = this.getBoundingBox(input);
-
-          const [ox, oy] = transform.around
-            .split('-')
-            .map((v) => v.substring(1));
-          const dx = this.getRotationOrigin(box.x, box.width, ox);
-          const dy = this.getRotationOrigin(box.y, box.height, oy);
-
-          const rotateMatrix = new Matrix3()
-            .translate(-dx, -dy)
-            .rotate((transform.rotateAngle * Math.PI) / 180)
-            .translate(dx, dy);
-
-          return input.map((i) => this.applyMatrixTransform(i, rotateMatrix));
-        }
-        case 'scale':
-          const scaleMatrix = new Matrix3().scale(
-            transform.scaleX,
-            transform.scaleY,
-          );
-          return input.map((i) => this.applyMatrixTransform(i, scaleMatrix));
-        case 'repeat':
-          const output: CamShape[] = [];
-          for (let y = 0; y < transform.repeatCountY; y++)
-            for (let x = 0; x < transform.repeatCountX; x++) {
-              const translate = new Matrix3().translate(
-                transform.repeatSpaceX * x,
-                transform.repeatSpaceY * y,
-              );
-              output.push(
-                ...input.map((i) => this.applyMatrixTransform(i, translate)),
-              );
-            }
-          return output;
-        case 'flip':
-          const box = this.getBoundingBox(input);
-          let matrix = new Matrix3();
-
-          if (transform.flipHorizontal) {
-            matrix = matrix
-              .translate(-(box.x + box.width / 2), 0)
-              .scale(-1, 1)
-              .translate(box.x + box.width / 2, 0);
-          }
-
-          if (transform.flipVertical) {
-            matrix = matrix
-              .translate(0, -(box.y + box.height / 2))
-              .scale(1, -1)
-              .translate(0, box.y + box.height / 2);
-          }
-
-          return input.map((i) => this.applyMatrixTransform(i, matrix));
-
-        case 'clipper-inflate':
-          return await clipperInflate(input, transform);
-      }
-
-      return input;
-    } catch (err) {
-      console.error(err);
-    }
-    return input;
-  }
-
-  private getRotationOrigin(start: number, size: number, type: string) {
-    switch (type) {
-      case 'min':
-        return start;
-      case 'max':
-        return start + size;
-      case 'center':
-      default:
-        return start + size / 2;
-    }
-  }
-
-  private getBoundingBox(input: CamShape[]) {
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
-    input.forEach((shape) => {
-      shape.polygons.forEach((poly) => {
-        poly.points.forEach((point) => {
-          minX = Math.min(minX, point.x);
-          minY = Math.min(minY, point.y);
-          maxX = Math.max(maxX, point.x);
-          maxY = Math.max(maxY, point.y);
-        });
-      });
-    });
-
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-  }
-
-  private applyMatrixTransform(input: CamShape, matrix: Matrix3): CamShape {
-    return {
-      sourceShapeId: input.sourceShapeId,
-      polygons: input.polygons.map((poly) => {
-        return {
-          close: poly.close,
-          points: poly.points.map((p) => {
-            const result = new Vector2(p.x, p.y).applyMatrix3(matrix);
-            return {
-              x: result.x,
-              y: result.y,
-            };
-          }),
-        };
-      }),
-    };
   }
 }

@@ -1,5 +1,9 @@
 import { Observable } from 'rxjs';
 
+export type OmitUnion<T, K extends keyof T> = T extends any
+  ? Omit<T, K>
+  : never;
+
 export function readFile() {
   return new Observable<File>((observer) => {
     const input = document.createElement('input');

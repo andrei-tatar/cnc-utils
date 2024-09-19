@@ -22,10 +22,10 @@ export function clipperInflate(
 ) {
   return clipperTransform(
     inputShapes,
-    ({ InflatePathsD: inflatePaths, JoinType, EndType }, paths) => {
+    ({ InflatePathsD, JoinType, EndType }, paths) => {
       const joinType = getJoinType(options.joinType, JoinType);
       const endType = getEndType(options.endType, EndType);
-      return inflatePaths(
+      return InflatePathsD(
         paths,
         options.offset,
         joinType,
