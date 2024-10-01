@@ -42,14 +42,14 @@ export async function applyTransform(
         const output: CamShape[] = [];
 
         const deltaX =
-          transform.repeatTypeX === 'each'
+          transform.repeatTypeX === 'every'
             ? transform.repeatSpaceX
-            : transform.repeatSpaceX / (transform.repeatCountX - 1);
+            : transform.repeatSpaceX / Math.max(1, transform.repeatCountX - 1);
 
         const deltaY =
-          transform.repeatTypeY === 'each'
+          transform.repeatTypeY === 'every'
             ? transform.repeatSpaceY
-            : transform.repeatSpaceY / (transform.repeatCountY - 1);
+            : transform.repeatSpaceY / Math.max(1, transform.repeatCountY - 1);
 
         for (let y = 0; y < transform.repeatCountY; y++)
           for (let x = 0; x < transform.repeatCountX; x++) {

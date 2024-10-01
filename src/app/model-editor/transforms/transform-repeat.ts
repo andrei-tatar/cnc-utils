@@ -6,8 +6,8 @@ export interface ModelType {
   repeatCountY: number;
   repeatSpaceX: number;
   repeatSpaceY: number;
-  repeatTypeX: 'each' | 'within';
-  repeatTypeY: 'each' | 'within';
+  repeatTypeX: 'every' | 'within';
+  repeatTypeY: 'every' | 'within';
 }
 
 const field: FormlyFieldConfig = {
@@ -28,12 +28,12 @@ const field: FormlyFieldConfig = {
     {
       key: 'repeatTypeX',
       type: 'enum',
-      defaultValue: 'each',
+      defaultValue: 'every',
       props: {
         label: 'x type',
         required: true,
         options: [
-          { value: 'each', label: 'each' },
+          { value: 'every', label: 'every' },
           { value: 'within', label: 'within' },
         ],
       },
@@ -63,12 +63,12 @@ const field: FormlyFieldConfig = {
     {
       key: 'repeatTypeY',
       type: 'enum',
-      defaultValue: 'each',
+      defaultValue: 'every',
       props: {
         label: 'y type',
         required: true,
         options: [
-          { value: 'each', label: 'each' },
+          { value: 'every', label: 'every' },
           { value: 'within', label: 'within' },
         ],
       },
