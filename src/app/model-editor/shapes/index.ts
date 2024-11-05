@@ -16,6 +16,14 @@ import {
   Definition as SvgDefinition,
   ModelType as SvgModelType,
 } from './shape-svg';
+import {
+  Definition as LineDefinition,
+  ModelType as LineModelType,
+} from './shape-line';
+import {
+  Definition as PathDataDefinition,
+  ModelType as PathDataModelType,
+} from './shape-pathdata';
 
 type CommonShape = {
   id: string;
@@ -23,13 +31,24 @@ type CommonShape = {
   expanded: boolean;
 } & TransformsModelType;
 
-type ShapeType = CircleModelType | RectangleModelType | SvgModelType;
+type ShapeType =
+  | CircleModelType
+  | RectangleModelType
+  | SvgModelType
+  | LineModelType
+  | PathDataModelType;
 
 export type ModelType = {
   shapes: Array<ShapeType & CommonShape>;
 };
 
-const shapes = [CircleDefinition, RectangleDefinition, SvgDefinition];
+const shapes = [
+  CircleDefinition,
+  RectangleDefinition,
+  SvgDefinition,
+  LineDefinition,
+  PathDataDefinition,
+];
 
 export const field: FormlyFieldConfig = {
   key: 'shapes',

@@ -1,6 +1,6 @@
 import { Matrix3, Vector2 } from 'three';
-import { CamShape } from '../../cam/types';
-import { clipperInflate } from '../../cam/clipper';
+import { CamPolygon, CamShape } from '../../cam/types';
+import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
 
 export async function applyTransform(
@@ -78,8 +78,42 @@ export async function applyTransform(
         return input.map((i) => applyMatrixTransform(i, matrix));
 
       case 'clipper-inflate':
-        return await clipperInflate(input, transform);
+        let paths = await makePaths(
+          input.flatMap((p) => p.polygons).map((p) => p.points),
+        );
 
+        paths = await clipperInflateRaw(
+          paths,
+          transform.offset,
+          transform.joinType,
+          transform.endType,
+          transform.precision,
+          transform.miterLimit,
+          transform.arcTolerance,
+        );
+
+        const pathsSize = paths.size();
+        const result: CamShape = {
+          polygons: [],
+          sourceShapeId: input[0]?.sourceShapeId,
+        };
+
+        for (let i = 0; i < pathsSize; i++) {
+          const path = paths.get(i);
+          const poly: CamPolygon = {
+            points: [],
+            close: true,
+          };
+          const pathSize = path.size();
+          for (let j = 0; j < pathSize; j++) {
+            const point = path.get(j);
+            poly.points.push({ x: Number(point.x), y: Number(point.y) });
+          }
+
+          result.polygons.push(poly);
+        }
+
+        return result.polygons.length ? [result] : [];
       default:
         return input;
     }

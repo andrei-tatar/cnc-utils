@@ -1,12 +1,16 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import {
+  ModelType as OperationsModelType,
+  field as operationsField,
+} from '../operations';
 
-interface ToolType {
+export type ToolType = {
   id: string;
   expanded: boolean;
 
   name: string;
   diameter: number;
-}
+} & OperationsModelType;
 
 export type ModelType = {
   tools: Array<ToolType>;
@@ -47,6 +51,7 @@ export const field: FormlyFieldConfig = {
           required: true,
         },
       },
+      operationsField,
     ],
   },
 };

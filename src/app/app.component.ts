@@ -4,30 +4,36 @@ import { ViewerComponent } from './viewer/viewer.component';
 import {
   BehaviorSubject,
   combineLatest,
+  debounceTime,
   distinctUntilChanged,
+  EMPTY,
   ignoreElements,
   map,
   merge,
   Observable,
+  race,
   ReplaySubject,
   scan,
   share,
   Subject,
   switchMap,
-  takeUntil,
   tap,
   timer,
 } from 'rxjs';
-import { CamShape, ShapeSource } from '../cam/types';
+import { CamPath, CamShape } from '../cam/types';
 import { AsyncPipe } from '@angular/common';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
 import {
   ModelType,
+  OperationParameters,
   ShapeParameters,
   ShapeType,
+  ToolParameters,
   TransformParameters,
 } from './model-editor/model';
 import worker from '../worker';
+import { GCodeBuilder } from '../cam/gcode-builder';
+import { gcodeToPaths } from '../cam/gcode-viewer';
 
 @Component({
   selector: 'app-root',
@@ -38,18 +44,22 @@ import worker from '../worker';
 })
 export class AppComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<any>();
+  private workLocks = new BehaviorSubject(0);
+
+  private working$ = new Observable<never>((observer) => {
+    this.workLocks.next(this.workLocks.value + 1);
+    return () => this.workLocks.next(this.workLocks.value - 1);
+  });
+
+  isWorking$ = this.workLocks.pipe(
+    map((locks) => locks > 0),
+    distinctUntilChanged(),
+    debounceTime(100),
+  );
 
   model$ = new BehaviorSubject<ModelType>(this.loadModel());
-
-  shapeSources$ = new BehaviorSubject<ShapeSource[]>([]);
-
-  drawShapes$ = this.shapeSources$.pipe(
-    switchMap((sources) => {
-      return combineLatest(sources.map((s) => s.shape$)).pipe(
-        map((items) => items.flatMap((i) => i)),
-      );
-    }),
-  );
+  drawShapes$!: Observable<CamShape[]>;
+  drawPaths$!: Observable<CamPath[]>;
 
   expandedShapes$ = this.model$.pipe(
     map((v) => [
@@ -58,10 +68,188 @@ export class AppComponent implements OnInit, OnDestroy {
   );
 
   ngOnInit(): void {
-    this.drawShapes$ = this.model$.pipe(
+    const model$ = this.model$.pipe(
       distinctUntilChanged(),
-      tap((v) => localStorage.setItem('model', JSON.stringify(v))),
-      takeUntil(this.destroy$),
+      tap(this.saveModel.bind(this)),
+    );
+
+    const shapes$ = AppComponent.generateShapesFromModel(
+      model$,
+      this.working$,
+    ).pipe(
+      share({
+        connector: () => new ReplaySubject(1),
+      }),
+    );
+    this.drawShapes$ = shapes$;
+
+    this.drawPaths$ = AppComponent.generatePathsFromOperations(
+      model$,
+      shapes$,
+      this.working$,
+    );
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next(1);
+  }
+
+  private loadModel(): ModelType {
+    const model = localStorage.getItem('model');
+    if (!model) {
+      return { shapes: [], tools: [] };
+    }
+
+    return JSON.parse(model);
+  }
+
+  private saveModel(model: ModelType) {
+    localStorage.setItem('model', JSON.stringify(model));
+  }
+
+  private static generatePathsFromOperations(
+    model$: Observable<ModelType>,
+    shapes$: Observable<CamShape[]>,
+    working$: Observable<never>,
+  ) {
+    return model$.pipe(
+      scan(
+        (ctx, { tools }) => {
+          return tools
+            .flatMap((tool) =>
+              tool.operations.map((operation) => ({ tool, operation })),
+            )
+            .map(
+              ({
+                tool: {
+                  id: toolId,
+                  expanded: ___,
+                  name: _____,
+                  operations: ____,
+                  ...toolParameters
+                },
+                operation: {
+                  id: operationId,
+                  expanded: _,
+                  name: __,
+                  shapeId,
+                  ...operationParameters
+                },
+              }) => {
+                const id = `${toolId}-${operationId}`;
+                const existing = ctx.find((e) => e.id === id);
+                if (existing) {
+                  existing.operationParameters$.next(operationParameters);
+                  existing.shapeId$.next(shapeId);
+                  existing.toolParameters$.next(toolParameters);
+                  return existing;
+                }
+
+                const operationParameters$ = new BehaviorSubject(
+                  operationParameters,
+                );
+                const shapeId$ = new BehaviorSubject(shapeId);
+                const toolParameters$ = new BehaviorSubject(toolParameters);
+
+                const shape$ = combineLatest([
+                  shapeId$.pipe(distinctUntilChanged()),
+                  shapes$.pipe(debounceTime(0)),
+                ]).pipe(
+                  map(([shapeId, allShapes]) =>
+                    allShapes.filter(
+                      (shape) => shape.sourceShapeId === shapeId,
+                    ),
+                  ),
+                  distinctUntilChanged(
+                    (a, b) =>
+                      a.length === b.length &&
+                      a.every((aa, index) => b[index] === aa),
+                  ),
+                );
+
+                const result$ = combineLatest([
+                  shape$,
+                  operationParameters$.pipe(
+                    distinctUntilChanged(
+                      (a, b) => a === b,
+                      (s) => JSON.stringify(s),
+                    ),
+                  ),
+                  toolParameters$.pipe(
+                    distinctUntilChanged(
+                      (a, b) => a === b,
+                      (s) => JSON.stringify(s),
+                    ),
+                    map((v) => v.diameter),
+                  ),
+                ]).pipe(
+                  switchMap(([shape, operationParameters, toolDiameter]) => {
+                    switch (operationParameters.type) {
+                      case 'pocket':
+                        return race(
+                          worker
+                            .routePocketHole(shape, {
+                              toolSize: toolDiameter,
+                              toolEngagement:
+                                operationParameters.toolEngagement,
+                              leaveStock: operationParameters.leaveStock,
+                              finalDepth: operationParameters.depth,
+                            })
+                            .pipe(map((r) => GCodeBuilder.clone(r))),
+                          working$,
+                        );
+                    }
+
+                    return EMPTY;
+                  }),
+                  share({
+                    connector: () => new ReplaySubject(1),
+                    resetOnRefCountZero: () => timer(0),
+                  }),
+                );
+
+                return {
+                  id,
+                  operationParameters$,
+                  toolParameters$,
+                  result$,
+                  shapeId$,
+                };
+              },
+            );
+        },
+        [] as Array<{
+          id: string;
+          operationParameters$: BehaviorSubject<OperationParameters>;
+          toolParameters$: BehaviorSubject<ToolParameters>;
+          shapeId$: BehaviorSubject<string>;
+          result$: Observable<GCodeBuilder>;
+        }>,
+      ),
+      switchMap((s) => combineLatest(s.map((i) => i.result$))),
+      distinctUntilChanged((a, b) => {
+        return a.every((aa, index) => b[index] === aa);
+      }),
+      map((builders) => {
+        const result = builders.reduce((a, b) => a.concat(b));
+        const gcode = result.goToSafeHeight().build({
+          safetyHeight: 10,
+          carveFeedRate: 1200,
+          plungeFeedRate: 300,
+        });
+
+        console.log(`gcode done!`);
+
+        return gcodeToPaths(gcode);
+      }),
+    );
+  }
+
+  private static generateShapesFromModel(
+    model$: Observable<ModelType>,
+    working$: Observable<never>,
+  ) {
+    return model$.pipe(
       scan(
         (ctx, { shapes }) => {
           return shapes.map(
@@ -69,6 +257,7 @@ export class AppComponent implements OnInit, OnDestroy {
               id: shapeId,
               transforms: shapeTransforms,
               expanded: _,
+              name: __,
               ...shapeParameters
             }) => {
               const existing = ctx.find((e) => e.shapeId === shapeId);
@@ -90,12 +279,19 @@ export class AppComponent implements OnInit, OnDestroy {
                       return `<svg><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></svg>`;
                     case 'svg':
                       return t.svg;
+                    case 'line':
+                      return `<svg><line x1="0" y1="0" x2="${t.width}" y2="0" /></svg>`;
+                    case 'path-data':
+                      return `<svg><path d="${t.data}" /></svg>`;
+
                     default:
                       return `<svg></svg>`;
                   }
                 }),
                 distinctUntilChanged(),
-                switchMap((svg) => worker.importSvg(svg, shapeId)),
+                switchMap((svg) =>
+                  race(worker.importSvg(svg, shapeId), working$),
+                ),
                 share({
                   connector: () => new ReplaySubject(1),
                   resetOnRefCountZero: () => timer(0),
@@ -134,7 +330,10 @@ export class AppComponent implements OnInit, OnDestroy {
                             return input.pipe(
                               distinctUntilChanged(),
                               switchMap((shape) =>
-                                worker.applyTransform(shape, transform),
+                                race(
+                                  worker.applyTransform(shape, transform),
+                                  working$,
+                                ),
                               ),
                             );
                           }),
@@ -165,7 +364,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 switchMap((all) => {
                   let input$ = shape$;
 
-                  const watch: Observable<any>[] = [];
+                  const watch: Observable<never>[] = [];
                   for (let i = 0; i < all.length; i++) {
                     watch.push(
                       input$.pipe(
@@ -202,18 +401,5 @@ export class AppComponent implements OnInit, OnDestroy {
       switchMap((s) => combineLatest(s.map((i) => i.result$))),
       map((s) => s.flatMap((i) => i)),
     );
-  }
-
-  ngOnDestroy(): void {
-    this.destroy$.next(1);
-  }
-
-  private loadModel(): ModelType {
-    const model = localStorage.getItem('model');
-    if (!model) {
-      return { shapes: [], tools: [] };
-    }
-
-    return JSON.parse(model);
   }
 }

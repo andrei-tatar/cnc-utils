@@ -1,6 +1,6 @@
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
 import { CamShape } from '../../cam/types';
-import { lazy } from '../../util';
+import { lazy, pointsEqual } from '../../util';
 
 const patchApi = lazy(async () => {
   const { DOMParser } = await import('xmldom' as any);
@@ -29,7 +29,8 @@ export async function importSvg(
       const points = shape.getPoints();
       camShape.polygons.push({
         points,
-        close: shape.autoClose,
+        close:
+          shape.autoClose || pointsEqual(points[0], points[points.length - 1]),
       });
     }
   }

@@ -1,42 +1,54 @@
-import type {
-  Clipper2ZFactoryFunction,
-  MainModule,
-  PathsD,
-} from 'clipper2-wasm/dist/clipper2z';
-import { CamPolygon, CamShape } from './types';
+import type { MainModule, PathD, PathsD } from 'clipper2-wasm/dist/clipper2z';
+import { CamPoint } from './types';
 import { lazy } from '../util';
 
 type ClipperJoinType = 'miter' | 'square' | 'round';
 type ClipperEndType = 'polygon' | 'joined' | 'butt' | 'square' | 'round';
 
-export function clipperInflate(
-  inputShapes: CamShape[],
-  options: {
-    offset: number;
-    joinType: 'miter' | 'square' | 'round';
-    endType: 'polygon' | 'joined' | 'butt' | 'square' | 'round';
-    precision: number;
-    miterLimit: number;
-    arcTolerance: number;
-  },
+export async function clipperInflateRaw(
+  paths: PathsD,
+  offset: number,
+  joinType: 'miter' | 'square' | 'round',
+  endType: 'polygon' | 'joined' | 'butt' | 'square' | 'round',
+  precision: number,
+  miterLimit: number,
+  arcTolerance: number,
 ) {
-  return clipperTransform(
-    inputShapes,
-    ({ InflatePathsD, JoinType, EndType }, paths) => {
-      const joinType = getJoinType(options.joinType, JoinType);
-      const endType = getEndType(options.endType, EndType);
-      return InflatePathsD(
-        paths,
-        options.offset,
-        joinType,
-        endType,
-        options.precision,
-        options.miterLimit,
-        options.arcTolerance,
-      );
-    },
-    options.endType === 'polygon',
+  const module = await ClipperModule.value;
+  const result = module.InflatePathsD(
+    paths,
+    offset,
+    getJoinType(joinType, module.JoinType),
+    getEndType(endType, module.EndType),
+    precision,
+    miterLimit,
+    arcTolerance,
   );
+  return result;
+}
+
+export async function getAreaResolver() {
+  const { AreaPathD } = await ClipperModule.value;
+  return (path: PathD) => AreaPathD(path);
+}
+
+export async function pathsIntersect(a: PathD, b: PathD, precision: number) {
+  const { IntersectD, PathsD, FillRule } = await ClipperModule.value;
+
+  const aa = new PathsD();
+  aa.push_back(a);
+
+  const bb = new PathsD();
+  bb.push_back(b);
+
+  const result = IntersectD(aa, bb, FillRule.NonZero, precision * 200);
+  const intersect = result.size() > 0;
+
+  aa.delete();
+  bb.delete();
+  result.delete();
+
+  return intersect;
 }
 
 function getJoinType(type: ClipperJoinType, JoinType: MainModule['JoinType']) {
@@ -68,71 +80,31 @@ function getEndType(type: ClipperEndType, EndType: MainModule['EndType']) {
 const ClipperModule = lazy(async () => {
   const { default: clipperFactory } = await import(
     /** @ts-ignore */
-    'clipper2-wasm/dist/es/clipper2z'
+    'clipper2-wasm/dist/es/clipper2z.js'
   );
-  const factory: Clipper2ZFactoryFunction = clipperFactory;
-  const module = await factory({
+  const module = await clipperFactory({
     locateFile: () => {
       return 'clipper2z.wasm';
     },
   });
-  return module;
+  return module as MainModule;
 });
 
-async function clipperTransform(
-  inputShapes: CamShape[],
-  transform: (module: MainModule, paths: PathsD) => PathsD,
-  closePath: boolean,
-) {
-  const module = await ClipperModule.value;
+export async function makePath(polyPoints: CamPoint[]) {
+  const { MakePathD } = await ClipperModule.value;
 
-  const { MakePathD: makePath, PathsD: Paths } = module;
+  const points = polyPoints.flatMap((point) => [point.x, point.y]);
+  const path = MakePathD(points);
 
-  let paths = new Paths();
-  for (const shape of inputShapes) {
-    for (const poly of shape.polygons) {
-      const points = poly.points.flatMap((point) => [point.x, point.y]);
-      const path = makePath(points);
-
-      paths.push_back(path);
-    }
-  }
-
-  paths = transform(module, paths);
-
-  return fromClipperPaths(paths, inputShapes[0]?.sourceShapeId, closePath);
+  return path;
 }
 
-function fromClipperPaths(
-  paths: PathsD,
-  sourceShapeId: string,
-  closePath: boolean,
-) {
-  const resultShapes: CamShape[] = [];
-
-  const pathsSize = paths.size();
-  const result: CamShape = {
-    polygons: [],
-    sourceShapeId,
-  };
-
-  for (let i = 0; i < pathsSize; i++) {
-    const path = paths.get(i);
-    const poly: CamPolygon = { points: [], close: false };
-    const pathSize = path.size();
-    for (let j = 0; j < pathSize; j++) {
-      const point = path.get(j);
-      poly.points.push({ x: Number(point.x), y: Number(point.y) });
-    }
-
-    if (closePath && pathSize > 2) {
-      poly.points.push({ x: Number(path.get(0).x), y: Number(path.get(0).y) });
-    }
-
-    result.polygons.push(poly);
+export async function makePaths(polys: CamPoint[][]) {
+  const { PathsD } = await ClipperModule.value;
+  let paths = new PathsD();
+  for (const polyPoints of polys) {
+    const path = await makePath(polyPoints);
+    paths.push_back(path);
   }
-
-  resultShapes.push(result);
-
-  return resultShapes;
+  return paths;
 }

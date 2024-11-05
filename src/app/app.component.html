@@ -1,5 +1,8 @@
 <div class="layout">
   <div class="menu">
+    @if (isWorking$ | async) {
+      <span>Working...</span>
+    }
     <app-model-editor
       [model]="model$.value"
       (modelChange)="model$.next($event)"
@@ -8,6 +11,7 @@
 
   <app-viewer
     [shapes]="drawShapes$"
+    [paths]="drawPaths$"
     [highlightShapes]="(expandedShapes$ | async) ?? []"
   />
 </div>

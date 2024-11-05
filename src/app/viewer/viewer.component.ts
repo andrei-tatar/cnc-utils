@@ -10,6 +10,7 @@ import {
   ArrowHelper,
   BufferGeometry,
   Line,
+  Shape,
   LineBasicMaterial,
   Material,
   OrthographicCamera,
@@ -17,10 +18,12 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  ShapeGeometry,
+  Mesh,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
-import { watchElementResize } from '../../util';
+import { pointsEqual, watchElementResize } from '../../util';
 import {
   debounceTime,
   distinctUntilChanged,
@@ -39,7 +42,7 @@ import {
 } from 'rxjs';
 
 import { GridHelper } from './helpers/grid-helper';
-import { CamShape } from '../../cam/types';
+import { CamPath, CamShape } from '../../cam/types';
 
 @Component({
   selector: 'app-viewer',
@@ -69,6 +72,7 @@ import { CamShape } from '../../cam/types';
 export class ViewerComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<any>();
   private shapes$ = new ReplaySubject<Observable<CamShape[]>>(1);
+  private paths$ = new ReplaySubject<Observable<CamPath[]>>(1);
   private highlightShapes$ = new ReplaySubject<string[]>(1);
 
   @ViewChild('canvas', { static: true })
@@ -80,6 +84,11 @@ export class ViewerComponent implements OnInit, OnDestroy {
   @Input()
   set shapes(value: Observable<CamShape[]>) {
     this.shapes$.next(value);
+  }
+
+  @Input()
+  set paths(value: Observable<CamPath[]>) {
+    this.paths$.next(value);
   }
 
   @Input()
@@ -151,42 +160,109 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const materialHighlight = new LineBasicMaterial({
       color: 'orange',
     });
+    const nullMaterial = new LineBasicMaterial({
+      opacity: 0,
+      transparent: true,
+    });
+
+    const pathCarveMaterial = new LineBasicMaterial({
+      transparent: true,
+      color: 'lightblue',
+      opacity: 0.2,
+    });
+    const pathTravelMaterial = new LineBasicMaterial({
+      transparent: true,
+      color: 'salmon',
+      opacity: 0.2,
+    });
+    const highlightPathCarveMaterial = new LineBasicMaterial({
+      color: 'lightblue',
+    });
+    const highlightPathTravelMaterial = new LineBasicMaterial({
+      color: 'salmon',
+    });
 
     this.shapes$
       .pipe(
         switchMap((paths$) => paths$),
         scan(
           (ctx, shapes) =>
-            shapes
-              // .filter((v) => !!v) //TODO: where is undefined coming from?
-              .map((shape) => {
-                const existing = ctx.find((c) => c.shape === shape);
-                if (existing) {
-                  return existing;
-                }
+            shapes.map((shape) => {
+              const existing = ctx.find((c) => c.shape === shape);
+              if (existing) {
+                return existing;
+              }
 
-                const isHighlighted$ = this.highlightShapes$.pipe(
-                  map((h) => h.length === 0 || h.includes(shape.sourceShapeId)),
-                  distinctUntilChanged(),
-                );
+              const isHighlighted$ = this.highlightShapes$.pipe(
+                map((h) => h.length === 0 || h.includes(shape.sourceShapeId)),
+                distinctUntilChanged(),
+              );
 
-                return {
+              return {
+                shape,
+                draw$: this.drawShape({
                   shape,
-                  draw$: this.drawShape({
-                    shape,
-                    scene,
-                    material,
-                    materialHighlight,
-                    highlight$: isHighlighted$,
-                  }).pipe(
-                    share({
-                      resetOnRefCountZero: () => timer(0),
-                    }),
-                  ),
-                };
-              }),
+                  scene,
+                  material,
+                  materialHighlight,
+                  nullMaterial,
+                  highlight$: isHighlighted$,
+                }).pipe(
+                  share({
+                    resetOnRefCountZero: () => timer(0),
+                  }),
+                ),
+              };
+            }),
           [] as Array<{
             shape: CamShape;
+            draw$: Observable<never>;
+          }>,
+        ),
+        switchMap((all) => merge(...all.map((a) => a.draw$))),
+        takeUntil(this.destroy$),
+      )
+      .subscribe();
+
+    this.paths$
+      .pipe(
+        switchMap((paths$) => paths$),
+        scan(
+          (ctx, paths) =>
+            paths.map((path) => {
+              const existing = ctx.find((c) => c.path === path);
+              if (existing) {
+                return existing;
+              }
+
+              const isHighlighted$ = this.highlightShapes$.pipe(
+                map((h) => h.length === 0 || h.includes(path.sourceShapeId)),
+                distinctUntilChanged(),
+              );
+
+              return {
+                path,
+                draw$: this.drawPath({
+                  path,
+                  scene,
+                  material:
+                    path.type === 'travel'
+                      ? pathTravelMaterial
+                      : pathCarveMaterial,
+                  materialHighlight:
+                    path.type === 'travel'
+                      ? highlightPathTravelMaterial
+                      : highlightPathCarveMaterial,
+                  highlight$: isHighlighted$,
+                }).pipe(
+                  share({
+                    resetOnRefCountZero: () => timer(0),
+                  }),
+                ),
+              };
+            }),
+          [] as Array<{
+            path: CamPath;
             draw$: Observable<never>;
           }>,
         ),
@@ -200,8 +276,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.destroy$.next(1);
   }
 
-  private drawShape(o: {
-    shape: CamShape;
+  private drawPath(o: {
+    path: CamPath;
     scene: Scene;
     material: Material;
     materialHighlight: Material;
@@ -213,24 +289,92 @@ export class ViewerComponent implements OnInit, OnDestroy {
           new Observable<never>((_) => {
             const clean = new Subscription();
 
-            const lines: Line[] = [];
+            const sceneItems: (Line | Mesh)[] = [];
+
+            const points = o.path.points.map(
+              ({ x, y, z }) => new Vector3(x, y, z),
+            );
+            const geometry = new BufferGeometry().setFromPoints(points);
+
+            const line = new Line(geometry, o.material);
+            sceneItems.push(line);
+            o.scene.add(line);
+
+            clean.add(() => o.scene.remove(line));
+
+            clean.add(
+              o.highlight$.subscribe((highlight) => {
+                sceneItems.forEach((item) => {
+                  item.material = highlight ? o.materialHighlight : o.material;
+                });
+              }),
+            );
+
+            return clean;
+          }),
+      ),
+    );
+  }
+
+  private drawShape(o: {
+    shape: CamShape;
+    scene: Scene;
+    material: Material;
+    materialHighlight: Material;
+    nullMaterial: Material;
+    highlight$: Observable<boolean>;
+  }) {
+    return timer(0).pipe(
+      switchMap(
+        () =>
+          new Observable<never>((_) => {
+            const clean = new Subscription();
+
+            const sceneItems: (Line | Mesh)[] = [];
 
             for (const poly of o.shape.polygons) {
-              const points = poly.points.map(({ x, y }) => new Vector2(x, y));
+              if (poly.close) {
+                const points = poly.points.map(({ x, y }) => new Vector2(x, y));
+                const shape = new Shape(points);
+                const geometry = new ShapeGeometry(shape);
+                const mesh = new Mesh(geometry, o.material);
+                sceneItems.push(mesh);
+                o.scene.add(mesh);
+
+                clean.add(() => o.scene.remove(mesh));
+              }
+
+              const srcPoints = [...poly.points];
+              if (
+                poly.close &&
+                !pointsEqual(srcPoints[0], srcPoints[srcPoints.length - 1])
+              ) {
+                srcPoints.push(srcPoints[0]);
+              }
+
+              const points = srcPoints.map(({ x, y }) => new Vector2(x, y));
+
               const geometry = new BufferGeometry().setFromPoints(points);
 
               const line = new Line(geometry, o.material);
-              lines.push(line);
+              sceneItems.push(line);
               o.scene.add(line);
 
               clean.add(() => o.scene.remove(line));
             }
 
             clean.add(
-              o.highlight$.subscribe((h) => {
-                lines.forEach(
-                  (l) => (l.material = h ? o.materialHighlight : o.material),
-                );
+              o.highlight$.subscribe((highlight) => {
+                sceneItems.forEach((item) => {
+                  if (item instanceof Line) {
+                    item.material = highlight
+                      ? o.materialHighlight
+                      : o.material;
+                  }
+                  if (item instanceof Mesh) {
+                    item.material = highlight ? o.material : o.nullMaterial;
+                  }
+                });
               }),
             );
 

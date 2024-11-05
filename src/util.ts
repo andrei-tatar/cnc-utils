@@ -69,3 +69,38 @@ export function lazy<T>(factory: () => T) {
     },
   };
 }
+
+export function deepEqual(x: any, y: any) {
+  if (x === y) {
+    return true;
+  }
+
+  if (typeof x == 'object' && x != null && typeof y == 'object' && y != null) {
+    if (Object.keys(x).length != Object.keys(y).length) return false;
+
+    for (const prop in x) {
+      if (y.hasOwnProperty(prop)) {
+        if (!deepEqual(x[prop], y[prop])) return false;
+      } else return false;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+export function pointsEqual(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  precision = 0.001,
+) {
+  return Math.abs(a.x - b.x) <= precision && Math.abs(a.y - b.y) <= precision;
+}
+
+export function getDistance<TPoint extends { x: number; y: number }>(
+  a: TPoint,
+  b: TPoint,
+) {
+  return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+}
