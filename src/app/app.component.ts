@@ -241,6 +241,8 @@ export class AppComponent implements OnInit, OnDestroy {
                                 toolEngagement:
                                   operationParameters.toolEngagement,
                                 depth: operationParameters.depth,
+                                interpolateStepSize:
+                                  operationParameters.interpolateStepSize,
                               })
                               .pipe(
                                 map((r) =>

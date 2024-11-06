@@ -3,8 +3,8 @@ import { CamShape } from '../../cam/types';
 import { lazy, pointsEqual } from '../../util';
 
 const patchApi = lazy(async () => {
-  const { DOMParser } = await import('xmldom' as any);
-  globalThis.DOMParser = DOMParser;
+  const xmlDom = await import('xmldom' as any);
+  globalThis.DOMParser = xmlDom.DOMParser ?? xmlDom.default.DOMParser;
 });
 
 const svgLoader = new SVGLoader();

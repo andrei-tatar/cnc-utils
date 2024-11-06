@@ -4,6 +4,7 @@ export interface ModelType {
   type?: 'flat';
   depth: number;
   toolEngagement: number;
+  interpolateStepSize: boolean;
 }
 
 const field: FormlyFieldConfig = {
@@ -26,6 +27,14 @@ const field: FormlyFieldConfig = {
         min: 0,
         label: 'engagement',
         required: true,
+      },
+    },
+    {
+      key: 'interpolateStepSize',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'interpolate step',
       },
     },
   ],

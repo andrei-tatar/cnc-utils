@@ -17,12 +17,13 @@
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
-            "outputPath": "dist/cnc-utils",
+            "outputPath": { "base": "dist", "browser": "" },
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": ["@angular/localize/init"],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
+            "allowedCommonJsDependencies": ["xmldom"],
             "assets": [
               {
                 "glob": "**/*",

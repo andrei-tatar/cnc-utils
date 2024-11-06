@@ -7,6 +7,7 @@ export async function flatOutline(
     toolSize: number;
     toolEngagement: number;
     depth: number;
+    interpolateStepSize: boolean;
   },
 ): Promise<GCodeBuilder> {
   let minX = Infinity,
@@ -23,11 +24,13 @@ export async function flatOutline(
 
   let stepSize = options.toolSize * options.toolEngagement;
 
-  // const width = maxX - minX;
-  // const steps = width / stepSize;
-  // if (Math.floor(steps) !== steps) {
-  //   stepSize = width / Math.ceil(steps);
-  // }
+  if (options.interpolateStepSize) {
+    const width = maxX - minX;
+    const steps = width / stepSize;
+    if (Math.floor(steps) !== steps) {
+      stepSize = width / Math.ceil(steps);
+    }
+  }
 
   const builder = new GCodeBuilder();
 
