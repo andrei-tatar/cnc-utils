@@ -2,6 +2,8 @@
   <div class="menu">
     @if (isWorking$ | async) {
       <span>Working...</span>
+    } @else {
+      <button (click)="download$.next(1)">Download GCODE</button>
     }
     <app-model-editor
       [model]="model$.value"

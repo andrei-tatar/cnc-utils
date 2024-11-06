@@ -10,6 +10,8 @@ export type ToolType = {
 
   name: string;
   diameter: number;
+  feedRate: number;
+  plungeFeedRate: number;
 } & OperationsModelType;
 
 export type ModelType = {
@@ -48,6 +50,24 @@ export const field: FormlyFieldConfig = {
         defaultValue: 3,
         props: {
           label: 'diameter',
+          required: true,
+        },
+      },
+      {
+        key: 'feedRate',
+        type: 'number',
+        defaultValue: 1200,
+        props: {
+          label: 'feed rate',
+          required: true,
+        },
+      },
+      {
+        key: 'plungeFeedRate',
+        type: 'number',
+        defaultValue: 300,
+        props: {
+          label: 'plunge fr',
           required: true,
         },
       },

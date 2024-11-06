@@ -1,6 +1,7 @@
 import {
   ApplicationConfig,
   importProvidersFrom,
+  provideExperimentalZonelessChangeDetection,
   provideZoneChangeDetection,
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
@@ -29,8 +30,11 @@ export function WholeNumberValidator(
 }
 
 export const appConfig: ApplicationConfig = {
+  
   providers: [
-    provideZoneChangeDetection({ eventCoalescing: true }),
+
+    //provideZoneChangeDetection({ eventCoalescing: true }),
+    provideExperimentalZonelessChangeDetection(),
     provideRouter(routes),
     provideAnimationsAsync(),
     importProvidersFrom(ReactiveFormsModule),

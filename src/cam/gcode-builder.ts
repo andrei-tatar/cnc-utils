@@ -42,6 +42,16 @@ export class GCodeBuilder {
     return this;
   }
 
+  carveFeedrate(feedRate: number) {
+    this._instructions.push({ type: 'carve-feedrate', feedRate });
+    return this;
+  }
+
+  plungeFeedRate(feedRate: number) {
+    this._instructions.push({ type: 'plunge-feedrate', feedRate });
+    return this;
+  }
+
   concat(other: GCodeBuilder): GCodeBuilder {
     const result = new GCodeBuilder();
     result._instructions = this._instructions.concat(other._instructions);
@@ -59,7 +69,9 @@ export class GCodeBuilder {
     let x: number | null = null,
       y: number | null = null,
       z: number | null = null,
-      feedRate: number | null = null;
+      feedRate: number | null = null,
+      carveFeedRate = options.carveFeedRate,
+      plungeFeedRate = options.plungeFeedRate;
 
     for (const instruction of this._instructions) {
       switch (instruction.type) {
@@ -69,7 +81,7 @@ export class GCodeBuilder {
 
         case 'plunge':
           //TODO: optional helical plunge ?
-          move('G01', { z: instruction.depth }, options.plungeFeedRate);
+          move('G01', { z: instruction.depth }, plungeFeedRate);
           break;
 
         case 'travel':
@@ -77,11 +89,19 @@ export class GCodeBuilder {
           break;
 
         case 'carve':
-          move('G01', instruction.to, options.carveFeedRate);
+          move('G01', instruction.to, carveFeedRate);
           break;
 
         case 'source-shape':
           gcode.push(`; source-shape=${instruction.id}`);
+          break;
+
+        case 'carve-feedrate':
+          carveFeedRate = instruction.feedRate;
+          break;
+
+        case 'plunge-feedrate':
+          plungeFeedRate = instruction.feedRate;
           break;
       }
     }
@@ -140,4 +160,6 @@ type PathInstruction =
   | { type: 'travel'; to: CamPoint }
   | { type: 'safety-height' }
   | { type: 'carve'; to: CamPoint }
-  | { type: 'source-shape'; id: string };
+  | { type: 'source-shape'; id: string }
+  | { type: 'carve-feedrate'; feedRate: number }
+  | { type: 'plunge-feedrate'; feedRate: number };

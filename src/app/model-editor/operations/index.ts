@@ -6,7 +6,12 @@ import {
   ModelType as PocketModelType,
 } from './operation-pocket';
 
-const operations = [PocketDefinition];
+import {
+  Definition as FlatDefinition,
+  ModelType as FlatModelType,
+} from './operation-flat';
+
+const operations = [PocketDefinition, FlatDefinition];
 
 export type ModelType = {
   operations: Array<
@@ -15,7 +20,7 @@ export type ModelType = {
       expanded: boolean;
       name: string;
       shapeId: string;
-    } & PocketModelType
+    } & (PocketModelType | FlatModelType)
   >;
 };
 

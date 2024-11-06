@@ -19,6 +19,7 @@ import {
   switchMap,
   tap,
   timer,
+  withLatestFrom,
 } from 'rxjs';
 import { CamPath, CamShape } from '../cam/types';
 import { AsyncPipe } from '@angular/common';
@@ -61,6 +62,8 @@ export class AppComponent implements OnInit, OnDestroy {
   drawShapes$!: Observable<CamShape[]>;
   drawPaths$!: Observable<CamPath[]>;
 
+  download$ = new Subject();
+
   expandedShapes$ = this.model$.pipe(
     map((v) => [
       ...new Set(v.shapes.filter((v) => v.expanded).map((v) => v.id)),
@@ -83,11 +86,32 @@ export class AppComponent implements OnInit, OnDestroy {
     );
     this.drawShapes$ = shapes$;
 
-    this.drawPaths$ = AppComponent.generatePathsFromOperations(
+    const gcode$ = AppComponent.generateGcodeFromOperations(
       model$,
       shapes$,
       this.working$,
-    );
+    ).pipe(share({ connector: () => new ReplaySubject(1) }));
+
+    this.drawPaths$ = gcode$.pipe(map((gcode) => gcodeToPaths(gcode)));
+
+    var downloadData = (function () {
+      var a = document.createElement('a');
+      a.setAttribute('style', 'display: none');
+      document.body.appendChild(a);
+
+      return (data: string, fileName: string) => {
+        var blob = new Blob([data], { type: 'octet/stream' }),
+          url = window.URL.createObjectURL(blob);
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      };
+    })();
+
+    this.download$.pipe(withLatestFrom(gcode$)).subscribe(([, gcode]) => {
+      downloadData(gcode, `gcode-${new Date().getTime()}.nc`);
+    });
   }
 
   ngOnDestroy(): void {
@@ -107,7 +131,7 @@ export class AppComponent implements OnInit, OnDestroy {
     localStorage.setItem('model', JSON.stringify(model));
   }
 
-  private static generatePathsFromOperations(
+  private static generateGcodeFromOperations(
     model$: Observable<ModelType>,
     shapes$: Observable<CamShape[]>,
     working$: Observable<never>,
@@ -180,28 +204,56 @@ export class AppComponent implements OnInit, OnDestroy {
                       (a, b) => a === b,
                       (s) => JSON.stringify(s),
                     ),
-                    map((v) => v.diameter),
                   ),
                 ]).pipe(
-                  switchMap(([shape, operationParameters, toolDiameter]) => {
-                    switch (operationParameters.type) {
-                      case 'pocket':
-                        return race(
-                          worker
-                            .routePocketHole(shape, {
-                              toolSize: toolDiameter,
-                              toolEngagement:
-                                operationParameters.toolEngagement,
-                              leaveStock: operationParameters.leaveStock,
-                              finalDepth: operationParameters.depth,
-                            })
-                            .pipe(map((r) => GCodeBuilder.clone(r))),
-                          working$,
-                        );
-                    }
+                  switchMap(
+                    ([
+                      shape,
+                      operationParameters,
+                      { diameter, feedRate, plungeFeedRate },
+                    ]) => {
+                      const toolGcode = new GCodeBuilder()
+                        .carveFeedrate(feedRate)
+                        .plungeFeedRate(plungeFeedRate);
+                      switch (operationParameters.type) {
+                        case 'pocket':
+                          return race(
+                            worker
+                              .routePocketHole(shape, {
+                                toolSize: diameter,
+                                toolEngagement:
+                                  operationParameters.toolEngagement,
+                                leaveStock: operationParameters.leaveStock,
+                                finalDepth: operationParameters.depth,
+                              })
+                              .pipe(
+                                map((r) =>
+                                  toolGcode.concat(GCodeBuilder.clone(r)),
+                                ),
+                              ),
+                            working$,
+                          );
+                        case 'flat':
+                          return race(
+                            worker
+                              .flatOutline(shape, {
+                                toolSize: diameter,
+                                toolEngagement:
+                                  operationParameters.toolEngagement,
+                                depth: operationParameters.depth,
+                              })
+                              .pipe(
+                                map((r) =>
+                                  toolGcode.concat(GCodeBuilder.clone(r)),
+                                ),
+                              ),
+                            working$,
+                          );
+                      }
 
-                    return EMPTY;
-                  }),
+                      return EMPTY;
+                    },
+                  ),
                   share({
                     connector: () => new ReplaySubject(1),
                     resetOnRefCountZero: () => timer(0),
@@ -237,10 +289,7 @@ export class AppComponent implements OnInit, OnDestroy {
           carveFeedRate: 1200,
           plungeFeedRate: 300,
         });
-
-        console.log(`gcode done!`);
-
-        return gcodeToPaths(gcode);
+        return gcode;
       }),
     );
   }
