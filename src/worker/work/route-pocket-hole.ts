@@ -26,7 +26,8 @@ export async function routePocketHole(
     toolSize: number;
     toolEngagement: number;
     leaveStock: number;
-    finalDepth: number;
+    depthPerStep: number;
+    steps: number;
   },
 ): Promise<GCodeBuilder> {
   const inputPolygons = input.flatMap((i) => i.polygons.map((p) => p.points));
@@ -138,7 +139,8 @@ export async function routePocketHole(
         if (!inserted) {
           //TODO: all outlines should intersect with the previous batch
           //since they are generated from it
-          outlines.push(path);
+          path.delete();
+
           console.log('orphan path :(');
         }
       }
@@ -151,57 +153,61 @@ export async function routePocketHole(
   let lastOutline: PathD | null = null;
   let start: CamPoint = { x: 0, y: 0 };
 
-  for (const outline of outlines) {
-    const intersectsLastOutline = lastOutline
-      ? await pathsIntersect(outline, lastOutline, PRECISION)
-      : false;
+  for (let step = 0; step < options.steps; step++) {
+    builder.goToSafeHeight();
+    const depth = options.depthPerStep * (step + 1);
 
-    lastOutline?.delete();
-    lastOutline = outline;
+    for (const outline of outlines) {
+      const intersectsLastOutline = lastOutline
+        ? await pathsIntersect(outline, lastOutline, PRECISION)
+        : false;
 
-    const outlinePoints = getPoints(outline);
-    const closestPointIndex = findClosestPointIndex(start, outlinePoints);
-    const removed = outlinePoints.splice(0, closestPointIndex);
-    outlinePoints.push(...removed);
+      lastOutline = outline;
 
-    let firstPoint: CamPoint | null = null,
-      lastPoint: CamPoint | null = null;
+      const outlinePoints = getPoints(outline);
+      const closestPointIndex = findClosestPointIndex(start, outlinePoints);
+      const removed = outlinePoints.splice(0, closestPointIndex);
+      outlinePoints.push(...removed);
 
-    if (
-      !intersectsLastOutline ||
-      getDistance(start, outlinePoints[0]) > options.toolSize * 2
-    ) {
-      builder.goToSafeHeight();
-    }
+      let firstPoint: CamPoint | null = null,
+        lastPoint: CamPoint | null = null;
 
-    for (let i = 0; i < outlinePoints.length; i++) {
-      const pt = outlinePoints[i];
-
-      if (i === 0) {
-        firstPoint = pt;
-      }
-      if (i === outlinePoints.length - 1) {
-        lastPoint = pt;
+      if (
+        !intersectsLastOutline ||
+        getDistance(start, outlinePoints[0]) > options.toolSize * 2
+      ) {
+        builder.goToSafeHeight();
       }
 
-      if (builder.isAtSafetyHeight) {
-        builder.travelTo(pt.x, pt.y);
+      for (let i = 0; i < outlinePoints.length; i++) {
+        const pt = outlinePoints[i];
 
-        builder.plunge(-options.finalDepth); //TODO
-      } else {
-        builder.carveTo(pt.x, pt.y);
+        if (i === 0) {
+          firstPoint = pt;
+        }
+        if (i === outlinePoints.length - 1) {
+          lastPoint = pt;
+        }
+
+        if (builder.isAtSafetyHeight) {
+          builder.travelTo(pt.x, pt.y);
+
+          builder.plunge(-depth);
+        } else {
+          builder.carveTo(pt.x, pt.y);
+        }
       }
-    }
 
-    if (firstPoint && lastPoint && !pointsEqual(firstPoint, lastPoint)) {
-      builder.carveTo(firstPoint.x, firstPoint.y);
-      start = firstPoint;
-    } else if (lastPoint) {
-      start = lastPoint;
+      if (firstPoint && lastPoint && !pointsEqual(firstPoint, lastPoint)) {
+        builder.carveTo(firstPoint.x, firstPoint.y);
+        start = firstPoint;
+      } else if (lastPoint) {
+        start = lastPoint;
+      }
     }
   }
 
-  lastOutline?.delete();
+  outlines.forEach((o) => o.delete());
   return builder;
 }
 
