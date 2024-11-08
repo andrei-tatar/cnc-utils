@@ -2,6 +2,7 @@ import { Matrix3, Vector2 } from 'three';
 import { CamPolygon, CamShape } from '../../cam/types';
 import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
+import { applyConvexHull } from './convex-hull-transform';
 
 export async function applyTransform(
   input: CamShape[],
@@ -114,6 +115,8 @@ export async function applyTransform(
         }
 
         return result.polygons.length ? [result] : [];
+      case 'convexhull':
+        return applyConvexHull(input);
       default:
         return input;
     }

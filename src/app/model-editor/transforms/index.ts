@@ -24,6 +24,10 @@ import {
   Definition as ClipperInflateDefinition,
   ModelType as ClipperInflateModelType,
 } from './transform-clipper-inflate';
+import {
+  Definition as ConvexHullDefinition,
+  ModelType as ConvexHullModelType,
+} from './transform-convexhull';
 
 export type ModelType = {
   transforms: Array<
@@ -34,6 +38,7 @@ export type ModelType = {
       | ScaleModelType
       | FlipModelType
       | ClipperInflateModelType
+      | ConvexHullModelType
     ) & {
       id: string;
       expanded: boolean;
@@ -48,6 +53,7 @@ const transforms = [
   ScaleDefinition,
   FlipDefinition,
   ClipperInflateDefinition,
+  ConvexHullDefinition,
 ];
 
 export const field: FormlyFieldConfig = {
