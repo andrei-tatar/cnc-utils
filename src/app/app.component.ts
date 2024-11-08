@@ -282,7 +282,7 @@ export class AppComponent implements OnInit, OnDestroy {
       ),
       switchMap((s) => combineLatest(s.map((i) => i.result$))),
       distinctUntilChanged((a, b) => {
-        return a.every((aa, index) => b[index] === aa);
+        return a.length === b.length && a.every((aa, index) => b[index] === aa);
       }),
       map((builders) => {
         const result = builders.reduce((a, b) => a.concat(b));
