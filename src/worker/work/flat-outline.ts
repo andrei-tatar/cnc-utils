@@ -8,6 +8,7 @@ export async function flatOutline(
     toolEngagement: number;
     depth: number;
     interpolateStepSize: boolean;
+    allPassesInSameDirection: boolean;
   },
 ): Promise<GCodeBuilder> {
   let minX = Infinity,
@@ -44,10 +45,19 @@ export async function flatOutline(
 
   let x = minX;
   while (x < maxX) {
-    builder.carveTo(x, isAtMinY ? maxY : minY);
-    x += stepSize;
-    builder.carveTo(x, isAtMinY ? maxY : minY);
-    isAtMinY = !isAtMinY;
+
+    if (options.allPassesInSameDirection) {
+      builder.plunge(-options.depth);
+      builder.carveTo(x, maxY);
+      x += stepSize;
+      builder.goToSafeHeight();
+      builder.travelTo(x, minY);
+    } else {
+      builder.carveTo(x, isAtMinY ? maxY : minY);
+      x += stepSize;
+      builder.carveTo(x, isAtMinY ? maxY : minY);
+      isAtMinY = !isAtMinY;
+    }
   }
 
   builder.carveTo(x, isAtMinY ? maxY : minY);

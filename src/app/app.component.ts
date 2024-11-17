@@ -244,6 +244,7 @@ export class AppComponent implements OnInit, OnDestroy {
                                 depth: operationParameters.depth,
                                 interpolateStepSize:
                                   operationParameters.interpolateStepSize,
+                                allPassesInSameDirection: operationParameters.allPassesInSameDirection,
                               })
                               .pipe(
                                 map((r) =>

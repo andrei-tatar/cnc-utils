@@ -5,6 +5,7 @@ export interface ModelType {
   depth: number;
   toolEngagement: number;
   interpolateStepSize: boolean;
+  allPassesInSameDirection: boolean;
 }
 
 const field: FormlyFieldConfig = {
@@ -37,6 +38,14 @@ const field: FormlyFieldConfig = {
         label: 'interpolate step',
       },
     },
+    {
+      key: 'allPassesInSameDirection',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'all passes same dir.',
+      },
+    }
   ],
   expressions: {
     hide: (field: FormlyFieldConfig) => {
