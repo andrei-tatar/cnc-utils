@@ -45,13 +45,12 @@ export async function flatOutline(
 
   let x = minX;
   while (x < maxX) {
-
     if (options.allPassesInSameDirection) {
-      builder.plunge(-options.depth);
       builder.carveTo(x, maxY);
       x += stepSize;
       builder.goToSafeHeight();
       builder.travelTo(x, minY);
+      builder.plunge(-options.depth);
     } else {
       builder.carveTo(x, isAtMinY ? maxY : minY);
       x += stepSize;
