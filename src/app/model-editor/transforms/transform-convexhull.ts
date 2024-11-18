@@ -2,10 +2,20 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 
 export interface ModelType {
   type: 'convexhull';
+  atShapeLevel: boolean;
 }
 
 const field: FormlyFieldConfig = {
-  fieldGroup: [],
+  fieldGroup: [
+    {
+      key: 'atShapeLevel',
+      type: 'boolean',
+      defaultValue: true,
+      props: {
+        label: 'at shape level',
+      },
+    },
+  ],
   expressions: {
     hide: (field: FormlyFieldConfig) => {
       return field.model?.type !== Definition.type;

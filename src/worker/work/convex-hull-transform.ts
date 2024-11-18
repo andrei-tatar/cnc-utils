@@ -1,7 +1,26 @@
 import { CamPolygon, CamShape } from '../../cam/types';
 
-export async function applyConvexHull(input: CamShape[]): Promise<CamShape[]> {
+export async function applyConvexHull(
+  input: CamShape[],
+  options: {
+    atShapeLevel: boolean;
+  },
+): Promise<CamShape[]> {
   return input.map((shape) => {
+    if (options.atShapeLevel) {
+      const allPoints = shape.polygons.flatMap((p) => p.points);
+      const hullPoints = convexhull.makeHull(allPoints);
+      return {
+        sourceShapeId: shape.sourceShapeId,
+        polygons: [
+          {
+            close: true,
+            points: hullPoints,
+          },
+        ],
+      };
+    }
+
     return {
       sourceShapeId: shape.sourceShapeId,
       polygons: shape.polygons.map((poly) => {

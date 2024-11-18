@@ -116,7 +116,7 @@ export async function applyTransform(
 
         return result.polygons.length ? [result] : [];
       case 'convexhull':
-        return applyConvexHull(input);
+        return applyConvexHull(input, { atShapeLevel: transform.atShapeLevel });
       default:
         return input;
     }

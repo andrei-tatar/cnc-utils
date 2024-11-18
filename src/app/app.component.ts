@@ -47,7 +47,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<any>();
   private workLocks = new BehaviorSubject(0);
 
-  private working$ = new Observable<never>((observer) => {
+  private working$ = new Observable<never>(() => {
     this.workLocks.next(this.workLocks.value + 1);
     return () => this.workLocks.next(this.workLocks.value - 1);
   });
@@ -244,7 +244,8 @@ export class AppComponent implements OnInit, OnDestroy {
                                 depth: operationParameters.depth,
                                 interpolateStepSize:
                                   operationParameters.interpolateStepSize,
-                                allPassesInSameDirection: operationParameters.allPassesInSameDirection,
+                                allPassesInSameDirection:
+                                  operationParameters.allPassesInSameDirection,
                               })
                               .pipe(
                                 map((r) =>
@@ -331,7 +332,7 @@ export class AppComponent implements OnInit, OnDestroy {
                     case 'rectangle':
                       return `<svg><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></svg>`;
                     case 'svg':
-                      return t.svg;
+                      return t.svg ?? `<svg></svg>`;
                     case 'line':
                       return `<svg><line x1="0" y1="0" x2="${t.width}" y2="0" /></svg>`;
                     case 'path-data':
