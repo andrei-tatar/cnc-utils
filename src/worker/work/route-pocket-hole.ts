@@ -40,10 +40,10 @@ export async function routePocketHole(
     ...COMMON_ARGS,
   );
 
-  //shrink to leave stock
+  //shrink to leave stock and half tool size
   currentPaths = await clipperInflateRaw(
     currentPaths,
-    -options.leaveStock,
+    -options.leaveStock - options.toolSize / 2,
     ...COMMON_ARGS,
   );
 
