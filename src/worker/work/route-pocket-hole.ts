@@ -30,7 +30,82 @@ export async function routePocketHole(
     steps: number;
   },
 ): Promise<GCodeBuilder> {
-  const inputPolygons = input.flatMap((i) => i.polygons.map((p) => p.points));
+
+  let start: CamPoint = { x: 0, y: 0 };
+  let lastOutline: PathD | null = null;
+
+  const builder = new GCodeBuilder();
+  const sortedShapes = sortShapes(input, start);
+
+  for (const shape of sortedShapes) {
+    builder.sourceShapeId(shape.sourceShapeId);
+    const outlines = await getShapeOutlines(shape, { ...options, start });
+
+    for (let step = 0; step < options.steps; step++) {
+      builder.goToSafeHeight();
+      const depth = options.depthPerStep * (step + 1);
+
+      for (const outline of outlines) {
+        const intersectsLastOutline = lastOutline
+          ? await pathsIntersect(outline, lastOutline, PRECISION)
+          : false;
+
+        lastOutline = outline;
+
+        const outlinePoints = getPoints(outline);
+        const closestPointIndex = findClosestPointIndex(start, outlinePoints);
+        const removed = outlinePoints.splice(0, closestPointIndex);
+        outlinePoints.push(...removed);
+
+        let firstPoint: CamPoint | null = null,
+          lastPoint: CamPoint | null = null;
+
+        if (
+          !intersectsLastOutline ||
+          getDistance(start, outlinePoints[0]) > options.toolSize * 2
+        ) {
+          builder.goToSafeHeight();
+        }
+
+        for (let i = 0; i < outlinePoints.length; i++) {
+          const pt = outlinePoints[i];
+
+          if (i === 0) {
+            firstPoint = pt;
+          }
+          if (i === outlinePoints.length - 1) {
+            lastPoint = pt;
+          }
+
+          if (builder.isAtSafetyHeight) {
+            builder.travelTo(pt.x, pt.y);
+
+            builder.plunge(-depth);
+          } else {
+            builder.carveTo(pt.x, pt.y);
+          }
+        }
+
+        if (firstPoint && lastPoint && !pointsEqual(firstPoint, lastPoint)) {
+          builder.carveTo(firstPoint.x, firstPoint.y);
+          start = firstPoint;
+        } else if (lastPoint) {
+          start = lastPoint;
+        }
+      }
+    }
+  }
+
+  return builder;
+}
+
+async function getShapeOutlines(input: CamShape, options: {
+  leaveStock: number,
+  toolSize: number,
+  toolEngagement: number,
+  start: CamPoint,
+}): Promise<PathD[]> {
+  const inputPolygons = input.polygons.map((p) => p.points);
   let currentPaths = await makePaths(inputPolygons);
 
   //small grow to join any overlapping polygons
@@ -88,7 +163,7 @@ export async function routePocketHole(
         }),
       );
 
-      let start: CamPoint = { x: 0, y: 0 };
+      let start: CamPoint = options.start;
       const sortedBatch: PathD[] = [];
 
       while (currentBatch.length) {
@@ -147,68 +222,44 @@ export async function routePocketHole(
     }
   }
 
-  const builder = new GCodeBuilder();
-  builder.sourceShapeId(input[0]?.sourceShapeId ?? 'unknown');
+  return outlines;
+}
 
-  let lastOutline: PathD | null = null;
-  let start: CamPoint = { x: 0, y: 0 };
-
-  for (let step = 0; step < options.steps; step++) {
-    builder.goToSafeHeight();
-    const depth = options.depthPerStep * (step + 1);
-
-    for (const outline of outlines) {
-      const intersectsLastOutline = lastOutline
-        ? await pathsIntersect(outline, lastOutline, PRECISION)
-        : false;
-
-      lastOutline = outline;
-
-      const outlinePoints = getPoints(outline);
-      const closestPointIndex = findClosestPointIndex(start, outlinePoints);
-      const removed = outlinePoints.splice(0, closestPointIndex);
-      outlinePoints.push(...removed);
-
-      let firstPoint: CamPoint | null = null,
-        lastPoint: CamPoint | null = null;
-
-      if (
-        !intersectsLastOutline ||
-        getDistance(start, outlinePoints[0]) > options.toolSize * 2
-      ) {
-        builder.goToSafeHeight();
+function sortShapes(input: CamShape[], start: CamPoint = { x: 0, y: 0 }): CamShape[] {
+  // this is the first batch, sort it
+  const centers = new Map<CamShape, CamPoint>(
+    input.map((shape) => {
+      let cx = 0,
+        cy = 0;
+      const allPoints = shape.polygons.flatMap(p => p.points);
+      for (const p of allPoints) {
+        cx += p.x;
+        cy += p.y;
       }
+      cx /= allPoints.length;
+      cy /= allPoints.length;
 
-      for (let i = 0; i < outlinePoints.length; i++) {
-        const pt = outlinePoints[i];
+      return [shape, { x: cx, y: cy }];
+    }),
+  );
 
-        if (i === 0) {
-          firstPoint = pt;
-        }
-        if (i === outlinePoints.length - 1) {
-          lastPoint = pt;
-        }
+  const sortedShapes: CamShape[] = [];
+  const toSort = [...input];
 
-        if (builder.isAtSafetyHeight) {
-          builder.travelTo(pt.x, pt.y);
+  while (toSort.length) {
+    const closestPathIndex = findClosestPointMapIndex(
+      start,
+      toSort,
+      (i) => centers.get(i)!,
+    );
 
-          builder.plunge(-depth);
-        } else {
-          builder.carveTo(pt.x, pt.y);
-        }
-      }
-
-      if (firstPoint && lastPoint && !pointsEqual(firstPoint, lastPoint)) {
-        builder.carveTo(firstPoint.x, firstPoint.y);
-        start = firstPoint;
-      } else if (lastPoint) {
-        start = lastPoint;
-      }
-    }
+    const closestPath = toSort[closestPathIndex];
+    sortedShapes.push(closestPath);
+    toSort.splice(closestPathIndex, 1);
+    start = centers.get(closestPath)!;
   }
 
-  outlines.forEach((o) => o.delete());
-  return builder;
+  return sortedShapes;
 }
 
 function getPoints(path: PathD): CamPoint[] {
