@@ -14,8 +14,10 @@ export function gcodeToPaths(gcode: string): CamPath[] {
     path: CamPath | null = null;
 
   for (const line of lines) {
-    if (line.startsWith(SOURCE_SHAPE_PREFIX)) {
-      sourceShapeId = line.substring(SOURCE_SHAPE_PREFIX.length);
+    if (line.startsWith(';')) {
+      if (line.startsWith(SOURCE_SHAPE_PREFIX)) {
+        sourceShapeId = line.substring(SOURCE_SHAPE_PREFIX.length);
+      }
       continue;
     }
 

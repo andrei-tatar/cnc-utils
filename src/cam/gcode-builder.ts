@@ -52,6 +52,11 @@ export class GCodeBuilder {
     return this;
   }
 
+  addModelMetadata(model: string) {
+    this._instructions.push({ type: 'model', model });
+    return this;
+  }
+
   concat(other: GCodeBuilder): GCodeBuilder {
     const result = new GCodeBuilder();
     result._instructions = this._instructions.concat(other._instructions);
@@ -102,6 +107,10 @@ export class GCodeBuilder {
 
         case 'plunge-feedrate':
           plungeFeedRate = instruction.feedRate;
+          break;
+
+        case 'model':
+          gcode.push(`; model=${instruction.model}`);
           break;
       }
     }
@@ -162,4 +171,5 @@ type PathInstruction =
   | { type: 'carve'; to: CamPoint }
   | { type: 'source-shape'; id: string }
   | { type: 'carve-feedrate'; feedRate: number }
-  | { type: 'plunge-feedrate'; feedRate: number };
+  | { type: 'plunge-feedrate'; feedRate: number }
+  | { type: 'model'; model: string };

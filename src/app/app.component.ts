@@ -35,11 +35,13 @@ import {
 import worker from '../worker';
 import { GCodeBuilder } from '../cam/gcode-builder';
 import { gcodeToPaths } from '../cam/gcode-viewer';
+import { getModelMetadata, loadModelFromMetadata } from './store';
+import { readFile } from '../util';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, ViewerComponent, AsyncPipe, ModelEditorComponent],
+  imports: [ViewerComponent, AsyncPipe, ModelEditorComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -63,6 +65,7 @@ export class AppComponent implements OnInit, OnDestroy {
   drawPaths$!: Observable<CamPath[]>;
 
   download$ = new Subject();
+  upload$ = new Subject();
 
   expandedShapes$ = this.model$.pipe(
     map((v) => [
@@ -112,6 +115,29 @@ export class AppComponent implements OnInit, OnDestroy {
     this.download$.pipe(withLatestFrom(gcode$)).subscribe(([, gcode]) => {
       downloadData(gcode, `gcode-${new Date().getTime()}.nc`);
     });
+
+    this.upload$
+      .pipe(
+        switchMap(() => readFile()),
+        switchMap((file) => file.text()),
+        switchMap((content) => {
+          const modelPrefix = '; model=';
+          const foundLine = content
+            .split('\n')
+            .find((l) => l.startsWith(modelPrefix));
+
+          if (foundLine) {
+            return loadModelFromMetadata(
+              foundLine.substring(modelPrefix.length),
+            );
+          }
+
+          return EMPTY;
+        }),
+      )
+      .subscribe((model) => {
+        this.model$.next(model);
+      });
   }
 
   ngOnDestroy(): void {
@@ -288,8 +314,12 @@ export class AppComponent implements OnInit, OnDestroy {
       distinctUntilChanged((a, b) => {
         return a.length === b.length && a.every((aa, index) => b[index] === aa);
       }),
-      map((builders) => {
-        const result = builders.reduce((a, b) => a.concat(b));
+      withLatestFrom(model$),
+      switchMap(async ([builders, model]) => {
+        const compressed = await getModelMetadata(model);
+
+        const meta = new GCodeBuilder().addModelMetadata(compressed);
+        const result = [meta, ...builders].reduce((a, b) => a.concat(b));
         const gcode = result.goToSafeHeight().build({
           safetyHeight: 10,
           carveFeedRate: 1200,

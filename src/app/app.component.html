@@ -4,6 +4,7 @@
       <span>Working...</span>
     } @else {
       <button (click)="download$.next(1)">Download GCODE</button>
+      <button (click)="upload$.next(1)">Load</button>
     }
     <app-model-editor
       [model]="model$.value"
