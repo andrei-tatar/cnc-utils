@@ -51,6 +51,25 @@ export async function pathsIntersect(a: PathD, b: PathD, precision: number) {
   return intersect;
 }
 
+export async function pathIntersectsAnyFromGroup(
+  path: PathD,
+  group: PathsD,
+  precision: number,
+) {
+  const { IntersectD, PathsD, FillRule } = await ClipperModule.value;
+
+  const aa = new PathsD();
+  aa.push_back(path);
+
+  const result = IntersectD(aa, group, FillRule.NonZero, precision * 200);
+  const intersect = result.size() > 0;
+
+  aa.delete();
+  result.delete();
+
+  return intersect;
+}
+
 function getJoinType(type: ClipperJoinType, JoinType: MainModule['JoinType']) {
   switch (type) {
     case 'miter':
@@ -107,4 +126,13 @@ export async function makePaths(polys: CamPoint[][]) {
     paths.push_back(path);
   }
   return paths;
+}
+
+export async function makePathsFromPath(...paths: PathD[]) {
+  const { PathsD } = await ClipperModule.value;
+  let result = new PathsD();
+  for (const p of paths) {
+    result.push_back(p);
+  }
+  return result;
 }

@@ -168,18 +168,20 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const pathCarveMaterial = new LineBasicMaterial({
       transparent: true,
       color: 'lightblue',
-      opacity: 0.2,
+      opacity: 0,
     });
     const pathTravelMaterial = new LineBasicMaterial({
       transparent: true,
       color: 'salmon',
-      opacity: 0.2,
+      opacity: 0,
     });
     const highlightPathCarveMaterial = new LineBasicMaterial({
       color: 'lightblue',
     });
     const highlightPathTravelMaterial = new LineBasicMaterial({
       color: 'salmon',
+      transparent: true,
+      opacity: 0.5,
     });
 
     this.shapes$

@@ -1,9 +1,11 @@
-import { PathD } from 'clipper2-wasm/dist/clipper2z';
+import { PathD, PathsD } from 'clipper2-wasm/dist/clipper2z';
 import {
   clipperInflateRaw,
   getAreaResolver,
   makePaths,
+  makePathsFromPath,
   pathsIntersect,
+  pathIntersectsAnyFromGroup,
 } from '../../cam/clipper';
 import { CamShape, CamPoint } from '../../cam/types';
 import { getDistance, pointsEqual } from '../../util';
@@ -28,23 +30,25 @@ export async function routePocketHole(
     leaveStock: number;
     depthPerStep: number;
     steps: number;
+    startDepth: number;
   },
 ): Promise<GCodeBuilder> {
-
   let start: CamPoint = { x: 0, y: 0 };
-  let lastOutline: PathD | null = null;
 
   const builder = new GCodeBuilder();
-  const sortedShapes = sortShapes(input, start);
+  builder.sourceShapeId(input?.[0].sourceShapeId);
 
-  for (const shape of sortedShapes) {
-    builder.sourceShapeId(shape.sourceShapeId);
+  const groups = await groupShapes(input);
+  const sorted = sortPaths(groups, start);
+
+  for (const shape of sorted) {
     const outlines = await getShapeOutlines(shape, { ...options, start });
 
     for (let step = 0; step < options.steps; step++) {
       builder.goToSafeHeight();
-      const depth = options.depthPerStep * (step + 1);
+      const depth = options.startDepth + options.depthPerStep * (step + 1);
 
+      let lastOutline: PathD | null = null;
       for (const outline of outlines) {
         const intersectsLastOutline = lastOutline
           ? await pathsIntersect(outline, lastOutline, PRECISION)
@@ -94,20 +98,24 @@ export async function routePocketHole(
         }
       }
     }
+
+    outlines.forEach((o) => o.delete());
   }
+
+  sorted.forEach((s) => s.delete());
 
   return builder;
 }
 
-async function getShapeOutlines(input: CamShape, options: {
-  leaveStock: number,
-  toolSize: number,
-  toolEngagement: number,
-  start: CamPoint,
-}): Promise<PathD[]> {
-  const inputPolygons = input.polygons.map((p) => p.points);
-  let currentPaths = await makePaths(inputPolygons);
-
+async function getShapeOutlines(
+  currentPaths: PathsD,
+  options: {
+    leaveStock: number;
+    toolSize: number;
+    toolEngagement: number;
+    start: CamPoint;
+  },
+): Promise<PathD[]> {
   //small grow to join any overlapping polygons
   currentPaths = await clipperInflateRaw(
     currentPaths,
@@ -118,19 +126,22 @@ async function getShapeOutlines(input: CamShape, options: {
   //shrink to leave stock and half tool size
   currentPaths = await clipperInflateRaw(
     currentPaths,
-    -options.leaveStock - options.toolSize / 2,
+    -options.leaveStock,
     ...COMMON_ARGS,
   );
 
   const outlines: PathD[] = [];
   const stepSize = -options.toolSize * options.toolEngagement;
+  let firstStep = true;
   while (true) {
     // get the next outline
     currentPaths = await clipperInflateRaw(
       currentPaths,
-      stepSize,
+      firstStep ? -options.toolSize / 2 : stepSize,
       ...COMMON_ARGS,
     );
+
+    firstStep = false;
 
     // no polygons, end.
     const pathsSize = currentPaths.size();
@@ -145,41 +156,7 @@ async function getShapeOutlines(input: CamShape, options: {
     }
 
     if (outlines.length === 0) {
-      // this is the first batch, sort it
-      const centers = new Map<PathD, CamPoint>(
-        currentBatch.map((path) => {
-          let cx = 0,
-            cy = 0;
-          const pathSize = path.size();
-          for (let i = 0; i < pathSize; i++) {
-            const p = path.get(i);
-            cx += p.x;
-            cy += p.y;
-          }
-          cx /= pathSize;
-          cy /= pathSize;
-
-          return [path, { x: cx, y: cy }];
-        }),
-      );
-
-      let start: CamPoint = options.start;
-      const sortedBatch: PathD[] = [];
-
-      while (currentBatch.length) {
-        const closestPathIndex = findClosestPointMapIndex(
-          start,
-          currentBatch,
-          (i) => centers.get(i)!,
-        );
-
-        const closestPath = currentBatch[closestPathIndex];
-        sortedBatch.push(closestPath);
-        currentBatch.splice(closestPathIndex, 1);
-        start = centers.get(closestPath)!;
-      }
-
-      outlines.push(...sortedBatch);
+      outlines.push(...currentBatch);
     } else {
       const areas = new Map<PathD, number>();
       const areaResolver = await getAreaResolver();
@@ -215,6 +192,7 @@ async function getShapeOutlines(input: CamShape, options: {
           //TODO: all outlines should intersect with the previous batch
           //since they are generated from it
           path.delete();
+          // outlines.push(path);
 
           console.log('orphan path :(');
         }
@@ -225,25 +203,65 @@ async function getShapeOutlines(input: CamShape, options: {
   return outlines;
 }
 
-function sortShapes(input: CamShape[], start: CamPoint = { x: 0, y: 0 }): CamShape[] {
-  // this is the first batch, sort it
-  const centers = new Map<CamShape, CamPoint>(
-    input.map((shape) => {
-      let cx = 0,
-        cy = 0;
-      const allPoints = shape.polygons.flatMap(p => p.points);
-      for (const p of allPoints) {
-        cx += p.x;
-        cy += p.y;
-      }
-      cx /= allPoints.length;
-      cy /= allPoints.length;
+/**
+ * Group polygons so that intersecting ones are processed together.
+ * This is to optimize travel and go depth first
+ */
+async function groupShapes(input: CamShape[]) {
+  const polygons = input.flatMap((p) => p.polygons).map((p) => p.points);
+  const paths = await makePaths(polygons);
 
-      return [shape, { x: cx, y: cy }];
+  const groups: PathsD[] = [];
+
+  const pathsSize = paths.size();
+  for (let i = 0; i < pathsSize; i++) {
+    const test = paths.get(i);
+
+    let found = false;
+    for (const group of groups) {
+      if (await pathIntersectsAnyFromGroup(test, group, PRECISION)) {
+        group.push_back(test);
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      const newGroup = await makePathsFromPath(test);
+      groups.push(newGroup);
+    }
+  }
+
+  return groups;
+}
+
+function sortPaths(input: PathsD[], start: CamPoint = { x: 0, y: 0 }) {
+  const centers = new Map<PathsD, CamPoint>(
+    input.map((paths) => {
+      let cx = 0,
+        cy = 0,
+        totalPoints = 0;
+
+      for (let i = 0; i < paths.size(); i++) {
+        const path = paths.get(i);
+
+        for (let j = 0; j < path.size(); j++) {
+          const point = path.get(j);
+
+          cx += point.x;
+          cy += point.y;
+          totalPoints++;
+        }
+      }
+
+      cx /= totalPoints;
+      cy /= totalPoints;
+
+      return [paths, { x: cx, y: cy }];
     }),
   );
 
-  const sortedShapes: CamShape[] = [];
+  const sortedShapes: PathsD[] = [];
   const toSort = [...input];
 
   while (toSort.length) {

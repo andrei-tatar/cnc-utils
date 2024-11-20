@@ -226,6 +226,7 @@ export class AppComponent implements OnInit, OnDestroy {
                                 leaveStock: operationParameters.leaveStock,
                                 depthPerStep: operationParameters.depth,
                                 steps: operationParameters.steps,
+                                startDepth: operationParameters.startDepth,
                               })
                               .pipe(
                                 map((r) =>

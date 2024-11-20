@@ -2,6 +2,7 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 
 export interface ModelType {
   type?: 'pocket';
+  startDepth: number;
   depth: number;
   steps: number;
   leaveStock: number;
@@ -10,6 +11,15 @@ export interface ModelType {
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
+    {
+      key: 'startDepth',
+      type: 'number',
+      defaultValue: 0,
+      props: {
+        label: 'start depth',
+        required: true,
+      },
+    },
     {
       key: 'depth',
       type: 'number',
