@@ -10,6 +10,7 @@ import {
 import { CamShape, CamPoint } from '../../cam/types';
 import { getDistance, pointsEqual } from '../../util';
 import { GCodeBuilder } from '../../cam/gcode-builder';
+import { getCentroid } from './utils';
 
 const PRECISION = 0.01;
 const MITER_LIMIT = 2;
@@ -238,24 +239,20 @@ async function groupShapes(input: CamShape[]) {
 function sortPaths(input: PathsD[], start: CamPoint = { x: 0, y: 0 }) {
   const centers = new Map<PathsD, CamPoint>(
     input.map((paths) => {
-      let cx = 0,
-        cy = 0,
-        totalPoints = 0;
-
+      const centroids: CamPoint[] = [];
       for (let i = 0; i < paths.size(); i++) {
         const path = paths.get(i);
 
+        const allPoints: CamPoint[] = [];
         for (let j = 0; j < path.size(); j++) {
           const point = path.get(j);
-
-          cx += point.x;
-          cy += point.y;
-          totalPoints++;
+          allPoints.push({ x: point.x, y: point.y });
         }
+        centroids.push(getCentroid(allPoints));
       }
 
-      cx /= totalPoints;
-      cy /= totalPoints;
+      const cx = centroids.reduce((s, a) => s + a.x, 0) / centroids.length;
+      const cy = centroids.reduce((s, a) => s + a.y, 0) / centroids.length;
 
       return [paths, { x: cx, y: cy }];
     }),

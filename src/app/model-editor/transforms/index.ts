@@ -28,6 +28,10 @@ import {
   Definition as ConvexHullDefinition,
   ModelType as ConvexHullModelType,
 } from './transform-convexhull';
+import {
+  Definition as OneTimeDefinition,
+  ModelType as OneTimeModelType,
+} from './transform-onetime';
 
 export type ModelType = {
   transforms: Array<
@@ -39,6 +43,7 @@ export type ModelType = {
       | FlipModelType
       | ClipperInflateModelType
       | ConvexHullModelType
+      | OneTimeModelType
     ) & {
       id: string;
       expanded: boolean;
@@ -54,6 +59,7 @@ const transforms = [
   FlipDefinition,
   ClipperInflateDefinition,
   ConvexHullDefinition,
+  OneTimeDefinition,
 ];
 
 export const field: FormlyFieldConfig = {

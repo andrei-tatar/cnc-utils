@@ -3,6 +3,7 @@ import { CamPolygon, CamShape } from '../../cam/types';
 import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
 import { applyConvexHull } from './convex-hull-transform';
+import { getCentroid } from './utils';
 
 export async function applyTransform(
   input: CamShape[],
@@ -117,6 +118,30 @@ export async function applyTransform(
         return result.polygons.length ? [result] : [];
       case 'convexhull':
         return applyConvexHull(input, { atShapeLevel: transform.atShapeLevel });
+
+      case 'onetime':
+        return input.map((s) => {
+          const radius = 21;
+          const newpolygons: CamPolygon[] = [];
+          for (const p of s.polygons) {
+            const { x: cx, y: cy } = getCentroid(p.points);
+
+            const newPoly: CamPolygon = { close: true, points: [] };
+            for (let i = 0; i < 60; i++) {
+              const a = (2 * Math.PI * i) / 60;
+              const x = cx + Math.sin(a) * radius;
+              const y = cy + Math.cos(a) * radius;
+              newPoly.points.push({ x, y });
+            }
+            newpolygons.push(newPoly);
+          }
+
+          return {
+            sourceShapeId: s.sourceShapeId,
+            polygons: [...s.polygons, ...newpolygons],
+          } as CamShape;
+        });
+
       default:
         return input;
     }
