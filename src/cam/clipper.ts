@@ -70,6 +70,14 @@ export async function pathIntersectsAnyFromGroup(
   return intersect;
 }
 
+export async function simplifyPath(a: PathD, precision: number) {
+  const { SimplifyPathD } = await ClipperModule.value;
+
+  const simplified = SimplifyPathD(a, precision, true);
+
+  return simplified;
+}
+
 function getJoinType(type: ClipperJoinType, JoinType: MainModule['JoinType']) {
   switch (type) {
     case 'miter':

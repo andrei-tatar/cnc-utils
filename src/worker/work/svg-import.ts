@@ -26,7 +26,7 @@ export async function importSvg(
     shapes.push(camShape);
 
     for (const shape of path.subPaths) {
-      const points = shape.getPoints(50);
+      const points = shape.getPoints(300);
       camShape.polygons.push({
         points,
         close:

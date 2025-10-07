@@ -6,6 +6,7 @@ import {
   makePathsFromPath,
   pathsIntersect,
   pathIntersectsAnyFromGroup,
+  simplifyPath,
 } from '../../cam/clipper';
 import { CamShape, CamPoint } from '../../cam/types';
 import { getDistance, pointsEqual } from '../../util';
@@ -82,11 +83,11 @@ export async function routePocketHole(
             lastPoint = pt;
           }
 
-          if (builder.isAtSafetyHeight) {
+              if (builder.isAtSafetyHeight) {
             builder.travelTo(pt.x, pt.y);
 
-            builder.plunge(-depth);
-          } else {
+                builder.plunge(-depth);
+              } else {
             builder.carveTo(pt.x, pt.y);
           }
         }
@@ -153,7 +154,10 @@ async function getShapeOutlines(
     // insert the polygons so that there's minimum amount of travel
     const currentBatch: PathD[] = [];
     for (let i = 0; i < pathsSize; i++) {
-      currentBatch.push(currentPaths.get(i));
+      const path = currentPaths.get(i);
+      const simplified = await simplifyPath(path, 0.05);
+      currentBatch.push(simplified);
+      path.delete();
     }
 
     if (outlines.length === 0) {
