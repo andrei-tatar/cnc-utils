@@ -83,11 +83,11 @@ export async function routePocketHole(
             lastPoint = pt;
           }
 
-              if (builder.isAtSafetyHeight) {
+          if (builder.isAtSafetyHeight) {
             builder.travelTo(pt.x, pt.y);
 
-                builder.plunge(-depth);
-              } else {
+            builder.plunge(-depth);
+          } else {
             builder.carveTo(pt.x, pt.y);
           }
         }
@@ -241,6 +241,10 @@ async function groupShapes(input: CamShape[]) {
 }
 
 function sortPaths(input: PathsD[], start: CamPoint = { x: 0, y: 0 }) {
+  if (input.length <= 1) {
+    return input;
+  }
+
   const centers = new Map<PathsD, CamPoint>(
     input.map((paths) => {
       const centroids: CamPoint[] = [];
