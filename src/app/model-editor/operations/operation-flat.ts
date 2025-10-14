@@ -6,6 +6,8 @@ export interface ModelType {
   toolEngagement: number;
   interpolateStepSize: boolean;
   allPassesInSameDirection: boolean;
+  alongAxis: 'x' | 'y';
+  growByToolsize: boolean;
 }
 
 const field: FormlyFieldConfig = {
@@ -31,6 +33,19 @@ const field: FormlyFieldConfig = {
       },
     },
     {
+      key: 'alongAxis',
+      type: 'enum',
+      defaultValue: 'y',
+      props: {
+        label: 'along axis',
+        required: true,
+        options: [
+          { value: 'x', label: 'x' },
+          { value: 'y', label: 'y' },
+        ],
+      },
+    },
+    {
       key: 'interpolateStepSize',
       type: 'boolean',
       defaultValue: false,
@@ -45,7 +60,15 @@ const field: FormlyFieldConfig = {
       props: {
         label: 'all passes same dir.',
       },
-    }
+    },
+    {
+      key: 'growByToolsize',
+      type: 'boolean',
+      defaultValue: true,
+      props: {
+        label: 'grow by tool size',
+      },
+    },
   ],
   expressions: {
     hide: (field: FormlyFieldConfig) => {

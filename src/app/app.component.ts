@@ -266,6 +266,9 @@ export class AppComponent implements OnInit, OnDestroy {
                                   operationParameters.interpolateStepSize,
                                 allPassesInSameDirection:
                                   operationParameters.allPassesInSameDirection,
+                                alongAxis: operationParameters.alongAxis,
+                                growByToolsize:
+                                  operationParameters.growByToolsize,
                               })
                               .pipe(
                                 map((r) =>
