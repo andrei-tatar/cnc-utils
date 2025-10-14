@@ -25,12 +25,16 @@ export function gcodeToPaths(gcode: string): CamPath[] {
 
     let type: CamPath['type'];
     switch (instruction) {
-      case 'G00':
+      case 'G0':
         type = 'travel';
         break;
-      case 'G01':
+      case 'G1':
         type = 'carve';
         break;
+      case 'M30':
+        // stop program; nothing to show
+        continue;
+
       default:
         throw new Error(`unsupported gcode instruction ${instruction}`);
     }

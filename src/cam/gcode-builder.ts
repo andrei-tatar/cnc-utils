@@ -57,6 +57,11 @@ export class GCodeBuilder {
     return this;
   }
 
+  stopProgram() {
+    this._instructions.push({ type: 'stop-program' });
+    return this;
+  }
+
   concat(other: GCodeBuilder): GCodeBuilder {
     const result = new GCodeBuilder();
     result._instructions = this._instructions.concat(other._instructions);
@@ -81,20 +86,20 @@ export class GCodeBuilder {
     for (const instruction of this._instructions) {
       switch (instruction.type) {
         case 'safety-height':
-          move('G00', { z: options.safetyHeight });
+          move('G0', { z: options.safetyHeight });
           break;
 
         case 'plunge':
           //TODO: optional helical plunge ?
-          move('G01', { z: instruction.depth }, plungeFeedRate);
+          move('G1', { z: instruction.depth }, plungeFeedRate);
           break;
 
         case 'travel':
-          move('G00', instruction.to);
+          move('G0', instruction.to);
           break;
 
         case 'carve':
-          move('G01', instruction.to, carveFeedRate);
+          move('G1', instruction.to, carveFeedRate);
           break;
 
         case 'source-shape':
@@ -111,6 +116,10 @@ export class GCodeBuilder {
 
         case 'model':
           gcode.push(`; model=${instruction.model}`);
+          break;
+
+        case 'stop-program':
+          gcode.push('M30');
           break;
       }
     }
@@ -172,4 +181,5 @@ type PathInstruction =
   | { type: 'source-shape'; id: string }
   | { type: 'carve-feedrate'; feedRate: number }
   | { type: 'plunge-feedrate'; feedRate: number }
-  | { type: 'model'; model: string };
+  | { type: 'model'; model: string }
+  | { type: 'stop-program' };

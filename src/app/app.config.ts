@@ -17,7 +17,7 @@ import { FormlyModule } from '@ngx-formly/core';
 import { FormlyBootstrapModule } from '@ngx-formly/bootstrap';
 import { ArrayTypeComponent } from './model-editor/components/array-type-component';
 import { FileTypeComponent } from './model-editor/components/file-type-component';
-import { HiddnTypeComponent } from './model-editor/components/hidden-type-component';
+import { HiddenTypeComponent } from './model-editor/components/hidden-type-component';
 
 export function WholeNumberValidator(
   control: AbstractControl,
@@ -30,9 +30,7 @@ export function WholeNumberValidator(
 }
 
 export const appConfig: ApplicationConfig = {
-  
   providers: [
-
     //provideZoneChangeDetection({ eventCoalescing: true }),
     provideExperimentalZonelessChangeDetection(),
     provideRouter(routes),
@@ -43,7 +41,7 @@ export const appConfig: ApplicationConfig = {
         types: [
           { name: 'repeat', component: ArrayTypeComponent },
           { name: 'file', component: FileTypeComponent },
-          { name: 'hidden', component: HiddnTypeComponent },
+          { name: 'hidden', component: HiddenTypeComponent },
         ],
         validators: [
           { name: 'whole-number', validation: WholeNumberValidator },

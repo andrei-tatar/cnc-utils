@@ -155,7 +155,7 @@ async function getShapeOutlines(
     const currentBatch: PathD[] = [];
     for (let i = 0; i < pathsSize; i++) {
       const path = currentPaths.get(i);
-      const simplified = await simplifyPath(path, 0.05);
+      const simplified = await simplifyPath(path, PRECISION);
       currentBatch.push(simplified);
       path.delete();
     }

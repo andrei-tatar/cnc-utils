@@ -109,7 +109,7 @@ export async function applyTransform(
           const pathSize = path.size();
           for (let j = 0; j < pathSize; j++) {
             const point = path.get(j);
-            poly.points.push({ x: Number(point.x), y: Number(point.y) });
+            poly.points.push({ x: point.x, y: point.y });
           }
 
           result.polygons.push(poly);

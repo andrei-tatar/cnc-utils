@@ -10,4 +10,4 @@ import { FieldType } from '@ngx-formly/bootstrap/form-field';
   styles: ``,
   template: ``,
 })
-export class HiddnTypeComponent extends FieldType {}
+export class HiddenTypeComponent extends FieldType {}

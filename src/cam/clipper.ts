@@ -4,6 +4,28 @@ import { lazy } from '../util';
 
 type ClipperJoinType = 'miter' | 'square' | 'round';
 type ClipperEndType = 'polygon' | 'joined' | 'butt' | 'square' | 'round';
+export type ClipperClipType = 'intersection' | 'union' | 'difference' | 'xor';
+export type ClipperFillRule = 'even-odd' | 'non-zero' | 'positive' | 'negative';
+
+export async function clipperBooleanOperation(
+  a: PathsD,
+  b: PathsD,
+  clipType: ClipperClipType,
+  fillRule: ClipperFillRule,
+  precision: number,
+) {
+  const { BooleanOpD, ClipType, PathsD, FillRule } = await ClipperModule.value;
+
+  const result = BooleanOpD(
+    getClipType(clipType, ClipType),
+    getFillRule(fillRule, FillRule),
+    a,
+    b,
+    precision,
+  );
+
+  return result;
+}
 
 export async function clipperInflateRaw(
   paths: PathsD,
@@ -76,6 +98,32 @@ export async function simplifyPath(a: PathD, precision: number) {
   const simplified = SimplifyPathD(a, precision, true);
 
   return simplified;
+}
+
+function getFillRule(type: ClipperFillRule, FillRule: MainModule['FillRule']) {
+  switch (type) {
+    case 'even-odd':
+      return FillRule.EvenOdd;
+    case 'negative':
+      return FillRule.Negative;
+    case 'positive':
+      return FillRule.Positive;
+    case 'non-zero':
+      return FillRule.NonZero;
+  }
+}
+
+function getClipType(type: ClipperClipType, ClipType: MainModule['ClipType']) {
+  switch (type) {
+    case 'difference':
+      return ClipType.Difference;
+    case 'intersection':
+      return ClipType.Intersection;
+    case 'union':
+      return ClipType.Union;
+    case 'xor':
+      return ClipType.Xor;
+  }
 }
 
 function getJoinType(type: ClipperJoinType, JoinType: MainModule['JoinType']) {

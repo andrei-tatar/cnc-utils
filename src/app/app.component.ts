@@ -1,5 +1,4 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
 import { ViewerComponent } from './viewer/viewer.component';
 import {
   BehaviorSubject,
@@ -10,6 +9,7 @@ import {
   ignoreElements,
   map,
   merge,
+  NEVER,
   Observable,
   race,
   ReplaySubject,
@@ -36,7 +36,7 @@ import worker from '../worker';
 import { GCodeBuilder } from '../cam/gcode-builder';
 import { gcodeToPaths } from '../cam/gcode-viewer';
 import { getModelMetadata, loadModelFromMetadata } from './store';
-import { readFile } from '../util';
+import { deepEqual, readFile } from '../util';
 
 @Component({
   selector: 'app-root',
@@ -79,14 +79,7 @@ export class AppComponent implements OnInit, OnDestroy {
       tap(this.saveModel.bind(this)),
     );
 
-    const shapes$ = AppComponent.generateShapesFromModel(
-      model$,
-      this.working$,
-    ).pipe(
-      share({
-        connector: () => new ReplaySubject(1),
-      }),
-    );
+    const shapes$ = AppComponent.generateShapesFromModel(model$, this.working$);
     this.drawShapes$ = shapes$;
 
     const gcode$ = AppComponent.generateGcodeFromOperations(
@@ -320,7 +313,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
         const meta = new GCodeBuilder().addModelMetadata(compressed);
         const result = [meta, ...builders].reduce((a, b) => a.concat(b));
-        const gcode = result.goToSafeHeight().build({
+        const gcode = result.goToSafeHeight().stopProgram().build({
           safetyHeight: 10,
           carveFeedRate: 1200,
           plungeFeedRate: 300,
@@ -334,7 +327,7 @@ export class AppComponent implements OnInit, OnDestroy {
     model$: Observable<ModelType>,
     working$: Observable<never>,
   ) {
-    return model$.pipe(
+    const shapes$ = model$.pipe(
       scan(
         (ctx, { shapes }) => {
           return shapes.map(
@@ -356,27 +349,50 @@ export class AppComponent implements OnInit, OnDestroy {
               const shapeTransforms$ = new BehaviorSubject(shapeTransforms);
 
               const shape$ = shapeParameters$.pipe(
+                distinctUntilChanged((a, b) => deepEqual(a, b)),
                 map((t) => {
-                  switch (t.type) {
-                    case 'circle':
-                      return `<svg><circle r="${t.diameter / 2}"/></svg>`;
-                    case 'rectangle':
-                      return `<svg><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></svg>`;
-                    case 'svg':
-                      return t.svg ?? `<svg></svg>`;
-                    case 'line':
-                      return `<svg><line x1="0" y1="0" x2="${t.width}" y2="0" /></svg>`;
-                    case 'path-data':
-                      return `<svg><path d="${t.data}" /></svg>`;
+                  if (t.type === 'boolean') {
+                    const shape1$ = shapes$.pipe(
+                      switchMap(
+                        (s) =>
+                          s.find((v) => v.shapeId === t.shape1Id)?.result$ ??
+                          NEVER,
+                      ),
+                      distinctUntilChanged(),
+                    );
+                    const shape2$ = shapes$.pipe(
+                      switchMap(
+                        (s) =>
+                          s.find((v) => v.shapeId === t.shape2Id)?.result$ ??
+                          NEVER,
+                      ),
+                      distinctUntilChanged(),
+                    );
+                    const result$: Observable<CamShape[]> = combineLatest([
+                      shape1$,
+                      shape2$,
+                    ]).pipe(
+                      debounceTime(0),
+                      switchMap(([s1, s2]) => {
+                        if (!t.operationType || !t.fillRule) {
+                          return [];
+                        }
 
-                    default:
-                      return `<svg></svg>`;
+                        return worker.applyBooleanOperation(
+                          s1,
+                          s2,
+                          t.operationType,
+                          t.fillRule,
+                          shapeId,
+                        );
+                      }),
+                    );
+                    return result$;
                   }
+
+                  return worker.importSvg(this.createSvgFromShape(t), shapeId);
                 }),
-                distinctUntilChanged(),
-                switchMap((svg) =>
-                  race(worker.importSvg(svg, shapeId), working$),
-                ),
+                switchMap((resolveShape) => race(resolveShape, working$)),
                 share({
                   connector: () => new ReplaySubject(1),
                   resetOnRefCountZero: () => timer(0),
@@ -483,8 +499,36 @@ export class AppComponent implements OnInit, OnDestroy {
           result$: Observable<CamShape[]>;
         }>,
       ),
+      share({
+        connector: () => new ReplaySubject(1),
+      }),
+    );
+
+    return shapes$.pipe(
       switchMap((s) => combineLatest(s.map((i) => i.result$))),
       map((s) => s.flatMap((i) => i)),
+      share({
+        connector: () => new ReplaySubject(1),
+      }),
     );
+  }
+
+  private static createSvgFromShape(
+    t: Exclude<ShapeParameters, { type: 'boolean' }>,
+  ) {
+    switch (t.type) {
+      case 'circle':
+        return `<svg><circle r="${t.diameter / 2}"/></svg>`;
+      case 'rectangle':
+        return `<svg><rect width="${t.width}" height="${t.height}" rx="${t.radius}"/></svg>`;
+      case 'svg':
+        return t.svg ?? `<svg></svg>`;
+      case 'line':
+        return `<svg><line x1="0" y1="0" x2="${t.width}" y2="0" /></svg>`;
+      case 'path-data':
+        return `<svg><path d="${t.data}" /></svg>`;
+      default:
+        return `<svg></svg>`;
+    }
   }
 }
