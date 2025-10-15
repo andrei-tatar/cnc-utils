@@ -117,7 +117,10 @@ export async function applyTransform(
 
         return result.polygons.length ? [result] : [];
       case 'convexhull':
-        return applyConvexHull(input, { atShapeLevel: transform.atShapeLevel });
+        return applyConvexHull(input, {
+          atShapeLevel: transform.atShapeLevel,
+          mergeAllShapes: transform.mergeAllShapes,
+        });
 
       case 'onetime':
         return input.map((s) => {

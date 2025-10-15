@@ -2,7 +2,8 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 
 export interface ModelType {
   type: 'convexhull';
-  atShapeLevel: boolean;
+  atShapeLevel?: boolean;
+  mergeAllShapes?: boolean;
 }
 
 const field: FormlyFieldConfig = {
@@ -13,6 +14,14 @@ const field: FormlyFieldConfig = {
       defaultValue: true,
       props: {
         label: 'at shape level',
+      },
+    },
+    {
+      key: 'mergeAllShapes',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'merge all shapes',
       },
     },
   ],

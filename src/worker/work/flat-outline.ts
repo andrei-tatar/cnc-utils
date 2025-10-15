@@ -1,6 +1,7 @@
-import { CamShape } from '../../cam/types';
+import { CamPoint, CamShape } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { applyTransform } from './apply-transform';
+import { applyBooleanOperation } from './boolean-operation';
 
 export async function flatOutline(
   input: CamShape[],
@@ -12,12 +13,13 @@ export async function flatOutline(
     allPassesInSameDirection: boolean;
     alongAxis: 'x' | 'y';
     growByToolsize: boolean;
+    applyConvexHullOnShape: boolean;
   },
 ): Promise<GCodeBuilder> {
   if (options.growByToolsize) {
     input = await applyTransform(input, {
       type: 'clipper-inflate',
-      offset: options.toolSize * 0.6,
+      offset: options.toolSize * 0.5,
       endType: 'polygon',
       joinType: 'round',
       miterLimit: 0,
@@ -26,19 +28,24 @@ export async function flatOutline(
     });
   }
 
-  input = await applyTransform(input, {
-    type: 'convexhull',
-    atShapeLevel: false,
-  });
-
-  const allPolygons = input.flatMap((v) => v.polygons);
+  if (options.applyConvexHullOnShape) {
+    input = await applyTransform(input, {
+      type: 'convexhull',
+      mergeAllShapes: true,
+    });
+  }
 
   const alongAxis = options.alongAxis;
   const normalAxis = alongAxis === 'y' ? 'x' : 'y';
 
-  function getCoords(normal: number, along: number): [x: number, y: number] {
+  function getPoint(normal: number, along: number): CamPoint {
     const x = alongAxis === 'x' ? along : normal;
     const y = alongAxis === 'y' ? along : normal;
+    return { x, y };
+  }
+
+  function getCoords(normal: number, along: number): [x: number, y: number] {
+    const { x, y } = getPoint(normal, along);
     return [x, y];
   }
 
@@ -69,40 +76,42 @@ export async function flatOutline(
 
   let normal = minNormal;
   while (normal <= maxNormal) {
-    let minAlongAxis = Infinity,
-      maxAlongAxis = -Infinity;
+    const DISTANCE = 10e3;
+    const pathPolygon: CamShape[] = [
+      {
+        polygons: [
+          {
+            close: true,
+            points: [
+              getPoint(normal - options.toolSize / 2, -DISTANCE),
+              getPoint(normal + options.toolSize / 2, -DISTANCE),
+              getPoint(normal + options.toolSize / 2, DISTANCE),
+              getPoint(normal - options.toolSize / 2, DISTANCE),
+            ],
+          },
+        ],
+        sourceShapeId: '',
+      },
+    ];
 
-    for (const poly of allPolygons) {
-      const lastPoint = poly.close
-        ? poly.points.length
-        : poly.points.length - 1;
-      for (let i = 0; i < lastPoint; i++) {
-        const p1 = poly.points[i];
-        const p2 = poly.points[i === poly.points.length - 1 ? 0 : i + 1];
-
-        if (
-          (normal >= p1[normalAxis] && normal <= p2[normalAxis]) ||
-          (normal >= p2[normalAxis] && normal <= p1[normalAxis])
-        ) {
-          const m =
-            (p2[alongAxis] - p1[alongAxis]) / (p2[normalAxis] - p1[normalAxis]);
-
-          if (m === Infinity || m === -Infinity) {
-            minAlongAxis = Math.min(minAlongAxis, p1[alongAxis], p2[alongAxis]);
-            maxAlongAxis = Math.max(maxAlongAxis, p1[alongAxis], p2[alongAxis]);
-          } else {
-            const alongAxisValue =
-              p1[alongAxis] + m * (normal - p1[normalAxis]);
-            minAlongAxis = Math.min(minAlongAxis, alongAxisValue);
-            maxAlongAxis = Math.max(maxAlongAxis, alongAxisValue);
-          }
-        }
-      }
+    const intersection = await applyBooleanOperation(
+      input,
+      pathPolygon,
+      'intersection',
+      'non-zero',
+      '',
+    );
+    const intersectionPolygons = intersection.flatMap((i) => i.polygons);
+    if (!intersectionPolygons.length) {
+      normal += normalStepSize;
+      continue;
     }
 
-    if (minAlongAxis === Infinity) {
-      break;
-    }
+    const intersectionPoints = intersectionPolygons.flatMap((p) => p.points);
+
+    const alongAxisCoords = intersectionPoints.map((p) => p[alongAxis]);
+    let minAlongAxis = Math.min(...alongAxisCoords);
+    let maxAlongAxis = Math.max(...alongAxisCoords);
 
     if (Math.abs(minAlongAxis - maxAlongAxis) < idealStepSize) {
       minAlongAxis -= idealStepSize / 2;

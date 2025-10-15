@@ -8,6 +8,7 @@ export interface ModelType {
   allPassesInSameDirection: boolean;
   alongAxis: 'x' | 'y';
   growByToolsize: boolean;
+  applyConvexHullOnShape: boolean;
 }
 
 const field: FormlyFieldConfig = {
@@ -67,6 +68,14 @@ const field: FormlyFieldConfig = {
       defaultValue: true,
       props: {
         label: 'grow by tool size',
+      },
+    },
+    {
+      key: 'applyConvexHullOnShape',
+      type: 'boolean',
+      defaultValue: true,
+      props: {
+        label: 'apply convex hull',
       },
     },
   ],

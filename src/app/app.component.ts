@@ -226,26 +226,21 @@ export class AppComponent implements OnInit, OnDestroy {
                   ),
                 ]).pipe(
                   switchMap(
-                    ([
-                      shape,
-                      operationParameters,
-                      { diameter, feedRate, plungeFeedRate },
-                    ]) => {
+                    ([shape, op, { diameter, feedRate, plungeFeedRate }]) => {
                       const toolGcode = new GCodeBuilder()
                         .carveFeedrate(feedRate)
                         .plungeFeedRate(plungeFeedRate);
-                      switch (operationParameters.type) {
+                      switch (op.type) {
                         case 'pocket':
                           return race(
                             worker
                               .routePocketHole(shape, {
                                 toolSize: diameter,
-                                toolEngagement:
-                                  operationParameters.toolEngagement,
-                                leaveStock: operationParameters.leaveStock,
-                                depthPerStep: operationParameters.depth,
-                                steps: operationParameters.steps,
-                                startDepth: operationParameters.startDepth,
+                                toolEngagement: op.toolEngagement,
+                                leaveStock: op.leaveStock,
+                                depthPerStep: op.depth,
+                                steps: op.steps,
+                                startDepth: op.startDepth,
                               })
                               .pipe(
                                 map((r) =>
@@ -259,16 +254,15 @@ export class AppComponent implements OnInit, OnDestroy {
                             worker
                               .flatOutline(shape, {
                                 toolSize: diameter,
-                                toolEngagement:
-                                  operationParameters.toolEngagement,
-                                depth: operationParameters.depth,
-                                interpolateStepSize:
-                                  operationParameters.interpolateStepSize,
+                                toolEngagement: op.toolEngagement,
+                                depth: op.depth,
+                                interpolateStepSize: op.interpolateStepSize,
                                 allPassesInSameDirection:
-                                  operationParameters.allPassesInSameDirection,
-                                alongAxis: operationParameters.alongAxis,
-                                growByToolsize:
-                                  operationParameters.growByToolsize,
+                                  op.allPassesInSameDirection,
+                                alongAxis: op.alongAxis,
+                                growByToolsize: op.growByToolsize,
+                                applyConvexHullOnShape:
+                                  op.applyConvexHullOnShape,
                               })
                               .pipe(
                                 map((r) =>

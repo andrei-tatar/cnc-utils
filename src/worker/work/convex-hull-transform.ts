@@ -3,9 +3,25 @@ import { CamPolygon, CamShape } from '../../cam/types';
 export async function applyConvexHull(
   input: CamShape[],
   options: {
-    atShapeLevel: boolean;
+    atShapeLevel?: boolean;
+    mergeAllShapes?: boolean;
   },
 ): Promise<CamShape[]> {
+  if (options.mergeAllShapes) {
+    const allPoints = input.flatMap((s) => s.polygons).flatMap((p) => p.points);
+    return [
+      {
+        sourceShapeId: input?.[0]?.sourceShapeId ?? '',
+        polygons: [
+          {
+            close: true,
+            points: convexhull.makeHull(allPoints),
+          },
+        ],
+      },
+    ];
+  }
+
   return input.map((shape) => {
     if (options.atShapeLevel) {
       const allPoints = shape.polygons.flatMap((p) => p.points);
