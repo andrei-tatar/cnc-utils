@@ -3,6 +3,7 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 export interface ModelType {
   type?: 'flat';
   depth: number;
+  steps: number;
   toolEngagement: number;
   interpolateStepSize: boolean;
   allPassesInSameDirection: boolean;
@@ -20,6 +21,16 @@ const field: FormlyFieldConfig = {
       props: {
         min: 0,
         label: 'depth',
+        required: true,
+      },
+    },
+    {
+      key: 'steps',
+      type: 'number',
+      defaultValue: 1,
+      props: {
+        min: 1,
+        label: 'steps',
         required: true,
       },
     },

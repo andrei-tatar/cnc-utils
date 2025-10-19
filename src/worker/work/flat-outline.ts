@@ -9,6 +9,7 @@ export async function flatOutline(
     toolSize: number;
     toolEngagement: number;
     depth: number;
+    steps: number;
     interpolateStepSize: boolean;
     allPassesInSameDirection: boolean;
     alongAxis: 'x' | 'y';
@@ -67,12 +68,14 @@ export async function flatOutline(
     }
   }
 
-  const builder = new GCodeBuilder();
-
-  builder.sourceShapeId(input[0]?.sourceShapeId);
-  builder.goToSafeHeight();
-
   let isAtMinAlongAxis = false;
+
+  const builders = new Array(options.steps).fill(0).map((_) => {
+    const builder = new GCodeBuilder();
+    builder.sourceShapeId(input[0]?.sourceShapeId);
+    builder.goToSafeHeight();
+    return builder;
+  });
 
   let normal = minNormal;
   while (normal <= maxNormal) {
@@ -118,30 +121,42 @@ export async function flatOutline(
       maxAlongAxis += idealStepSize / 2;
     }
 
-    if (options.allPassesInSameDirection) {
-      builder.travelTo(...getCoords(normal, minAlongAxis));
-      builder.plunge(-options.depth);
-      builder.carveTo(...getCoords(normal, maxAlongAxis));
-      builder.goToSafeHeight();
-      normal += normalStepSize;
-    } else {
-      if (builder.isAtSafetyHeight) {
-        builder.travelTo(
-          ...getCoords(normal, isAtMinAlongAxis ? maxAlongAxis : minAlongAxis),
-        );
-        builder.plunge(-options.depth);
+    for (let i = 0; i < options.steps; i++) {
+      const builder = builders[i];
+      const depth = (options.depth / options.steps) * (i + 1);
+
+      if (i === options.steps - 1 && options.allPassesInSameDirection) {
+        builder.travelTo(...getCoords(normal, minAlongAxis));
+        builder.plunge(-depth);
+        builder.carveTo(...getCoords(normal, maxAlongAxis));
+        builder.goToSafeHeight();
       } else {
+        if (builder.isAtSafetyHeight) {
+          builder.travelTo(
+            ...getCoords(
+              normal,
+              isAtMinAlongAxis ? maxAlongAxis : minAlongAxis,
+            ),
+          );
+          builder.plunge(-depth);
+        } else {
+          builder.carveTo(
+            ...getCoords(
+              normal,
+              isAtMinAlongAxis ? maxAlongAxis : minAlongAxis,
+            ),
+          );
+        }
         builder.carveTo(
-          ...getCoords(normal, isAtMinAlongAxis ? maxAlongAxis : minAlongAxis),
+          ...getCoords(normal, isAtMinAlongAxis ? minAlongAxis : maxAlongAxis),
         );
       }
-      isAtMinAlongAxis = !isAtMinAlongAxis;
-      builder.carveTo(
-        ...getCoords(normal, isAtMinAlongAxis ? maxAlongAxis : minAlongAxis),
-      );
-      normal += normalStepSize;
     }
+    normal += normalStepSize;
+    isAtMinAlongAxis = !isAtMinAlongAxis;
   }
 
-  return builder;
+  return builders.length
+    ? builders.reduce((a, b) => a.concat(b))
+    : new GCodeBuilder();
 }

@@ -256,6 +256,7 @@ export class AppComponent implements OnInit, OnDestroy {
                                 toolSize: diameter,
                                 toolEngagement: op.toolEngagement,
                                 depth: op.depth,
+                                steps: op.steps,
                                 interpolateStepSize: op.interpolateStepSize,
                                 allPassesInSameDirection:
                                   op.allPassesInSameDirection,
