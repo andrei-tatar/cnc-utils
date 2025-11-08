@@ -24,7 +24,7 @@ const field: FormlyFieldConfig = {
       type: 'number',
       defaultValue: 25,
       props: {
-        min: 9,
+        min: 0,
         label: 'height',
         required: true,
       },
