@@ -255,7 +255,7 @@ export class AppComponent implements OnInit, OnDestroy {
                               .flatOutline(shape, {
                                 toolSize: diameter,
                                 toolEngagement: op.toolEngagement,
-                                depth: op.depth,
+                                depth: op.depthPerStep,
                                 steps: op.steps,
                                 interpolateStepSize: op.interpolateStepSize,
                                 allPassesInSameDirection:

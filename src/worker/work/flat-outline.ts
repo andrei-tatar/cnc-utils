@@ -124,7 +124,7 @@ export async function flatOutline(
 
     for (let i = 0; i < options.steps; i++) {
       const builder = builders[i];
-      const depth = (options.depth / options.steps) * (i + 1);
+      const depth = options.depth * (i + 1);
 
       if (i === options.steps - 1 && options.allPassesInSameDirection) {
         builder.travelTo(...getCoords(normal, minAlongAxis));
