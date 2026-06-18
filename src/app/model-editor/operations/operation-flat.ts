@@ -10,6 +10,7 @@ export interface ModelType {
   alongAxis: 'x' | 'y';
   growByToolsize: boolean;
   applyConvexHullOnShape: boolean;
+  pauseAfterEachStep: boolean;
 }
 
 const field: FormlyFieldConfig = {
@@ -87,6 +88,14 @@ const field: FormlyFieldConfig = {
       defaultValue: true,
       props: {
         label: 'apply convex hull',
+      },
+    },
+    {
+      key: 'pauseAfterEachStep',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'pause after each step',
       },
     },
   ],

@@ -62,6 +62,11 @@ export class GCodeBuilder {
     return this;
   }
 
+  pause() {
+    this._instructions.push({ type: 'pause' });
+    return this;
+  }
+
   concat(other: GCodeBuilder): GCodeBuilder {
     const result = new GCodeBuilder();
     result._instructions = this._instructions.concat(other._instructions);
@@ -120,6 +125,10 @@ export class GCodeBuilder {
 
         case 'stop-program':
           gcode.push('M30');
+          break;
+
+        case 'pause':
+          gcode.push('M00');
           break;
       }
     }
@@ -182,4 +191,5 @@ type PathInstruction =
   | { type: 'carve-feedrate'; feedRate: number }
   | { type: 'plunge-feedrate'; feedRate: number }
   | { type: 'model'; model: string }
-  | { type: 'stop-program' };
+  | { type: 'stop-program' }
+  | { type: 'pause' };

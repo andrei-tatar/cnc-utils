@@ -15,6 +15,7 @@ export async function flatOutline(
     alongAxis: 'x' | 'y';
     growByToolsize: boolean;
     applyConvexHullOnShape: boolean;
+    pauseAfterEachStep: boolean;
   },
 ): Promise<GCodeBuilder> {
   if (options.growByToolsize) {
@@ -154,6 +155,15 @@ export async function flatOutline(
     }
     normal += normalStepSize;
     isAtMinAlongAxis = !isAtMinAlongAxis;
+  }
+
+  if (options.pauseAfterEachStep) {
+    // skip the last step: the program ends right after it, so a pause there
+    // would just force the operator to resume into the final stop
+    for (const builder of builders.slice(0, -1)) {
+      builder.goToSafeHeight();
+      builder.pause();
+    }
   }
 
   return builders.length

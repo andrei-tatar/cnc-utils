@@ -34,6 +34,9 @@ export function gcodeToPaths(gcode: string): CamPath[] {
       case 'M30':
         // stop program; nothing to show
         continue;
+      case 'M00':
+        // pause; nothing to show
+        continue;
 
       default:
         throw new Error(`unsupported gcode instruction ${instruction}`);

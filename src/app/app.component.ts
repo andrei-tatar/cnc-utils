@@ -264,6 +264,7 @@ export class AppComponent implements OnInit, OnDestroy {
                                 growByToolsize: op.growByToolsize,
                                 applyConvexHullOnShape:
                                   op.applyConvexHullOnShape,
+                                pauseAfterEachStep: op.pauseAfterEachStep,
                               })
                               .pipe(
                                 map((r) =>
