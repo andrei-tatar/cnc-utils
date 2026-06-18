@@ -273,6 +273,28 @@ export class AppComponent implements OnInit, OnDestroy {
                               ),
                             working$,
                           );
+                        case 'profile':
+                          return race(
+                            worker
+                              .routeProfile(shape, {
+                                toolSize: diameter,
+                                side: op.side,
+                                direction: op.direction,
+                                startDepth: op.startDepth,
+                                depthPerStep: op.depth,
+                                steps: op.steps,
+                                tabsEnabled: op.tabsEnabled,
+                                tabCount: op.tabCount,
+                                tabWidth: op.tabWidth,
+                                tabHeight: op.tabHeight,
+                              })
+                              .pipe(
+                                map((r) =>
+                                  toolGcode.concat(GCodeBuilder.clone(r)),
+                                ),
+                              ),
+                            working$,
+                          );
                       }
 
                       return EMPTY;
