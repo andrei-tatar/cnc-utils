@@ -1,6 +1,7 @@
 import { CamPath } from './types';
 
 const SOURCE_SHAPE_PREFIX = '; source-shape=';
+const SOURCE_OPERATION_PREFIX = '; source-operation=';
 
 export function gcodeToPaths(gcode: string): CamPath[] {
   const paths: CamPath[] = [];
@@ -11,12 +12,16 @@ export function gcodeToPaths(gcode: string): CamPath[] {
     lastY = 0,
     lastZ = 0,
     sourceShapeId: string = 'unknown',
+    sourceOperationId: string | undefined = undefined,
     path: CamPath | null = null;
 
   for (const line of lines) {
     if (line.startsWith(';')) {
       if (line.startsWith(SOURCE_SHAPE_PREFIX)) {
         sourceShapeId = line.substring(SOURCE_SHAPE_PREFIX.length);
+      } else if (line.startsWith(SOURCE_OPERATION_PREFIX)) {
+        sourceOperationId =
+          line.substring(SOURCE_OPERATION_PREFIX.length) || undefined;
       }
       continue;
     }
@@ -54,7 +59,12 @@ export function gcodeToPaths(gcode: string): CamPath[] {
       typeof y === 'number' &&
       typeof z === 'number'
     ) {
-      if (!path || type !== path.type || sourceShapeId !== path.sourceShapeId) {
+      if (
+        !path ||
+        type !== path.type ||
+        sourceShapeId !== path.sourceShapeId ||
+        sourceOperationId !== path.sourceOperationId
+      ) {
         if (path?.points) {
           paths.push(path);
         }
@@ -62,6 +72,7 @@ export function gcodeToPaths(gcode: string): CamPath[] {
         path = {
           points: [],
           sourceShapeId: sourceShapeId,
+          sourceOperationId,
           type,
         };
 

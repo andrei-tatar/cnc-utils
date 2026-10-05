@@ -66,6 +66,6 @@
   <app-viewer
     [shapes]="drawShapes$"
     [paths]="drawPaths$"
-    [highlightShapes]="(expandedShapes$ | async) ?? []"
+    [highlight]="(highlight$ | async) ?? NO_HIGHLIGHT"
   />
 </div>

@@ -42,6 +42,12 @@ export class GCodeBuilder {
     return this;
   }
 
+  /** Tag what follows with the operation that produced it (empty to clear). */
+  sourceOperationId(id: string) {
+    this._instructions.push({ type: 'source-operation', id });
+    return this;
+  }
+
   carveFeedrate(feedRate: number) {
     this._instructions.push({ type: 'carve-feedrate', feedRate });
     return this;
@@ -109,6 +115,10 @@ export class GCodeBuilder {
 
         case 'source-shape':
           gcode.push(`; source-shape=${instruction.id}`);
+          break;
+
+        case 'source-operation':
+          gcode.push(`; source-operation=${instruction.id}`);
           break;
 
         case 'carve-feedrate':
@@ -188,6 +198,7 @@ type PathInstruction =
   | { type: 'safety-height' }
   | { type: 'carve'; to: CamPoint; z?: number }
   | { type: 'source-shape'; id: string }
+  | { type: 'source-operation'; id: string }
   | { type: 'carve-feedrate'; feedRate: number }
   | { type: 'plunge-feedrate'; feedRate: number }
   | { type: 'model'; model: string }

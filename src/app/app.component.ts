@@ -21,7 +21,7 @@ import {
   timer,
   withLatestFrom,
 } from 'rxjs';
-import { CamPath, CamShape } from '../cam/types';
+import { CamPath, CamShape, Highlight } from '../cam/types';
 import { AsyncPipe } from '@angular/common';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
 import {
@@ -61,6 +61,7 @@ const MIN_VIEWER_WIDTH = 200;
 })
 export class AppComponent implements OnInit, OnDestroy {
   readonly DEFAULT_EDITOR_WIDTH = 420;
+  readonly NO_HIGHLIGHT: Highlight = { shapes: [], operations: [] };
   editorWidth = signal(this.loadEditorWidth());
   resizing = false;
   private resizeOffset = 0;
@@ -86,10 +87,36 @@ export class AppComponent implements OnInit, OnDestroy {
   download$ = new Subject();
   upload$ = new Subject();
 
-  expandedShapes$ = this.model$.pipe(
-    map((v) => [
-      ...new Set(v.shapes.filter((v) => v.expanded).map((v) => v.id)),
-    ]),
+  /**
+   * An expanded operation highlights its toolpaths and the shape it cuts;
+   * otherwise an expanded shape highlights itself and its toolpaths.
+   */
+  highlight$: Observable<Highlight> = this.model$.pipe(
+    map(({ shapes, tools, operations }) => {
+      const expandedOperations = (operations ?? []).filter((o) => o.expanded);
+      if (expandedOperations.length) {
+        const shapeIds = expandedOperations.flatMap(
+          ({ id, expanded, name, shapeId, toolId, ...parameters }) => {
+            const source = AppComponent.vCarveSource(
+              parameters,
+              operations,
+              tools,
+            );
+            const effective = source ? source.shapeId : shapeId;
+            return effective ? [effective] : [];
+          },
+        );
+        return {
+          shapes: [...new Set(shapeIds)],
+          operations: expandedOperations.map((o) => o.id),
+        };
+      }
+      return {
+        shapes: [...new Set(shapes.filter((s) => s.expanded).map((s) => s.id))],
+        operations: [],
+      };
+    }),
+    distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
   );
 
   ngOnInit(): void {
@@ -353,6 +380,7 @@ export class AppComponent implements OnInit, OnDestroy {
                     plungeFeedRate,
                   } = tool;
                   const toolGcode = new GCodeBuilder()
+                    .sourceOperationId(id)
                     .carveFeedrate(feedRate)
                     .plungeFeedRate(plungeFeedRate);
                   switch (op.type) {
@@ -501,11 +529,16 @@ export class AppComponent implements OnInit, OnDestroy {
 
         const meta = new GCodeBuilder().addModelMetadata(compressed);
         const result = [meta, ...builders].reduce((a, b) => a.concat(b));
-        const gcode = result.goToSafeHeight().stopProgram().build({
-          safetyHeight: 10,
-          carveFeedRate: 1200,
-          plungeFeedRate: 300,
-        });
+        // The final retract belongs to no operation.
+        const gcode = result
+          .sourceOperationId('')
+          .goToSafeHeight()
+          .stopProgram()
+          .build({
+            safetyHeight: 10,
+            carveFeedRate: 1200,
+            plungeFeedRate: 300,
+          });
         return gcode;
       }),
     );

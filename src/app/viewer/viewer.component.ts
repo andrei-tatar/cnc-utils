@@ -46,7 +46,7 @@ import {
 import { GridHelper } from './helpers/grid-helper';
 import { DirectionArrows } from './helpers/direction-arrows';
 import { nestContours } from '../../cam/polygon-nesting';
-import { CamPath, CamShape } from '../../cam/types';
+import { CamPath, CamShape, Highlight } from '../../cam/types';
 
 @Component({
   selector: 'app-viewer',
@@ -77,7 +77,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<any>();
   private shapes$ = new ReplaySubject<Observable<CamShape[]>>(1);
   private paths$ = new ReplaySubject<Observable<CamPath[]>>(1);
-  private highlightShapes$ = new ReplaySubject<string[]>(1);
+  private highlight$ = new ReplaySubject<Highlight>(1);
 
   @ViewChild('canvas', { static: true })
   canvas!: ElementRef<HTMLCanvasElement>;
@@ -99,8 +99,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
 
   @Input()
-  set highlightShapes(value: string[]) {
-    this.highlightShapes$.next(value);
+  set highlight(value: Highlight) {
+    this.highlight$.next(value);
   }
 
   constructor(private host: ElementRef) {}
@@ -221,8 +221,12 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 return existing;
               }
 
-              const isHighlighted$ = this.highlightShapes$.pipe(
-                map((h) => h.length === 0 || h.includes(shape.sourceShapeId)),
+              const isHighlighted$ = this.highlight$.pipe(
+                map(
+                  (h) =>
+                    (!h.shapes.length && !h.operations.length) ||
+                    h.shapes.includes(shape.sourceShapeId),
+                ),
                 distinctUntilChanged(),
               );
 
@@ -263,8 +267,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 return existing;
               }
 
-              const isHighlighted$ = this.highlightShapes$.pipe(
-                map((h) => h.length === 0 || h.includes(path.sourceShapeId)),
+              const isHighlighted$ = this.highlight$.pipe(
+                map((h) =>
+                  h.operations.length
+                    ? !!path.sourceOperationId &&
+                      h.operations.includes(path.sourceOperationId)
+                    : !h.shapes.length || h.shapes.includes(path.sourceShapeId),
+                ),
                 distinctUntilChanged(),
               );
 
