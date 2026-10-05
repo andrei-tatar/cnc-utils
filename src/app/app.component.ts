@@ -295,7 +295,18 @@ export class AppComponent implements OnInit, OnDestroy {
                   ),
                 ]).pipe(
                   switchMap(
-                    ([shape, op, { diameter, feedRate, plungeFeedRate }]) => {
+                    ([
+                      shape,
+                      op,
+                      {
+                        bitType,
+                        diameter,
+                        vAngle,
+                        tipDiameter,
+                        feedRate,
+                        plungeFeedRate,
+                      },
+                    ]) => {
                       const toolGcode = new GCodeBuilder()
                         .carveFeedrate(feedRate)
                         .plungeFeedRate(plungeFeedRate);
@@ -356,6 +367,30 @@ export class AppComponent implements OnInit, OnDestroy {
                                 tabCount: op.tabCount,
                                 tabWidth: op.tabWidth,
                                 tabHeight: op.tabHeight,
+                              })
+                              .pipe(
+                                map((r) =>
+                                  toolGcode.concat(GCodeBuilder.clone(r)),
+                                ),
+                              ),
+                            working$,
+                          );
+                        case 'v-carve':
+                          if (bitType !== 'v-bit') {
+                            return EMPTY;
+                          }
+                          return race(
+                            worker
+                              .routeVCarve(shape, {
+                                toolSize: diameter,
+                                vAngle,
+                                tipDiameter,
+                                startDepth: op.startDepth,
+                                maxDepth: op.maxDepth,
+                                stepover: op.stepover,
+                                clearFlatBottom: op.clearFlatBottom,
+                                sharpCorners: op.sharpCorners ?? true,
+                                sharpCornerAngle: op.sharpCornerAngle ?? 150,
                               })
                               .pipe(
                                 map((r) =>

@@ -4,12 +4,20 @@ import {
   field as operationsField,
 } from '../operations';
 
+export type BitType = 'end-mill' | 'v-bit';
+
+const hideUnlessVBit = (field: FormlyFieldConfig) =>
+  field.model?.bitType !== 'v-bit';
+
 export type ToolType = {
   id: string;
   expanded: boolean;
 
   name: string;
+  bitType?: BitType;
   diameter: number;
+  vAngle: number;
+  tipDiameter: number;
   feedRate: number;
   plungeFeedRate: number;
 } & OperationsModelType;
@@ -48,6 +56,19 @@ export const field: FormlyFieldConfig = {
         },
       },
       {
+        key: 'bitType',
+        type: 'enum',
+        defaultValue: 'end-mill',
+        props: {
+          label: 'bit type',
+          required: true,
+          options: [
+            { value: 'end-mill', label: 'end mill' },
+            { value: 'v-bit', label: 'v-bit' },
+          ],
+        },
+      },
+      {
         key: 'diameter',
         type: 'number',
         defaultValue: 3,
@@ -55,6 +76,29 @@ export const field: FormlyFieldConfig = {
           label: 'diameter',
           required: true,
         },
+      },
+      {
+        key: 'vAngle',
+        type: 'number',
+        defaultValue: 60,
+        props: {
+          min: 1,
+          max: 179,
+          label: 'v angle',
+          required: true,
+        },
+        expressions: { hide: hideUnlessVBit },
+      },
+      {
+        key: 'tipDiameter',
+        type: 'number',
+        defaultValue: 0,
+        props: {
+          min: 0,
+          label: 'tip diameter',
+          required: true,
+        },
+        expressions: { hide: hideUnlessVBit },
       },
       {
         key: 'feedRate',

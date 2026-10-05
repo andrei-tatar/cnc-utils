@@ -16,7 +16,22 @@ import {
   ModelType as ProfileModelType,
 } from './operation-profile';
 
-const operations = [PocketDefinition, FlatDefinition, ProfileDefinition];
+import {
+  Definition as VCarveDefinition,
+  ModelType as VCarveModelType,
+} from './operation-vcarve';
+
+const operations = [
+  PocketDefinition,
+  FlatDefinition,
+  ProfileDefinition,
+  VCarveDefinition,
+];
+
+// Operations that only make sense with a particular bit; others work with any.
+const requiredBitType: Partial<Record<string, string>> = {
+  [VCarveDefinition.type]: 'v-bit',
+};
 
 export type ModelType = {
   operations: Array<
@@ -25,7 +40,12 @@ export type ModelType = {
       expanded: boolean;
       name: string;
       shapeId: string;
-    } & (PocketModelType | FlatModelType | ProfileModelType)
+    } & (
+      | PocketModelType
+      | FlatModelType
+      | ProfileModelType
+      | VCarveModelType
+    )
   >;
 };
 
@@ -81,7 +101,20 @@ export const field: FormlyFieldConfig = {
         props: {
           label: 'type',
           required: true,
-          options: operations.map((t) => ({ value: t.type, label: t.label })),
+        },
+        expressions: {
+          'props.options': (field: FormlyFieldConfig) => {
+            const bitType =
+              field.parent?.parent?.parent?.model?.bitType ?? 'end-mill';
+            return operations
+              .filter(
+                (t) =>
+                  !requiredBitType[t.type] ||
+                  requiredBitType[t.type] === bitType ||
+                  t.type === field.model?.type,
+              )
+              .map((t) => ({ value: t.type, label: t.label }));
+          },
         },
       },
       ...operations.map((t) => t.fieldGroup),
