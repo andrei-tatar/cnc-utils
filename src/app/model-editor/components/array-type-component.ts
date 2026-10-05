@@ -1,6 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
-import { FieldArrayType, FormlyModule } from '@ngx-formly/core';
+import {
+  FieldArrayType,
+  FormlyFieldConfig,
+  FormlyModule,
+} from '@ngx-formly/core';
 import { generateId } from '../../../util';
 import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
@@ -230,6 +234,11 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
       font-weight: 500;
     }
 
+    .item_name--auto {
+      font-style: italic;
+      color: var(--bs-secondary-color);
+    }
+
     .item_type {
       font-size: 0.7rem;
       padding: 2px 7px;
@@ -333,7 +342,11 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
                   <path d="M6 3.5 10.5 8 6 12.5" /></svg
               ></span>
               <span class="item_index">{{ $index + 1 }}</span>
-              <span class="item_name">{{ itemName(field.model) }}</span>
+              <span
+                class="item_name"
+                [class.item_name--auto]="!field.model?.name && describeItem"
+                >{{ itemName(field.model) }}</span
+              >
               @if (itemType(field.model); as type) {
                 <span class="item_type">{{ type }}</span>
               }
@@ -390,13 +403,31 @@ export class ArrayTypeComponent extends FieldArrayType implements OnInit {
     }
   }
 
+  /**
+   * Optional `props.describeItem(model, field)` names items that have no name;
+   * `field` is this list's field, for looking up the rest of the model.
+   */
+  get describeItem():
+    | ((model: any, field: FormlyFieldConfig) => string)
+    | undefined {
+    return this.props['describeItem'];
+  }
+
   itemName(model: any): string {
-    return model?.name || model?.type || 'unnamed';
+    return (
+      model?.name ||
+      this.describeItem?.(model, this.field) ||
+      model?.type ||
+      'unnamed'
+    );
   }
 
   itemType(model: any): string | null {
     const type = model?.type ?? model?.bitType;
-    // Unnamed items already show their type as the name.
+    // Unnamed items already show their type (or a description) as the name.
+    if (!model?.name && this.describeItem) {
+      return null;
+    }
     return type && type !== this.itemName(model) ? type : null;
   }
 

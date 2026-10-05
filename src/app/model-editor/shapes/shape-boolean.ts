@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { shapeLabel } from './describe';
 import { ModelType as ShapeModelType } from '../shapes';
 
 export interface ModelType {
@@ -19,7 +20,7 @@ const selectShapeCommonField = {
         .filter((shape) => shape.id !== field.model.id)
         .map((shape) => ({
           value: shape.id,
-          label: shape.name || shape.type || 'unnamed',
+          label: shapeLabel(shape, shapes),
         }));
     },
   },

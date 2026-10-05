@@ -1,5 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
-import { ModelType as ShapeModelType } from '../shapes';
+import { allShapes, shapeLabel } from '../shapes/describe';
+import { describeOperation } from './describe';
 
 import {
   Definition as PocketDefinition,
@@ -38,7 +39,7 @@ export type ModelType = {
     {
       id: string;
       expanded: boolean;
-      name: string;
+      name?: string;
       shapeId: string;
     } & (
       | PocketModelType
@@ -56,6 +57,8 @@ export const field: FormlyFieldConfig = {
   props: {
     label: 'operations',
     itemLabel: 'operation',
+    describeItem: (operation: any, field: FormlyFieldConfig) =>
+      describeOperation(operation, allShapes(field)),
     accent: '#059669',
   },
   fieldArray: {
@@ -74,7 +77,10 @@ export const field: FormlyFieldConfig = {
         type: 'input',
         props: {
           label: 'name',
-          required: true,
+        },
+        expressions: {
+          'props.placeholder': (field: FormlyFieldConfig) =>
+            describeOperation(field.model, allShapes(field)),
         },
       },
       {
@@ -86,11 +92,10 @@ export const field: FormlyFieldConfig = {
         },
         expressions: {
           'props.options': (field: FormlyFieldConfig) => {
-            const shapes: ShapeModelType['shapes'] =
-              field.parent?.parent?.parent?.parent?.parent?.model.shapes ?? [];
+            const shapes = allShapes(field);
             return shapes.map((shape) => ({
               value: shape.id,
-              label: shape.name || shape.type || 'unnamed',
+              label: shapeLabel(shape, shapes),
             }));
           },
         },

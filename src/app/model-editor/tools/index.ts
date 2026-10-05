@@ -13,7 +13,7 @@ export type ToolType = {
   id: string;
   expanded: boolean;
 
-  name: string;
+  name?: string;
   bitType?: BitType;
   diameter: number;
   vAngle: number;
@@ -26,6 +26,26 @@ export type ModelType = {
   tools: Array<ToolType>;
 };
 
+/** A readable name built from the tool's settings, e.g. "Ø6 mm 60° v-bit". */
+export function describeTool(tool: Partial<ToolType> | undefined): string {
+  const parts: string[] = [];
+  if (tool?.diameter) {
+    parts.push(`Ø${tool.diameter} mm`);
+  }
+  if (tool?.bitType === 'v-bit') {
+    if (tool.vAngle) {
+      parts.push(`${tool.vAngle}°`);
+    }
+    parts.push('v-bit');
+    if (tool.tipDiameter) {
+      parts.push(`(${tool.tipDiameter} mm tip)`);
+    }
+  } else {
+    parts.push('end mill');
+  }
+  return parts.join(' ');
+}
+
 export const field: FormlyFieldConfig = {
   key: 'tools',
   type: 'repeat',
@@ -33,6 +53,7 @@ export const field: FormlyFieldConfig = {
   props: {
     label: 'tools',
     itemLabel: 'tool',
+    describeItem: describeTool,
     accent: '#ea580c',
     collapsible: true,
   },
@@ -52,7 +73,10 @@ export const field: FormlyFieldConfig = {
         type: 'input',
         props: {
           label: 'name',
-          required: true,
+        },
+        expressions: {
+          'props.placeholder': (field: FormlyFieldConfig) =>
+            describeTool(field.model),
         },
       },
       {

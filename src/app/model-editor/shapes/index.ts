@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { allShapes, describeShape } from './describe';
 import {
   field as transformsField,
   ModelType as TransformsModelType,
@@ -31,7 +32,7 @@ import {
 
 type CommonShape = {
   id: string;
-  name: string;
+  name?: string;
   expanded: boolean;
 } & TransformsModelType;
 
@@ -63,6 +64,8 @@ export const field: FormlyFieldConfig = {
   props: {
     label: 'shapes',
     itemLabel: 'shape',
+    describeItem: (shape: any, field: FormlyFieldConfig) =>
+      describeShape(shape, allShapes(field)),
     accent: '#2563eb',
     collapsible: true,
   },
@@ -77,7 +80,10 @@ export const field: FormlyFieldConfig = {
         type: 'input',
         props: {
           label: 'name',
-          required: true,
+        },
+        expressions: {
+          'props.placeholder': (field: FormlyFieldConfig) =>
+            describeShape(field.model, allShapes(field)),
         },
       },
       {
