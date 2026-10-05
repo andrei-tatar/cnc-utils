@@ -1,5 +1,4 @@
-import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { FieldType, FormlyModule } from '@ngx-formly/core';
 import {
   readCollapsedSections,
@@ -11,8 +10,7 @@ import {
  * root list sections: `props.label`, `props.accent`.
  */
 @Component({
-  standalone: true,
-  imports: [CommonModule, FormlyModule],
+  imports: [FormlyModule],
   styles: `
     :host {
       display: block;
@@ -93,6 +91,7 @@ import {
       }
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <div class="section" [style.--accent]="props['accent']">
       <div

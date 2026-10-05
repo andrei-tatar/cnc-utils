@@ -32,7 +32,8 @@ export async function flatOutline(
       // applyTransform): miter limit 2, the settings' decimal places.
       precision: 2,
       miterLimit: decimals(),
-      arcTolerance: 2,
+      // 0: automatic, fine arcs (newer Clipper takes a coarse tolerance literally).
+      arcTolerance: 0,
     });
   }
 

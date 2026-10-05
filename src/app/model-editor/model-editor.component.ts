@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import {
   Component,
   EventEmitter,
@@ -6,6 +5,7 @@ import {
   OnDestroy,
   OnInit,
   Output,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import {
   AbstractControl,
@@ -20,8 +20,8 @@ import { resolveGcodeOptions } from '../../cam/gcode-options';
 
 @Component({
   selector: 'app-model-editor',
-  standalone: true,
-  imports: [FormlyModule, CommonModule, ReactiveFormsModule],
+  imports: [FormlyModule, ReactiveFormsModule],
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <form [formGroup]="form">
       <formly-form

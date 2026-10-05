@@ -10,9 +10,46 @@ import {
 } from '../../cam/geometry';
 
 const patchApi = lazy(async () => {
-  const xmlDom = await import('xmldom' as any);
-  globalThis.DOMParser = xmlDom.DOMParser ?? xmlDom.default.DOMParser;
+  // Workers have no DOMParser; SVGLoader needs one.
+  const xmlDom: any = await import('@xmldom/xmldom');
+  const Parser = xmlDom.DOMParser ?? xmlDom.default.DOMParser;
+  globalThis.DOMParser = Parser as typeof DOMParser;
+
+  // SVGLoader looks gradients up with querySelectorAll, which xmldom lacks;
+  // it only asks for tag names ("linearGradient, radialGradient", "stop").
+  const doc = new Parser().parseFromString('<svg/>', 'image/svg+xml');
+  for (const proto of [
+    Object.getPrototypeOf(doc),
+    Object.getPrototypeOf(doc.documentElement),
+  ]) {
+    if (!proto.querySelectorAll) {
+      proto.querySelectorAll = function (selectors: string) {
+        return elementsByTagNames(this, selectors);
+      };
+    }
+  }
 });
+
+/**
+ * The elements under `root` whose tag is one of the comma-separated
+ * `selectors`, in document order (only plain tag names are supported).
+ */
+function elementsByTagNames(root: any, selectors: string): any[] {
+  const names = new Set(selectors.split(',').map((s) => s.trim()));
+  const found: any[] = [];
+  const walk = (node: any) => {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1) {
+        if (names.has(child.localName ?? child.nodeName)) {
+          found.push(child);
+        }
+        walk(child);
+      }
+    }
+  };
+  walk(root);
+  return found;
+}
 
 const svgLoader = new SVGLoader();
 

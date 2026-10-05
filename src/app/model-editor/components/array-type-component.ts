@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import {
   AfterViewInit,
   Component,
@@ -7,6 +6,7 @@ import {
   OnDestroy,
   OnInit,
   ViewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import {
   FieldArrayType,
@@ -24,8 +24,7 @@ import {
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 
 @Component({
-  imports: [FormlyModule, CommonModule, NgbCollapseModule, DragDropModule],
-  standalone: true,
+  imports: [FormlyModule, NgbCollapseModule, DragDropModule],
   styles: `
     :host {
       display: block;
@@ -378,6 +377,7 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
       }
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <div
       class="list"
@@ -672,8 +672,7 @@ export class ArrayTypeComponent
    * `field` is this list's field, for looking up the rest of the model.
    */
   get describeItem():
-    | ((model: any, field: FormlyFieldConfig) => string)
-    | undefined {
+    ((model: any, field: FormlyFieldConfig) => string) | undefined {
     return this.props['describeItem'];
   }
 

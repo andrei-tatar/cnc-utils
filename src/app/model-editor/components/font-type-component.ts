@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import {
   AfterViewChecked,
   ChangeDetectorRef,
@@ -8,6 +7,7 @@ import {
   OnInit,
   ViewChild,
   inject,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { FieldType } from '@ngx-formly/bootstrap/form-field';
 import { FormlyModule } from '@ngx-formly/core';
@@ -133,8 +133,7 @@ function previewFamily(id: string, weight: number, style: string) {
 }
 
 @Component({
-  standalone: true,
-  imports: [CommonModule, FormlyModule],
+  imports: [FormlyModule],
   styles: `
     :host {
       display: block;
@@ -266,6 +265,7 @@ function previewFamily(id: string, weight: number, style: string) {
       color: var(--bs-secondary-color);
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <button
       type="button"

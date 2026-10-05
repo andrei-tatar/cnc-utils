@@ -96,9 +96,10 @@ export class AdaptiveGrid extends LineSegments<
     return spacing;
   }
 
-  dispose() {
+  override dispose() {
     this.geometry.dispose();
     this.material.dispose();
+    super.dispose();
   }
 }
 

@@ -6,6 +6,7 @@ import {
   OnDestroy,
   OnInit,
   ViewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import {
   ArrowHelper,
@@ -67,7 +68,6 @@ import { CamPath, CamShape, Highlight } from '../../cam/types';
 
 @Component({
   selector: 'app-viewer',
-  standalone: true,
   imports: [CubePreviewComponent],
   template: `
     <canvas #canvas></canvas>
@@ -108,6 +108,7 @@ import { CamPath, CamShape, Highlight } from '../../cam/types';
       </span>
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     :host {
       position: relative;

@@ -1,5 +1,9 @@
-import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  inject,
+  ChangeDetectionStrategy,
+} from '@angular/core';
 import { FormlyModule } from '@ngx-formly/core';
 import { FieldType } from '@ngx-formly/bootstrap/form-field';
 import { readFile } from '../../../util';
@@ -10,8 +14,7 @@ import { readFile } from '../../../util';
  * Accepts a click (file dialog) or a dropped file.
  */
 @Component({
-  imports: [FormlyModule, CommonModule],
-  standalone: true,
+  imports: [FormlyModule],
   styles: `
     :host {
       display: block;
@@ -77,6 +80,7 @@ import { readFile } from '../../../util';
       color: var(--bs-danger);
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <button
       type="button"

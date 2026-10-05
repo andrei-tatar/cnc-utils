@@ -1,4 +1,9 @@
-import { Component, inject, Input } from '@angular/core';
+import {
+  Component,
+  inject,
+  Input,
+  ChangeDetectionStrategy,
+} from '@angular/core';
 import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
 
 /** A small "are you sure?" modal; resolves `true` when confirmed. */
@@ -51,6 +56,7 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
       padding-top: 0;
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <div class="modal-header">
       <h2 class="modal-title" id="confirm-title">

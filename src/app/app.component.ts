@@ -1,4 +1,10 @@
-import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  OnDestroy,
+  OnInit,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
 import { ViewerComponent } from './viewer/viewer.component';
 import {
   BehaviorSubject,
@@ -70,9 +76,9 @@ const MIN_VIEWER_WIDTH = 200;
 
 @Component({
   selector: 'app-root',
-  standalone: true,
   imports: [ViewerComponent, AsyncPipe, ModelEditorComponent],
   templateUrl: './app.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './app.component.scss',
 })
 export class AppComponent implements OnInit, OnDestroy {
