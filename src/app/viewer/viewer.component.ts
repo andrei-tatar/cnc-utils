@@ -272,6 +272,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.highlight$.next(value);
   }
 
+  /** Shapes toggled off in the editor: not drawn (toolpaths unaffected). */
+  @Input()
+  set hiddenShapes(value: string[]) {
+    this.hiddenShapes$.next(value);
+  }
+  private hiddenShapes$ = new BehaviorSubject<string[]>([]);
+
   constructor(private host: ElementRef) {}
 
   ngOnInit(): void {
@@ -456,6 +463,10 @@ export class ViewerComponent implements OnInit, OnDestroy {
                   materialHighlight,
                   nullMaterial,
                   highlight$: isHighlighted$,
+                  hidden$: this.hiddenShapes$.pipe(
+                    map((hidden) => hidden.includes(shape.sourceShapeId)),
+                    distinctUntilChanged(),
+                  ),
                 }).pipe(
                   share({
                     resetOnRefCountZero: () => timer(0),
@@ -833,6 +844,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     materialHighlight: Material;
     nullMaterial: Material;
     highlight$: Observable<boolean>;
+    hidden$: Observable<boolean>;
   }) {
     return timer(0).pipe(
       switchMap(
@@ -898,6 +910,12 @@ export class ViewerComponent implements OnInit, OnDestroy {
                   }
                 });
               }),
+            );
+
+            clean.add(
+              o.hidden$.subscribe((hidden) =>
+                sceneItems.forEach((item) => (item.visible = !hidden)),
+              ),
             );
 
             return clean;

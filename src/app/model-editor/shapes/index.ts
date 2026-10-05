@@ -38,6 +38,8 @@ type CommonShape = {
   id: string;
   name?: string;
   expanded: boolean;
+  /** Not drawn in the preview (still usable by operations and booleans). */
+  hidden?: boolean;
 } & TransformsModelType;
 
 type ShapeType =
@@ -74,12 +76,23 @@ export const field: FormlyFieldConfig = {
       describeShape(shape, allShapes(field)),
     accent: '#2563eb',
     collapsible: true,
+    toggle: {
+      key: 'hidden',
+      icon: 'eye',
+      onTitle: 'Hide in the preview',
+      offTitle: 'Hidden in the preview — click to show',
+    },
   },
   fieldArray: {
     fieldGroup: [
       {
         key: 'id',
         type: 'hidden',
+      },
+      {
+        key: 'hidden',
+        type: 'hidden',
+        defaultValue: false,
       },
       {
         key: 'name',

@@ -101,6 +101,12 @@ export class AppComponent implements OnInit, OnDestroy {
   download$ = new Subject();
   upload$ = new Subject();
 
+  /** Shapes toggled off in the editor (hidden in the preview only). */
+  hiddenShapes$ = this.model$.pipe(
+    map(({ shapes }) => shapes.filter((s) => s.hidden).map((s) => s.id)),
+    distinctUntilChanged((a, b) => a.join() === b.join()),
+  );
+
   /**
    * An expanded operation highlights its toolpaths and the shape it cuts;
    * otherwise an expanded shape highlights itself and its toolpaths.
@@ -649,6 +655,7 @@ export class AppComponent implements OnInit, OnDestroy {
               transforms: shapeTransforms,
               expanded: _,
               name: __,
+              hidden: ___,
               ...shapeParameters
             }) => {
               const existing = ctx.find((e) => e.shapeId === shapeId);

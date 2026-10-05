@@ -318,6 +318,45 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
       white-space: nowrap;
     }
 
+    .toggle-button {
+      display: inline-flex;
+      align-items: center;
+      --bs-btn-padding-y: 0.25rem;
+      --bs-btn-padding-x: 0.35rem;
+      --bs-btn-color: var(--accent);
+      --bs-btn-border-color: transparent;
+      --bs-btn-hover-color: var(--accent);
+      --bs-btn-hover-bg: var(--editor-hover-bg);
+      --bs-btn-hover-border-color: transparent;
+
+      &.off {
+        --bs-btn-color: var(--bs-tertiary-color);
+      }
+
+      .switch {
+        width: 18px;
+      }
+
+      .knob {
+        fill: currentColor;
+        stroke: none;
+      }
+    }
+
+    // Hidden shapes / disabled operations: dimmed so the state shows at a
+    // glance.
+    .item--off > .item_header {
+      .item_index,
+      .item_name,
+      .item_type {
+        opacity: 0.45;
+      }
+
+      .item_name {
+        text-decoration: line-through;
+      }
+    }
+
     .remove-button {
       display: inline-flex;
       align-items: center;
@@ -418,6 +457,7 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
             class="item"
             [class.item--expanded]="field.model.expanded"
             [class.item--invalid]="problems.length"
+            [class.item--off]="isOff(field.model)"
             cdkDrag
           >
             <div class="item_header" (click)="toggleExpanded($index)">
@@ -457,6 +497,47 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
                   [title]="'Needs attention: ' + problems.join(', ')"
                   >⚠ {{ problems.length }}</span
                 >
+              }
+              @if (toggle; as t) {
+                <button
+                  class="btn btn-sm toggle-button"
+                  type="button"
+                  [class.off]="isOff(field.model)"
+                  [attr.aria-pressed]="!isOff(field.model)"
+                  [title]="isOff(field.model) ? t.offTitle : t.onTitle"
+                  [attr.aria-label]="
+                    (isOff(field.model) ? t.offTitle : t.onTitle) +
+                    ': ' +
+                    itemName(field.model)
+                  "
+                  (click)="$event.stopPropagation(); toggleFlag($index)"
+                >
+                  @if (t.icon === 'eye') {
+                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                      <path
+                        d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"
+                      />
+                      <circle cx="8" cy="8" r="2" />
+                      @if (isOff(field.model)) {
+                        <path d="M2.5 13.5l11-11" />
+                      }
+                    </svg>
+                  } @else {
+                    <svg
+                      class="icon switch"
+                      viewBox="0 0 20 16"
+                      aria-hidden="true"
+                    >
+                      <rect x="1.5" y="4" width="17" height="8" rx="4" />
+                      <circle
+                        class="knob"
+                        [attr.cx]="isOff(field.model) ? 5.5 : 14.5"
+                        cy="8"
+                        r="2.6"
+                      />
+                    </svg>
+                  }
+                </button>
               }
               @if (field.props?.['removable'] !== false) {
                 <button
@@ -737,6 +818,30 @@ export class ArrayTypeComponent
     const item = structuredClone(this.model[previousIndex]);
     this.remove(previousIndex, { markAsDirty: false });
     this.add(currentIndex, item);
+  }
+
+  /**
+   * Optional `props.toggle`: a per-item on/off flag shown as a button in the
+   * header (hide a shape in the preview, disable an operation). The flag is
+   * true when the item is "off".
+   */
+  get toggle():
+    | { key: string; icon: 'eye' | 'switch'; onTitle: string; offTitle: string }
+    | undefined {
+    return this.props['toggle'];
+  }
+
+  isOff(model: any): boolean {
+    const key = this.toggle?.key;
+    return !!key && !!model?.[key];
+  }
+
+  toggleFlag(index: number) {
+    const key = this.toggle?.key;
+    const control = key && this.formControl.controls[index]?.get(key);
+    if (control) {
+      control.setValue(!control.value);
+    }
   }
 
   toggleExpanded(index: number) {

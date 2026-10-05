@@ -17,7 +17,7 @@ export type ModelType = ShapesModelType &
 export type ShapeType = ModelType['shapes'][number];
 export type ShapeParameters = OmitUnion<
   ShapeType,
-  'id' | 'transforms' | 'expanded' | 'name'
+  'id' | 'transforms' | 'expanded' | 'name' | 'hidden'
 >;
 export type TransformType = ShapeType['transforms'][number];
 export type TransformParameters = OmitUnion<TransformType, 'id' | 'expanded'>;

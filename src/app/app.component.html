@@ -67,5 +67,6 @@
     [shapes]="drawShapes$"
     [paths]="drawPaths$"
     [highlight]="(highlight$ | async) ?? NO_HIGHLIGHT"
+    [hiddenShapes]="(hiddenShapes$ | async) ?? []"
   />
 </div>
