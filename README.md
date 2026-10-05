@@ -1,27 +1,76 @@
-# CncUtils
+# CNC Utils
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 18.2.0.
+A browser-based CAM tool: draw 2D shapes, define your cutting tools and operations, preview the toolpaths in 3D, and download G-code. Everything runs locally in the browser — there's no backend and no account.
 
-## Development server
+**Live:** https://cnc-utils.web.app
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+## How it works
 
-## Code scaffolding
+The editor has three sections, worked top to bottom:
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+1. **Shapes** — what to cut.
+2. **Tools** — the bits in your machine.
+3. **Operations** — what to do: each operation picks a **tool** and a **shape**. G-code is generated in the order the operations are listed.
 
-## Build
+The 3D preview updates as you edit: shape outlines (with holes shown as holes), and toolpaths with arrows showing the direction of travel. Expand a shape to highlight just that shape and its toolpaths.
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+**Download G-code** saves a `.nc` file. The whole project is embedded in it as a comment, so **Load** on a `.nc` file restores the project exactly. Your work is also autosaved in the browser.
 
-## Running unit tests
+### Shapes
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+| Shape | |
+| --- | --- |
+| rectangle | width, height, corner radius |
+| circle | diameter |
+| line | an open path |
+| path data | SVG path data (`d` attribute) |
+| svg | an SVG file — click or drop a file onto the field |
+| text | any text in a [Google Font](https://fonts.google.com/); size by cap height, letter/line spacing, alignment |
+| boolean | union, intersection, difference or xor of two other shapes |
 
-## Running end-to-end tests
+Each shape can have a chain of **transforms**, applied in order: move, rotate, scale, flip, repeat (grid arrays), offset (`clipper:inflate`) and convex hull.
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+### Tools
 
-## Further help
+End mills and V-bits (angle and tip diameter), with feed and plunge rates. Leave the name empty and one is generated from the settings, e.g. "Ø6 mm 60° v-bit" — the same goes for shapes and operations.
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+### Operations
+
+| Operation | Tool | |
+| --- | --- | --- |
+| profile | any | cut along the outline — outside, inside or on the line; climb or conventional; optional holding tabs |
+| pocket | any | clear the inside of a shape in depth steps |
+| flat | any | surface an area with parallel passes along X or Y |
+| v-carve | V-bit | carve with a V-bit; the depth follows the shape's width, with sharp corners, a max depth and optional flat-bottom clearing |
+| v-carve clearing | end mill | rough out the bulk of a v-carve so the V-bit only finishes the walls; follows its v-carve automatically — list it **before** the v-carve |
+
+Items with problems (a missing value, a deleted tool or shape, a v-carve on an end mill…) are outlined in red, with a "to fix" count on their section.
+
+### Usage notes
+
+- Units are millimetres. Depths are entered as positive numbers below the surface; Z = 0 is the top of the stock and travel moves happen at Z = 10.
+- The editor and preview are separated by a draggable divider (double-click it to reset). Sections can be collapsed and every list can be reordered by dragging the ⠿ handle.
+- Text shapes download fonts on demand from [Fontsource](https://fontsource.org) via jsDelivr and cache them in the browser. Each project stores the exact font version, so it always produces the same outlines. If the chosen font can't draw some characters, the font field says which.
+
+> Always check the G-code in a simulator before running it on a machine.
+
+## Development
+
+Requires Node.js and npm.
+
+```bash
+npm install
+npm start        # dev server at http://localhost:4200
+npm run build    # production build into dist/
+npm test         # Karma + Jasmine unit tests
+```
+
+Code is formatted with Prettier (`.prettierrc`).
+
+Built with Angular 18 (standalone components, zoneless change detection), [ngx-formly](https://formly.dev) for the form-driven editor, Three.js for the preview, [Clipper2](https://github.com/AngusJohnson/Clipper2) (WebAssembly) for polygon offsetting and boolean operations, and [opentype.js](https://opentype.js.org) for fonts. Geometry runs in Web Workers so the UI stays responsive.
+
+See [`CLAUDE.md`](CLAUDE.md) for an architecture overview: the reactive pipeline from model to shapes to G-code, the worker contract, and how to add a new shape, transform or operation.
+
+### Deployment
+
+The app is hosted on Firebase Hosting (project `cnc-utils`). GitHub Actions deploy every merge to the default branch to the live site and give each pull request a preview channel (`.github/workflows/`).
