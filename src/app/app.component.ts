@@ -461,6 +461,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             depthPerStep: op.depth,
                             steps: op.steps,
                             startDepth: op.startDepth,
+                            rampAngle: op.ramp ? op.rampAngle : null,
                           })
                           .pipe(
                             map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
@@ -503,6 +504,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             tabWidth: op.tabWidth,
                             tabHeight: op.tabHeight,
                             mode: op.mode ?? 'both',
+                            rampAngle: op.ramp ? op.rampAngle : null,
                           })
                           .pipe(
                             map((r) => toolGcode.concat(GCodeBuilder.clone(r))),

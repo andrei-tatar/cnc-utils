@@ -12,6 +12,7 @@ import { CamShape, CamPoint } from '../../cam/types';
 import { getDistance, pointsEqual } from '../../util';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { getCentroid } from './utils';
+import { enterCut } from '../../cam/ramp';
 
 const PRECISION = 0.01;
 const MITER_LIMIT = 2;
@@ -33,6 +34,8 @@ export async function routePocketHole(
     depthPerStep: number;
     steps: number;
     startDepth: number;
+    /** Ramp down into the cut at this angle (degrees) instead of plunging. */
+    rampAngle?: number | null;
   },
 ): Promise<GCodeBuilder> {
   let start: CamPoint = { x: 0, y: 0 };
@@ -84,9 +87,15 @@ export async function routePocketHole(
           }
 
           if (builder.isAtSafetyHeight) {
-            builder.travelTo(pt.x, pt.y);
-
-            builder.plunge(-depth);
+            // Ramp along this loop, from the level above.
+            enterCut(
+              builder,
+              outlinePoints,
+              true,
+              -(depth - options.depthPerStep),
+              -depth,
+              options.rampAngle ?? null,
+            );
           } else {
             builder.carveTo(pt.x, pt.y);
           }

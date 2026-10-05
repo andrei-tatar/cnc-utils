@@ -6,6 +6,7 @@ import {
   filledOutlines,
   holeSide,
 } from '../../cam/vcarve-geometry';
+import { enterCut } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 
@@ -28,6 +29,8 @@ export async function routeProfile(
     tabHeight: number;
     /** Which part of the shape to profile. */
     mode?: ShapePart;
+    /** Ramp down into each pass at this angle (degrees) instead of plunging. */
+    rampAngle?: number | null;
   },
 ): Promise<GCodeBuilder> {
   const builder = new GCodeBuilder();
@@ -115,7 +118,12 @@ export async function routeProfile(
           ? Math.min(0, depth + options.tabHeight)
           : null;
 
-      carvePass(builder, points, polygon.close, depth, tabFloor, options);
+      // Each pass starts where the previous one left off.
+      const from = -(options.startDepth + options.depthPerStep * step);
+      carvePass(builder, points, polygon.close, from, depth, tabFloor, {
+        ...options,
+        rampAngle: options.rampAngle ?? null,
+      });
     }
   }
 
@@ -224,16 +232,39 @@ function carvePass(
   builder: GCodeBuilder,
   points: CamPoint[],
   close: boolean,
+  from: number,
   depth: number,
   tabFloor: number | null,
-  options: { tabCount: number; tabWidth: number },
+  options: { tabCount: number; tabWidth: number; rampAngle: number | null },
 ) {
-  builder.goToSafeHeight();
-  builder.travelTo(points[0].x, points[0].y);
-  builder.plunge(depth);
-
   // Vertices the tool visits in order; a closed loop returns to its start.
   const loop = close ? [...points, points[0]] : points;
+  const perimeter = pathLength(loop);
+  // When ramping, tabs start at the loop's start, so the ramp gets the whole
+  // gap before it (ramps stay clear of tabs); otherwise they're centered
+  // between starts, so plunges are clear of them.
+  const tabs =
+    tabFloor === null
+      ? []
+      : tabIntervals(
+          perimeter,
+          options.tabCount,
+          options.tabWidth,
+          options.rampAngle ? 'at-start' : 'centered',
+        );
+  const edges = tabs.flatMap((t) => [t.start, t.end]);
+
+  builder.goToSafeHeight();
+  // A ramp stays on the stretch after the last tab, which ends the loop.
+  enterCut(
+    builder,
+    points,
+    close,
+    from,
+    depth,
+    options.rampAngle,
+    tabs.length ? perimeter - tabs[tabs.length - 1].end : Infinity,
+  );
 
   if (tabFloor === null) {
     for (let i = 1; i < loop.length; i++) {
@@ -241,10 +272,6 @@ function carvePass(
     }
     return;
   }
-
-  const perimeter = pathLength(loop);
-  const tabs = tabIntervals(perimeter, options.tabCount, options.tabWidth);
-  const edges = tabs.flatMap((t) => [t.start, t.end]);
 
   let traveled = 0;
   let currentDepth = depth;
@@ -256,6 +283,8 @@ function carvePass(
       currentDepth = want;
     }
   };
+  // A tab can start right at the start (when ramping).
+  setDepth(0);
 
   for (let i = 1; i < loop.length; i++) {
     const a = loop[i - 1];
@@ -289,8 +318,16 @@ function carvePass(
   }
 }
 
-/** Evenly spaced tabs, centered between seams so the start point stays clear. */
-function tabIntervals(perimeter: number, count: number, width: number): Tab[] {
+/**
+ * Evenly spaced tabs: `centered` between starts (the start point stays
+ * clear), or the first one `at-start` (all the room is just before it).
+ */
+function tabIntervals(
+  perimeter: number,
+  count: number,
+  width: number,
+  placement: 'centered' | 'at-start',
+): Tab[] {
   if (count <= 0 || width <= 0 || perimeter <= 0) {
     return [];
   }
@@ -299,7 +336,8 @@ function tabIntervals(perimeter: number, count: number, width: number): Tab[] {
   const half = Math.min(width, spacing) / 2;
   const tabs: Tab[] = [];
   for (let k = 0; k < count; k++) {
-    const center = (k + 0.5) * spacing;
+    const center =
+      placement === 'centered' ? (k + 0.5) * spacing : k * spacing + half;
     tabs.push({ start: center - half, end: center + half });
   }
   return tabs;
