@@ -1,5 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  inject,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+} from '@angular/core';
 import {
   FieldArrayType,
   FormlyFieldConfig,
@@ -64,12 +72,44 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
       min-height: 30px;
     }
 
+    // Set by fitHeader() when the header is too narrow for everything:
+    // drop Clear's label first, then Add's and the "to fix" wording.
+    .list_header[data-compact='1'] .clear-button .button-label,
+    .list_header[data-compact='2'] .button-label {
+      display: none;
+    }
+
+    .list--root > .list_header {
+      padding: 8px 10px 8px 12px;
+      border-top: 3px solid var(--accent);
+      cursor: pointer;
+      user-select: none;
+
+      &:hover {
+        background: var(--editor-hover-bg);
+      }
+    }
+
     .list_title {
       font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--accent);
+      // Last resort in very narrow headers: shorten the title, never push
+      // the buttons out.
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .list_count,
+    .issue-chip,
+    .add-button,
+    .clear-button,
+    .chevron {
+      flex: none;
     }
 
     .list--root > .list_header .list_title {
@@ -304,6 +344,7 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
       [style.--accent]="props['accent']"
     >
       <div
+        #header
         class="list_header"
         (click)="collapsible && toggleCollapsed()"
         [attr.role]="collapsible ? 'button' : null"
@@ -326,7 +367,7 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
               (count === 1 ? itemLabel : props.label) +
               ' need attention'
             "
-            >⚠ {{ count }} to fix</span
+            >⚠ {{ count }}<span class="button-label"> to fix</span></span
           >
         }
         <span class="list_spacer"></span>
@@ -340,11 +381,12 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
               ? 'Add ' + itemLabel
               : 'Fix the invalid fields before adding'
           "
+          [attr.aria-label]="'Add ' + itemLabel"
         >
           <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M8 3v10M3 8h10" />
           </svg>
-          <span>Add {{ itemLabel }}</span>
+          <span class="button-label">Add {{ itemLabel }}</span>
         </button>
         <button
           class="btn btn-sm clear-button"
@@ -357,7 +399,7 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
           <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
-          <span>Clear</span>
+          <span class="button-label">Clear</span>
         </button>
       </div>
 
@@ -446,9 +488,16 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
     </div>
   `,
 })
-export class ArrayTypeComponent extends FieldArrayType implements OnInit {
+export class ArrayTypeComponent
+  extends FieldArrayType
+  implements OnInit, AfterViewInit, OnDestroy
+{
   private modals = inject(NgbModal);
   collapsed = false;
+
+  @ViewChild('header', { static: true })
+  private header!: ElementRef<HTMLElement>;
+  private headerObservers: Array<ResizeObserver | MutationObserver> = [];
 
   get itemLabel(): string {
     return this.props['itemLabel'] ?? 'item';
@@ -491,6 +540,42 @@ export class ArrayTypeComponent extends FieldArrayType implements OnInit {
     };
     walk(item);
     return found;
+  }
+
+  ngAfterViewInit() {
+    // Refit when the header is resized or its contents change (the item
+    // count or the "to fix" chip).
+    const header = this.header.nativeElement;
+    const fit = () => this.fitHeader();
+    const resize = new ResizeObserver(fit);
+    resize.observe(header);
+    const mutation = new MutationObserver(fit);
+    mutation.observe(header, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    this.headerObservers = [resize, mutation];
+    fit();
+  }
+
+  ngOnDestroy() {
+    this.headerObservers.forEach((o) => o.disconnect());
+  }
+
+  /**
+   * Use the least compact header layout in which the title still fits:
+   * full labels, then no "Clear" label, then icon-only buttons.
+   */
+  private fitHeader() {
+    const header = this.header.nativeElement;
+    const title = header.querySelector<HTMLElement>('.list_title');
+    for (const level of ['0', '1', '2']) {
+      header.dataset['compact'] = level;
+      if (!title || title.scrollWidth <= title.clientWidth) {
+        break;
+      }
+    }
   }
 
   ngOnInit() {
