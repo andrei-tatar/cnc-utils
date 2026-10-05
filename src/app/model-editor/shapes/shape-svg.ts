@@ -3,16 +3,23 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 export interface ModelType {
   type: 'svg';
   svg: string;
+  /** Name of the file the SVG was loaded from (display only). */
+  fileName?: string;
 }
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
     {
+      key: 'fileName',
+      type: 'hidden',
+    },
+    {
       key: 'svg',
       type: 'file',
       props: {
-        min: 0,
-        label: 'open file',
+        label: 'file',
+        accept: '.svg,image/svg+xml',
+        fileNameKey: 'fileName',
         required: true,
       },
     },

@@ -41,7 +41,11 @@ export const appConfig: ApplicationConfig = {
       FormlyModule.forRoot({
         types: [
           { name: 'repeat', component: ArrayTypeComponent },
-          { name: 'file', component: FileTypeComponent },
+          {
+            name: 'file',
+            component: FileTypeComponent,
+            wrappers: ['form-field'],
+          },
           { name: 'hidden', component: HiddenTypeComponent },
           {
             name: 'font',

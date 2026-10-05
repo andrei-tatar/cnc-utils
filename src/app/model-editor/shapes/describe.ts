@@ -40,7 +40,7 @@ export function describeShape(
     case 'path-data':
       return 'path';
     case 'svg':
-      return 'svg';
+      return shape['fileName'] ? `svg ${shape['fileName']}` : 'svg';
     case 'text': {
       const text = String(shape['text'] ?? '')
         .replace(/\s+/g, ' ')

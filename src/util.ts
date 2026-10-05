@@ -4,10 +4,13 @@ export type OmitUnion<T, K extends keyof T> = T extends any
   ? Omit<T, K>
   : never;
 
-export function readFile() {
+export function readFile(accept?: string) {
   return new Observable<File>((observer) => {
     const input = document.createElement('input');
     input.type = 'file';
+    if (accept) {
+      input.accept = accept;
+    }
     input.addEventListener('change', () => {
       const file = input.files?.[0];
       if (file) {
