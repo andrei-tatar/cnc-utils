@@ -1,4 +1,5 @@
 import {
+  Color,
   ConeGeometry,
   InstancedMesh,
   Material,
@@ -87,6 +88,16 @@ export class DirectionArrows {
 
     this.mesh.count = count;
     this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Give each arrow its own colour (multiplied with the material's). */
+  colorBy(colorAt: (position: Vector3) => Color) {
+    this.positions.forEach((position, i) =>
+      this.mesh.setColorAt(i, colorAt(position)),
+    );
+    if (this.mesh.instanceColor) {
+      this.mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   dispose() {

@@ -23,6 +23,8 @@ import {
   Mesh,
   MeshBasicMaterial,
   Path,
+  BufferAttribute,
+  Color,
   Box3,
   Group,
   Object3D,
@@ -33,6 +35,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
 import { pointsEqual, watchElementResize } from '../../util';
 import {
+  BehaviorSubject,
   debounceTime,
   distinctUntilChanged,
   map,
@@ -50,6 +53,7 @@ import {
 } from 'rxjs';
 
 import { AdaptiveGrid } from './helpers/adaptive-grid';
+import { DEPTH_GRADIENT_CSS, depthColor } from './helpers/depth-colors';
 import {
   formatMm,
   GridLabels,
@@ -95,6 +99,11 @@ import { CamPath, CamShape, Highlight } from '../../cam/types';
     <div class="hud">
       <span #cursorReadout class="hud_cursor"></span>
       <span #gridReadout class="hud_grid"></span>
+      <span #depthLegend class="hud_depth" hidden>
+        <span>depth 0</span>
+        <span class="hud_depth_bar" [style.background]="DEPTH_GRADIENT"></span>
+        <span #deepestReadout></span>
+      </span>
     </div>
   `,
   styles: `
@@ -173,9 +182,27 @@ import { CamPath, CamShape, Highlight } from '../../cam/types';
         monospace;
       pointer-events: none;
 
-      span:empty {
+      // Hide readouts with nothing to show (not the legend's bar).
+      > span:empty {
         display: none;
       }
+    }
+
+    .hud_depth {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+
+      &[hidden] {
+        display: none;
+      }
+    }
+
+    .hud_depth_bar {
+      display: inline-block;
+      width: 64px;
+      height: 8px;
+      border-radius: 4px;
     }
 
     app-cube-preview {
@@ -204,6 +231,16 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   @ViewChild('gridReadout', { static: true })
   private gridReadout!: ElementRef<HTMLElement>;
+
+  @ViewChild('depthLegend', { static: true })
+  private depthLegend!: ElementRef<HTMLElement>;
+
+  @ViewChild('deepestReadout', { static: true })
+  private deepestReadout!: ElementRef<HTMLElement>;
+
+  readonly DEPTH_GRADIENT = DEPTH_GRADIENT_CSS;
+  /** Z of the deepest cut in the job (≤ 0); cut colours scale to it. */
+  private deepest$ = new BehaviorSubject(0);
 
   /** Shapes and toolpaths; its bounding box is what "fit to view" frames. */
   private content = new Group();
@@ -363,7 +400,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
     const pathCarveMaterial = new LineBasicMaterial({
       transparent: true,
-      color: 'lightblue',
+      vertexColors: true,
       opacity: 0,
     });
     const pathTravelMaterial = new LineBasicMaterial({
@@ -372,14 +409,15 @@ export class ViewerComponent implements OnInit, OnDestroy {
       opacity: 0,
     });
     const highlightPathCarveMaterial = new LineBasicMaterial({
-      color: 'lightblue',
+      vertexColors: true,
     });
     const highlightPathTravelMaterial = new LineBasicMaterial({
       color: 'salmon',
       transparent: true,
       opacity: 0.5,
     });
-    const arrowCarveMaterial = new MeshBasicMaterial({ color: '#7cc4f0' });
+    // White, tinted per arrow by depth (instance colours).
+    const arrowCarveMaterial = new MeshBasicMaterial({ color: 'white' });
     const arrowTravelMaterial = new MeshBasicMaterial({
       color: 'salmon',
       transparent: true,
@@ -435,6 +473,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.paths$
       .pipe(
         switchMap((paths$) => paths$),
+        tap((paths) => this.updateDeepest(paths)),
         scan(
           (ctx, paths) =>
             paths.map((path) => {
@@ -470,6 +509,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                     path.type === 'travel'
                       ? arrowTravelMaterial
                       : arrowCarveMaterial,
+                  colorByDepth: path.type === 'carve',
                   highlight$: isHighlighted$,
                 }).pipe(
                   share({
@@ -487,6 +527,22 @@ export class ViewerComponent implements OnInit, OnDestroy {
         takeUntil(this.destroy$),
       )
       .subscribe();
+  }
+
+  /** Find the deepest cut and update the colour scale and legend. */
+  private updateDeepest(paths: CamPath[]) {
+    let deepest = 0;
+    for (const path of paths) {
+      if (path.type !== 'carve') continue;
+      for (const point of path.points) {
+        if (point.z < deepest) deepest = point.z;
+      }
+    }
+    if (deepest !== this.deepest$.value) {
+      this.deepest$.next(deepest);
+    }
+    this.depthLegend.nativeElement.hidden = deepest >= 0;
+    this.deepestReadout.nativeElement.textContent = `${formatMm(deepest)} mm`;
   }
 
   /** Frame all shapes and toolpaths, keeping the current viewing angle. */
@@ -587,6 +643,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     material: Material;
     materialHighlight: Material;
     arrowMaterial: Material;
+    colorByDepth: boolean;
     highlight$: Observable<boolean>;
   }) {
     return timer(0).pipe(
@@ -612,6 +669,22 @@ export class ViewerComponent implements OnInit, OnDestroy {
             o.scene.add(arrows.mesh);
             this.arrows.add(arrows);
             this.arrowsDirty = true;
+
+            if (o.colorByDepth) {
+              // Recolour whenever the job's deepest cut changes.
+              const colors = new Float32Array(points.length * 3);
+              geometry.setAttribute('color', new BufferAttribute(colors, 3));
+              const color = new Color();
+              clean.add(
+                this.deepest$.subscribe((deepest) => {
+                  points.forEach((p, i) =>
+                    depthColor(p.z, deepest, color).toArray(colors, i * 3),
+                  );
+                  geometry.attributes['color'].needsUpdate = true;
+                  arrows.colorBy((p) => depthColor(p.z, deepest, color));
+                }),
+              );
+            }
 
             clean.add(() => {
               o.scene.remove(arrows.mesh);
