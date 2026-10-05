@@ -69,7 +69,7 @@ Three.js renderer that draws `CamShape[]` (shape outlines) and `CamPath[]` (tool
 ## Conventions & gotchas
 
 - **Zoneless change detection** is enabled (`provideZonelessChangeDetection`). Don't rely on Zone.js auto-detection; UI updates flow through the `async` pipe on observables. Components use `ChangeDetectionStrategy.Eager` (added by the Angular 22 migration to keep pre-22 behaviour).
-- Node 24.15+ is required (Angular 22); the version is pinned in `.nvmrc` and used by CI.
+- Node 24.15+ (or 26+) is required (Angular 22): `.nvmrc` pins 24 for local work (`nvm use`); CI builds with Node 26.
 - The worker parses SVG with `@xmldom/xmldom`, which lacks `querySelectorAll`; `svg-import.ts` adds a tag-name-only version that three's `SVGLoader` needs.
 - IDs are generated with `generateId()` (random base64url) in `src/util.ts`; equality of params is checked with `deepEqual` / `JSON.stringify` in `distinctUntilChanged` to avoid redundant worker work.
 - When touching the reactive graph in `app.component.ts`, respect the `scan`-based memoization (mutate existing entries, create only for new ids) or you'll cause every operation to recompute on every keystroke.
