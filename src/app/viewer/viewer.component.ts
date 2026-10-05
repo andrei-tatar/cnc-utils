@@ -1,6 +1,7 @@
 import {
   Component,
   ElementRef,
+  HostListener,
   Input,
   OnDestroy,
   OnInit,
@@ -22,6 +23,11 @@ import {
   Mesh,
   MeshBasicMaterial,
   Path,
+  Box3,
+  Group,
+  Object3D,
+  Plane,
+  Raycaster,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
@@ -43,7 +49,12 @@ import {
   timer,
 } from 'rxjs';
 
-import { GridHelper } from './helpers/grid-helper';
+import { AdaptiveGrid } from './helpers/adaptive-grid';
+import {
+  formatMm,
+  GridLabels,
+  visiblePlaneBounds,
+} from './helpers/grid-labels';
 import { DirectionArrows } from './helpers/direction-arrows';
 import { nestContours } from '../../cam/polygon-nesting';
 import { CamPath, CamShape, Highlight } from '../../cam/types';
@@ -54,14 +65,117 @@ import { CamPath, CamShape, Highlight } from '../../cam/types';
   imports: [CubePreviewComponent],
   template: `
     <canvas #canvas></canvas>
+    <div class="labels" #labels aria-hidden="true"></div>
     <app-cube-preview
       [camera]="camera"
       [controls]="controls"
     ></app-cube-preview>
+    <div class="tools">
+      <button
+        type="button"
+        title="Fit everything in view (F)"
+        aria-label="Fit to view"
+        (click)="fitToView()"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4M5.5 5.5h5v5h-5z" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        title="Top view (T)"
+        aria-label="Top view"
+        (click)="viewFromTop()"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2.5 2.5h11v11h-11zM8 5v6M5 8h6" />
+        </svg>
+      </button>
+    </div>
+    <div class="hud">
+      <span #cursorReadout class="hud_cursor"></span>
+      <span #gridReadout class="hud_grid"></span>
+    </div>
   `,
   styles: `
     :host {
       position: relative;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .labels {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      font:
+        10px/1 ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        monospace;
+      color: #8a8a8a;
+    }
+
+    .tools {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+
+      button {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        background: rgba(30, 30, 30, 0.85);
+        color: #bbb;
+        cursor: pointer;
+
+        &:hover {
+          color: #fff;
+          border-color: #666;
+        }
+      }
+
+      svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+    }
+
+    .hud {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      display: flex;
+      gap: 12px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(20, 20, 20, 0.75);
+      color: #bbb;
+      font:
+        11px/1.4 ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        monospace;
+      pointer-events: none;
+
+      span:empty {
+        display: none;
+      }
     }
 
     app-cube-preview {
@@ -81,6 +195,20 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   @ViewChild('canvas', { static: true })
   canvas!: ElementRef<HTMLCanvasElement>;
+
+  @ViewChild('labels', { static: true })
+  private labelsLayer!: ElementRef<HTMLElement>;
+
+  @ViewChild('cursorReadout', { static: true })
+  private cursorReadout!: ElementRef<HTMLElement>;
+
+  @ViewChild('gridReadout', { static: true })
+  private gridReadout!: ElementRef<HTMLElement>;
+
+  /** Shapes and toolpaths; its bounding box is what "fit to view" frames. */
+  private content = new Group();
+  /** Keep framing the content until the user moves the camera themselves. */
+  private autoFit = true;
 
   camera!: OrthographicCamera;
 
@@ -143,21 +271,31 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
     this.controls = new OrbitControls(this.camera, renderer.domElement);
     this.controls.zoomSpeed = 1.2;
+    // Zoom towards what's under the cursor, not the middle of the screen.
+    this.controls.zoomToCursor = true;
+    this.controls.addEventListener('start', () => (this.autoFit = false));
 
-    scene.add(new GridHelper(500));
+    const grid = new AdaptiveGrid();
+    scene.add(grid);
+    scene.add(this.content);
 
+    // Axis arrows of a constant on-screen size (scaled per frame below).
     const origin = new Vector3(0, 0, 0);
-    const length = 500;
+    const axes = [
+      new ArrowHelper(new Vector3(1, 0, 0), origin, 1, 'red', 0.2, 0.08),
+      new ArrowHelper(new Vector3(0, 1, 0), origin, 1, 'green', 0.2, 0.08),
+      new ArrowHelper(new Vector3(0, 0, 1), origin, 0.6, 'blue', 0.2, 0.08),
+    ];
+    axes.forEach((axis) => scene.add(axis));
 
-    scene.add(new ArrowHelper(new Vector3(1, 0, 0), origin, length, 'red'));
-    scene.add(new ArrowHelper(new Vector3(0, 1, 0), origin, length, 'green'));
-    scene.add(
-      new ArrowHelper(new Vector3(0, 0, 1), origin, length / 3, 'blue'),
-    );
+    const labels = new GridLabels(this.labelsLayer.nativeElement);
+    this.trackCursor(renderer.domElement);
 
     // Direction arrows keep a constant on-screen size, so re-lay them out
     // whenever the scale (zoom or viewport height) changes.
     let laidOutAt = 0;
+    let viewKey = '';
+    let fittedBox = '';
     renderer.setAnimationLoop(() => {
       const pixelsPerUnit =
         (renderer.domElement.clientHeight * this.camera.zoom) / frustumSize;
@@ -169,6 +307,44 @@ export class ViewerComponent implements OnInit, OnDestroy {
         laidOutAt = pixelsPerUnit;
         this.arrowsDirty = false;
       }
+
+      // Grid, labels and axis size only change when the view does.
+      const { clientWidth: width, clientHeight: height } = renderer.domElement;
+      const key = [
+        ...this.camera.position.toArray(),
+        ...this.controls.target.toArray(),
+        this.camera.zoom,
+        width,
+        height,
+      ].join();
+      if (pixelsPerUnit > 0 && key !== viewKey) {
+        viewKey = key;
+        const bounds = visiblePlaneBounds(this.camera, this.controls.target);
+        const spacing = grid.update(bounds, pixelsPerUnit);
+        labels.update(bounds, spacing, this.camera, width, height);
+        this.gridReadout.nativeElement.textContent = `grid ${formatMm(
+          spacing.minor,
+        )} mm`;
+        const axisLength = 70 / pixelsPerUnit;
+        axes.forEach((axis) => axis.scale.setScalar(axisLength));
+      }
+
+      // Until the user takes over, keep the whole project in view as shapes
+      // and toolpaths arrive or change. Wait for the real viewport size
+      // (before the first resize the camera has a ±1 frustum).
+      if (this.autoFit && this.camera.right - this.camera.left > 2) {
+        const box = new Box3().setFromObject(this.content);
+        const boxKey = box.isEmpty()
+          ? ''
+          : [...box.min.toArray(), ...box.max.toArray()]
+              .map((v) => v.toFixed(2))
+              .join();
+        if (boxKey && boxKey !== fittedBox) {
+          fittedBox = boxKey;
+          this.fitToView(box);
+        }
+      }
+
       renderer.render(scene, this.camera);
     });
 
@@ -234,7 +410,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 shape,
                 draw$: this.drawShape({
                   shape,
-                  scene,
+                  scene: this.content,
                   material,
                   materialHighlight,
                   nullMaterial,
@@ -281,7 +457,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 path,
                 draw$: this.drawPath({
                   path,
-                  scene,
+                  scene: this.content,
                   material:
                     path.type === 'travel'
                       ? pathTravelMaterial
@@ -313,13 +489,101 @@ export class ViewerComponent implements OnInit, OnDestroy {
       .subscribe();
   }
 
+  /** Frame all shapes and toolpaths, keeping the current viewing angle. */
+  fitToView(box = new Box3().setFromObject(this.content)) {
+    if (box.isEmpty()) {
+      return;
+    }
+
+    const center = box.getCenter(new Vector3());
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    this.controls.target.copy(center);
+    this.camera.position.copy(center).add(offset);
+    this.camera.updateMatrixWorld();
+
+    // The box's extent as seen by the camera.
+    const min = new Vector3(Infinity, Infinity, Infinity);
+    const max = new Vector3(-Infinity, -Infinity, -Infinity);
+    for (const x of [box.min.x, box.max.x])
+      for (const y of [box.min.y, box.max.y])
+        for (const z of [box.min.z, box.max.z]) {
+          const p = new Vector3(x, y, z).applyMatrix4(
+            this.camera.matrixWorldInverse,
+          );
+          min.min(p);
+          max.max(p);
+        }
+    const width = Math.max(max.x - min.x, 1e-3);
+    const height = Math.max(max.y - min.y, 1e-3);
+
+    this.camera.zoom = Math.min(
+      1e4,
+      0.85 *
+        Math.min(
+          (this.camera.right - this.camera.left) / width,
+          (this.camera.top - this.camera.bottom) / height,
+        ),
+    );
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  }
+
+  /** Look straight down at the XY plane (X right, Y up). */
+  viewFromTop() {
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    // A hair off vertical: Z is "up", so straight down has no defined roll.
+    this.camera.position
+      .copy(this.controls.target)
+      .add(new Vector3(0, -distance * 1e-4, distance));
+    this.controls.update();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(event: KeyboardEvent) {
+    const target = event.target as HTMLElement | null;
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      target?.closest('input, textarea, select, [contenteditable], .modal')
+    ) {
+      return;
+    }
+    if (event.key === 'f' || event.key === 'F') {
+      this.fitToView();
+    } else if (event.key === 't' || event.key === 'T') {
+      this.viewFromTop();
+    }
+  }
+
+  /** Show the cursor's position on the XY plane, in mm. */
+  private trackCursor(canvas: HTMLCanvasElement) {
+    const readout = this.cursorReadout.nativeElement;
+    const raycaster = new Raycaster();
+    const plane = new Plane(new Vector3(0, 0, 1), 0);
+    const ndc = new Vector2();
+    const hit = new Vector3();
+
+    canvas.addEventListener('pointermove', (event) => {
+      ndc.set(
+        (event.offsetX / canvas.clientWidth) * 2 - 1,
+        -(event.offsetY / canvas.clientHeight) * 2 + 1,
+      );
+      raycaster.setFromCamera(ndc, this.camera);
+      readout.textContent = raycaster.ray.intersectPlane(plane, hit)
+        ? `X ${hit.x.toFixed(2)}  Y ${hit.y.toFixed(2)} mm`
+        : '';
+    });
+    canvas.addEventListener('pointerleave', () => (readout.textContent = ''));
+  }
+
   ngOnDestroy(): void {
     this.destroy$.next(1);
   }
 
   private drawPath(o: {
     path: CamPath;
-    scene: Scene;
+    scene: Object3D;
     material: Material;
     materialHighlight: Material;
     arrowMaterial: Material;
@@ -374,7 +638,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   private drawShape(o: {
     shape: CamShape;
-    scene: Scene;
+    scene: Object3D;
     material: Material;
     materialHighlight: Material;
     nullMaterial: Material;
