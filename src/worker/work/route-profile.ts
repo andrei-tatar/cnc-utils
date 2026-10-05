@@ -7,7 +7,7 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
-import { enterCut, Resume } from '../../cam/ramp';
+import { alongLoop, arcTo, enterCut, Resume, startingAt } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 
@@ -28,6 +28,8 @@ export async function routeProfile(
     tabCount: number;
     tabWidth: number;
     tabHeight: number;
+    /** Moves all tabs this far along the toolpath (mm). */
+    tabOffset?: number;
     /** Which part of the shape to profile. */
     mode?: ShapePart;
     /** Ramp down into each pass at this angle (degrees) instead of plunging. */
@@ -132,11 +134,16 @@ export async function routeProfile(
       const cut = carvePass(
         builder,
         points,
+        polygon.points,
         polygon.close,
         from,
         depth,
         tabFloor,
-        { ...options, rampAngle: options.rampAngle ?? null },
+        {
+          ...options,
+          rampAngle: options.rampAngle ?? null,
+          tabOffset: options.tabOffset ?? 0,
+        },
         resume,
       );
       if (options.rampAngle) {
@@ -252,9 +259,15 @@ function orientPath(
     : [...points].reverse();
 }
 
+/**
+ * One pass along `points` at `depth`. `anchor` is the path as it was first
+ * given (`points` may start elsewhere by now): tabs sit at fixed places
+ * measured from its first point, so they stay put whatever the pass starts.
+ */
 function carvePass(
   builder: GCodeBuilder,
   points: CamPoint[],
+  anchor: CamPoint[],
   close: boolean,
   from: number,
   depth: number,
@@ -262,31 +275,54 @@ function carvePass(
   options: {
     tabCount: number;
     tabWidth: number;
+    tabOffset: number;
     rampAngle: number | null;
     toolSize: number;
   },
   resume?: Resume,
 ): CamPoint[] {
-  // Tabs only depend on the loop's length, not where it starts.
-  const perimeter = pathLength(close ? [...points, points[0]] : points);
-  // When ramping, tabs start at the loop's start, so the ramp gets the whole
-  // gap before it (ramps stay clear of tabs); otherwise they're centered
-  // between starts, so plunges are clear of them.
-  const tabs =
+  const perimeter = pathLength(close ? [...anchor, anchor[0]] : anchor);
+  const layout =
     tabFloor === null
       ? []
       : tabIntervals(
           perimeter,
           options.tabCount,
           options.tabWidth,
-          options.rampAngle ? 'at-start' : 'centered',
+          options.tabOffset,
         );
-  const edges = tabs.flatMap((t) => [t.start, t.end]);
+  // The free stretch between two tabs.
+  const gap = layout.length
+    ? perimeter / layout.length - (layout[0].end - layout[0].start)
+    : Infinity;
+
+  if (layout.length) {
+    // Start just before a tab when ramping (the ramp gets the gap before
+    // it), else plunge in the middle of a gap.
+    const start = options.rampAngle
+      ? layout[0].start
+      : layout[0].start - gap / 2;
+    points = startingAt(anchor, start);
+    if (resume?.down && options.rampAngle) {
+      // Carry on along the cut (at the depth of the pass before, so through
+      // material that's gone) to where this pass's ramp starts.
+      const needed =
+        (from - depth) / Math.tan((options.rampAngle * Math.PI) / 180);
+      const rampStart = needed <= gap ? start - needed : start;
+      const here = arcTo(anchor, resume.point);
+      const ahead = mod(rampStart - here, perimeter);
+      for (const p of alongLoop(startingAt(anchor, here), ahead)) {
+        builder.carveTo(p.x, p.y);
+      }
+      resume = { point: startingAt(anchor, rampStart)[0], down: true };
+    } else {
+      resume = undefined;
+    }
+  }
 
   if (!resume?.down) {
     builder.goToSafeHeight();
   }
-  // A ramp stays on the stretch after the last tab, which ends the loop.
   points = enterCut(
     builder,
     points,
@@ -295,9 +331,17 @@ function carvePass(
     depth,
     options.rampAngle,
     options.toolSize,
-    tabs.length ? perimeter - tabs[tabs.length - 1].end : Infinity,
+    gap,
     resume,
   );
+  // The tabs, measured from where the pass starts.
+  const tabs = shiftTabs(
+    layout,
+    layout.length ? arcTo(anchor, points[0]) : 0,
+    perimeter,
+  );
+  const edges = tabs.flatMap((t) => [t.start, t.end]);
+
   // Vertices the tool visits in order; a closed loop returns to its start.
   const loop = close ? [...points, points[0]] : points;
 
@@ -355,14 +399,14 @@ function carvePass(
 }
 
 /**
- * Evenly spaced tabs: `centered` between starts (the start point stays
- * clear), or the first one `at-start` (all the room is just before it).
+ * Evenly spaced tabs, measured from the path's first point: centered
+ * between multiples of the spacing, then moved along by `offset`.
  */
 function tabIntervals(
   perimeter: number,
   count: number,
   width: number,
-  placement: 'centered' | 'at-start',
+  offset: number,
 ): Tab[] {
   if (count <= 0 || width <= 0 || perimeter <= 0) {
     return [];
@@ -372,11 +416,35 @@ function tabIntervals(
   const half = Math.min(width, spacing) / 2;
   const tabs: Tab[] = [];
   for (let k = 0; k < count; k++) {
-    const center =
-      placement === 'centered' ? (k + 0.5) * spacing : k * spacing + half;
+    const center = mod((k + 0.5) * spacing + offset, perimeter);
     tabs.push({ start: center - half, end: center + half });
   }
-  return tabs;
+  return tabs.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Tabs measured from `start` instead of the path's first point, within
+ * [0, perimeter): one that spans the start is split in two.
+ */
+function shiftTabs(tabs: Tab[], start: number, perimeter: number): Tab[] {
+  const shifted: Tab[] = [];
+  for (const tab of tabs) {
+    const from = mod(tab.start - start, perimeter);
+    const to = from + (tab.end - tab.start);
+    if (to > perimeter) {
+      shifted.push(
+        { start: from, end: perimeter },
+        { start: 0, end: to - perimeter },
+      );
+    } else {
+      shifted.push({ start: from, end: to });
+    }
+  }
+  return shifted.sort((a, b) => a.start - b.start);
+}
+
+function mod(a: number, n: number) {
+  return ((a % n) + n) % n;
 }
 
 function inTab(arcLength: number, tabs: Tab[]): boolean {

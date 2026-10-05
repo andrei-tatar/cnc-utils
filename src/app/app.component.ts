@@ -509,6 +509,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             tabCount: op.tabCount,
                             tabWidth: op.tabWidth,
                             tabHeight: op.tabHeight,
+                            tabOffset: op.tabOffset ?? 0,
                             mode: op.mode ?? 'both',
                             rampAngle: tool.ramp ? tool.rampAngle : null,
                           })

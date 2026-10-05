@@ -140,6 +140,17 @@ export function enterCut(
   return startingAt(path, needed);
 }
 
+/**
+ * The points along a closed loop from points[0] for `length` (round more than
+ * once if needed), not counting points[0] itself.
+ */
+export function alongLoop(points: CamPoint[], length: number): CamPoint[] {
+  const reversed = [points[0], ...points.slice(1).reverse()];
+  return walkBack(reversed, length)
+    .slice(1)
+    .map(({ point }) => point);
+}
+
 function carveAll(builder: GCodeBuilder, moves: CamPoint3[]) {
   for (const move of moves) {
     builder.carveTo(move.x, move.y, move.z);
@@ -147,7 +158,7 @@ function carveAll(builder: GCodeBuilder, moves: CamPoint3[]) {
 }
 
 /** How far round the closed loop (from points[0]) its nearest point to `p` is. */
-function arcTo(points: CamPoint[], p: CamPoint): number {
+export function arcTo(points: CamPoint[], p: CamPoint): number {
   let best = { distance: Infinity, arc: 0 };
   let traveled = 0;
   for (let i = 0; i < points.length; i++) {
@@ -173,7 +184,7 @@ function arcTo(points: CamPoint[], p: CamPoint): number {
 }
 
 /** The closed loop, starting `arc` along it from points[0] (wrapping). */
-function startingAt(points: CamPoint[], arc: number): CamPoint[] {
+export function startingAt(points: CamPoint[], arc: number): CamPoint[] {
   const n = points.length;
   const perimeter = pathLength(points, true);
   if (perimeter < EPS) {
