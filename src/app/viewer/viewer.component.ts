@@ -20,6 +20,7 @@ import {
   WebGLRenderer,
   ShapeGeometry,
   Mesh,
+  MeshBasicMaterial,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
@@ -42,6 +43,7 @@ import {
 } from 'rxjs';
 
 import { GridHelper } from './helpers/grid-helper';
+import { DirectionArrows } from './helpers/direction-arrows';
 import { CamPath, CamShape } from '../../cam/types';
 
 @Component({
@@ -79,6 +81,9 @@ export class ViewerComponent implements OnInit, OnDestroy {
   canvas!: ElementRef<HTMLCanvasElement>;
 
   camera!: OrthographicCamera;
+
+  private arrows = new Set<DirectionArrows>();
+  private arrowsDirty = false;
   controls!: OrbitControls;
 
   @Input()
@@ -148,7 +153,20 @@ export class ViewerComponent implements OnInit, OnDestroy {
       new ArrowHelper(new Vector3(0, 0, 1), origin, length / 3, 'blue'),
     );
 
+    // Direction arrows keep a constant on-screen size, so re-lay them out
+    // whenever the scale (zoom or viewport height) changes.
+    let laidOutAt = 0;
     renderer.setAnimationLoop(() => {
+      const pixelsPerUnit =
+        (renderer.domElement.clientHeight * this.camera.zoom) / frustumSize;
+      if (
+        pixelsPerUnit > 0 &&
+        (pixelsPerUnit !== laidOutAt || this.arrowsDirty)
+      ) {
+        this.arrows.forEach((arrows) => arrows.update(pixelsPerUnit));
+        laidOutAt = pixelsPerUnit;
+        this.arrowsDirty = false;
+      }
       renderer.render(scene, this.camera);
     });
 
@@ -182,6 +200,12 @@ export class ViewerComponent implements OnInit, OnDestroy {
       color: 'salmon',
       transparent: true,
       opacity: 0.5,
+    });
+    const arrowCarveMaterial = new MeshBasicMaterial({ color: '#7cc4f0' });
+    const arrowTravelMaterial = new MeshBasicMaterial({
+      color: 'salmon',
+      transparent: true,
+      opacity: 0.7,
     });
 
     this.shapes$
@@ -255,6 +279,10 @@ export class ViewerComponent implements OnInit, OnDestroy {
                     path.type === 'travel'
                       ? highlightPathTravelMaterial
                       : highlightPathCarveMaterial,
+                  arrowMaterial:
+                    path.type === 'travel'
+                      ? arrowTravelMaterial
+                      : arrowCarveMaterial,
                   highlight$: isHighlighted$,
                 }).pipe(
                   share({
@@ -283,6 +311,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     scene: Scene;
     material: Material;
     materialHighlight: Material;
+    arrowMaterial: Material;
     highlight$: Observable<boolean>;
   }) {
     return timer(0).pipe(
@@ -304,11 +333,25 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
             clean.add(() => o.scene.remove(line));
 
+            const arrows = new DirectionArrows(points, o.arrowMaterial);
+            o.scene.add(arrows.mesh);
+            this.arrows.add(arrows);
+            this.arrowsDirty = true;
+
+            clean.add(() => {
+              o.scene.remove(arrows.mesh);
+              this.arrows.delete(arrows);
+              arrows.dispose();
+              geometry.dispose();
+            });
+
             clean.add(
               o.highlight$.subscribe((highlight) => {
                 sceneItems.forEach((item) => {
                   item.material = highlight ? o.materialHighlight : o.material;
                 });
+                // Unhighlighted paths are fully transparent; hide their arrows too.
+                arrows.mesh.visible = highlight;
               }),
             );
 
