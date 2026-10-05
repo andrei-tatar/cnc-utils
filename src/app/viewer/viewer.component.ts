@@ -21,6 +21,7 @@ import {
   ShapeGeometry,
   Mesh,
   MeshBasicMaterial,
+  Path,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
@@ -44,6 +45,7 @@ import {
 
 import { GridHelper } from './helpers/grid-helper';
 import { DirectionArrows } from './helpers/direction-arrows';
+import { nestContours } from '../../cam/polygon-nesting';
 import { CamPath, CamShape } from '../../cam/types';
 
 @Component({
@@ -377,18 +379,30 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
             const sceneItems: (Line | Mesh)[] = [];
 
+            // Fill each outline with its holes cut out, rather than filling
+            // every closed polygon (which paints holes over as solid).
+            const closed = o.shape.polygons
+              .filter((poly) => poly.close && poly.points.length > 2)
+              .map((poly) => poly.points);
+            for (const { outer, holes } of nestContours(closed)) {
+              const shape = new Shape(
+                outer.map(({ x, y }) => new Vector2(x, y)),
+              );
+              shape.holes = holes.map(
+                (hole) => new Path(hole.map(({ x, y }) => new Vector2(x, y))),
+              );
+              const geometry = new ShapeGeometry(shape);
+              const mesh = new Mesh(geometry, o.material);
+              sceneItems.push(mesh);
+              o.scene.add(mesh);
+
+              clean.add(() => {
+                o.scene.remove(mesh);
+                geometry.dispose();
+              });
+            }
+
             for (const poly of o.shape.polygons) {
-              if (poly.close) {
-                const points = poly.points.map(({ x, y }) => new Vector2(x, y));
-                const shape = new Shape(points);
-                const geometry = new ShapeGeometry(shape);
-                const mesh = new Mesh(geometry, o.material);
-                sceneItems.push(mesh);
-                o.scene.add(mesh);
-
-                clean.add(() => o.scene.remove(mesh));
-              }
-
               const srcPoints = [...poly.points];
               if (
                 poly.close &&
