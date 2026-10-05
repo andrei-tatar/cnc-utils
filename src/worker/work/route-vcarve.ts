@@ -35,6 +35,8 @@ export async function routeVCarve(
     clearFlatBottom: boolean;
     sharpCorners: boolean;
     sharpCornerAngle: number;
+    /** The groove's middle is cleared first, so carve below the cone. */
+    beyondCone?: boolean;
   },
 ): Promise<GCodeBuilder> {
   const builder = new GCodeBuilder();

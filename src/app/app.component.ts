@@ -59,6 +59,7 @@ type VCarveSource = {
   tipDiameter: number;
   startDepth: number;
   maxDepth: number;
+  beyondCone: boolean;
 };
 
 const EDITOR_WIDTH_STORAGE_KEY = 'ui.editorWidth';
@@ -293,7 +294,29 @@ export class AppComponent implements OnInit, OnDestroy {
       tipDiameter: tool.tipDiameter,
       startDepth: vcarve.startDepth,
       maxDepth: vcarve.maxDepth,
+      beyondCone: AppComponent.clearedFirst(vcarve.id, operations, tools),
     };
+  }
+
+  /**
+   * Whether v-carve `vcarveId` is preceded by a clearing for it that uses an
+   * end mill. Then the groove's middle is gone before the V-bit arrives, so
+   * it can carve below its cone without the shank meeting uncut material.
+   */
+  static clearedFirst(
+    vcarveId: string,
+    operations: ModelType['operations'],
+    tools: ModelType['tools'],
+  ): boolean {
+    const vcarveIndex = operations.findIndex((o) => o.id === vcarveId);
+    return operations.some(
+      (o, index) =>
+        index < vcarveIndex &&
+        o.type === 'v-carve-clear' &&
+        o.vcarveOperationId === vcarveId &&
+        (tools.find((t) => t.id === o.toolId)?.bitType ?? 'end-mill') !==
+          'v-bit',
+    );
   }
 
   private static generateGcodeFromOperations(
@@ -336,6 +359,9 @@ export class AppComponent implements OnInit, OnDestroy {
                 tools,
               );
               const effectiveShapeId = source ? source.shapeId : shapeId;
+              const beyondCone =
+                operationParameters.type === 'v-carve' &&
+                AppComponent.clearedFirst(id, operations, tools);
 
               // Tools are numbered by their position in the tools list.
               const toolInfo: ToolInfo | null = tool
@@ -354,6 +380,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 existing.shapeId$.next(effectiveShapeId);
                 existing.toolParameters$.next(toolParameters);
                 existing.source$.next(source);
+                existing.beyondCone$.next(beyondCone);
                 existing.toolInfo$.next(toolInfo);
                 return existing;
               }
@@ -364,6 +391,7 @@ export class AppComponent implements OnInit, OnDestroy {
               const shapeId$ = new BehaviorSubject(effectiveShapeId);
               const toolParameters$ = new BehaviorSubject(toolParameters);
               const source$ = new BehaviorSubject(source);
+              const beyondCone$ = new BehaviorSubject(beyondCone);
               const toolInfo$ = new BehaviorSubject(toolInfo);
 
               const shape$ = combineLatest([
@@ -400,8 +428,9 @@ export class AppComponent implements OnInit, OnDestroy {
                     (s) => JSON.stringify(s),
                   ),
                 ),
+                beyondCone$.pipe(distinctUntilChanged()),
               ]).pipe(
-                switchMap(([shape, op, tool, source]) => {
+                switchMap(([shape, op, tool, source, beyondCone]) => {
                   // No (or a deleted) tool or shape: nothing to cut. Routing
                   // functions expect at least one shape.
                   if (!tool || !shape.length) {
@@ -483,6 +512,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             clearFlatBottom: op.clearFlatBottom,
                             sharpCorners: op.sharpCorners ?? true,
                             sharpCornerAngle: op.sharpCornerAngle ?? 150,
+                            beyondCone,
                           })
                           .pipe(
                             map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
@@ -505,6 +535,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             tipDiameter: source.tipDiameter,
                             startDepth: source.startDepth,
                             maxDepth: source.maxDepth,
+                            beyondCone: source.beyondCone,
                           })
                           .pipe(
                             map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
@@ -551,6 +582,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 result$,
                 shapeId$,
                 source$,
+                beyondCone$,
               };
             },
           );
@@ -561,6 +593,7 @@ export class AppComponent implements OnInit, OnDestroy {
           toolParameters$: BehaviorSubject<ToolParameters | null>;
           shapeId$: BehaviorSubject<string>;
           source$: BehaviorSubject<VCarveSource | null>;
+          beyondCone$: BehaviorSubject<boolean>;
           toolInfo$: BehaviorSubject<ToolInfo | null>;
           result$: Observable<GCodeBuilder>;
         }>,

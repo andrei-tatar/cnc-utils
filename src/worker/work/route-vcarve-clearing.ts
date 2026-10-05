@@ -39,6 +39,8 @@ export async function routeVCarveClearing(
     tipDiameter: number;
     startDepth: number;
     maxDepth: number;
+    /** The v-carve will go below its cone, so clear that deep too. */
+    beyondCone?: boolean;
   },
 ): Promise<GCodeBuilder> {
   const sourceShapeId = input?.[0]?.sourceShapeId;
@@ -49,6 +51,7 @@ export async function routeVCarveClearing(
     vAngle: options.vAngle,
     tipDiameter: options.tipDiameter,
     maxDepth: options.maxDepth,
+    beyondCone: options.beyondCone,
   });
   const step = options.depthPerStep;
   if (!geometry || !(step > 0) || !(options.toolSize > 0)) {

@@ -17,15 +17,21 @@ const ARC_TOLERANCE = 0;
 
 /**
  * The V-groove's shape for a given bit and settings: the walls at depth `h`
- * are `tipRadius + h * tan` inside the outline, down to `maxDepth`, which is
- * also capped so the bit's shank never touches the walls. Null for an
- * impossible angle.
+ * are `tipRadius + h * tan` inside the outline, down to `maxDepth`. Null for
+ * an impossible angle.
+ *
+ * Normally the depth is also capped at the bit's cone height: below it the
+ * straight shank would have to push through the uncut middle of the groove.
+ * With `beyondCone` (the middle has been cleared by an end mill first) only
+ * `maxDepth` applies: the cone face still lies along the wall at any depth,
+ * and the shank stays inside the groove, clear of the wall.
  */
 export function vCarveGeometry(options: {
   toolSize: number;
   vAngle: number;
   tipDiameter: number;
   maxDepth: number;
+  beyondCone?: boolean;
 }) {
   const tan = Math.tan(((options.vAngle / 2) * Math.PI) / 180);
   if (!(tan > 0) || !Number.isFinite(tan)) {
@@ -38,8 +44,16 @@ export function vCarveGeometry(options: {
     0,
     (options.toolSize / 2 - tipRadius) / tan,
   );
-  const maxDepth = Math.min(options.maxDepth, geometricMaxDepth);
-  return { tan, tipRadius, maxDepth, maxInset: tipRadius + maxDepth * tan };
+  const maxDepth = options.beyondCone
+    ? Math.max(0, options.maxDepth)
+    : Math.min(options.maxDepth, geometricMaxDepth);
+  return {
+    tan,
+    tipRadius,
+    maxDepth,
+    maxInset: tipRadius + maxDepth * tan,
+    coneHeight: geometricMaxDepth,
+  };
 }
 
 /**

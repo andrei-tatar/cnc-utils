@@ -42,7 +42,7 @@ End mills and V-bits (angle and tip diameter). Feed rate, plunge rate and spindl
 | pocket | any | clear the inside of a shape in depth steps |
 | flat | any | surface an area with parallel passes along X or Y |
 | v-carve | V-bit | carve with a V-bit; the depth follows the shape's width, with sharp corners, a max depth and optional flat-bottom clearing |
-| v-carve clearing | end mill | rough out the bulk of a v-carve so the V-bit only finishes the walls; follows its v-carve automatically — list it **before** the v-carve |
+| v-carve clearing | end mill | rough out the bulk of a v-carve so the V-bit only finishes the walls; follows its v-carve automatically — list it **before** the v-carve. A V-bit alone can't go deeper than its cone (its shank would push through the uncut middle); with a clearing before it, the v-carve and the clearing go all the way to the max depth |
 
 Items with problems (a missing value, a deleted tool or shape, a v-carve on an end mill…) are outlined in red, with a "to fix" count on their section.
 

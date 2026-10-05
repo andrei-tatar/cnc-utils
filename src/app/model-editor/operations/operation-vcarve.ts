@@ -1,4 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { allTools } from '../tools';
+import { allOperations } from './describe';
 
 export interface ModelType {
   type?: 'v-carve';
@@ -35,6 +37,9 @@ const field: FormlyFieldConfig = {
         min: 0,
         label: 'max depth',
         required: true,
+      },
+      expressions: {
+        'props.description': (field: FormlyFieldConfig) => maxDepthHint(field),
       },
     },
     {
@@ -86,3 +91,38 @@ export const Definition = {
   label: 'v-carve',
   fieldGroup: field,
 } as const;
+
+/**
+ * Explain whether the V-bit limits the depth: without clearing it can't go
+ * below its cone (the shank would push through the uncut middle); with a
+ * v-carve clearing earlier in the list it can.
+ */
+function maxDepthHint(field: FormlyFieldConfig): string {
+  const op = field.model;
+  const tool = allTools(field).find((t) => t.id === op?.toolId);
+  if (tool?.bitType !== 'v-bit' || !tool.vAngle || !tool.diameter) {
+    return '';
+  }
+  const tan = Math.tan(((tool.vAngle / 2) * Math.PI) / 180);
+  const cone =
+    Math.round(
+      (Math.max(0, tool.diameter / 2 - (tool.tipDiameter ?? 0) / 2) / tan) *
+        100,
+    ) / 100;
+  const operations = allOperations(field);
+  const index = operations.indexOf(op);
+  const cleared = operations.some(
+    (o, i) =>
+      i < index &&
+      o.type === 'v-carve-clear' &&
+      o.vcarveOperationId === op?.id &&
+      (allTools(field).find((t) => t.id === o.toolId)?.bitType ??
+        'end-mill') !== 'v-bit',
+  );
+  if (cleared) {
+    return `cleared first, so it can go below the bit's ${cone} mm cone`;
+  }
+  return +op?.maxDepth > cone
+    ? `limited to ${cone} mm by the Ø${tool.diameter} mm bit — add a v-carve clearing before this operation to go deeper`
+    : `the bit can reach ${cone} mm; deeper needs a v-carve clearing first`;
+}
