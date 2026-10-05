@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <!-- Same depth gradient as the toolpath preview: surface → deepest. -->
+    <linearGradient id="depth" gradientUnits="userSpaceOnUse" x1="0" y1="38" x2="0" y2="58">
+      <stop offset="0" stop-color="#b3f0ff"/>
+      <stop offset="0.5" stop-color="#2f80ed"/>
+      <stop offset="1" stop-color="#e040fb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#141b2d"/>
+  <!-- material with a V-carved notch -->
+  <path d="M6 38 H23 L32 53 L41 38 H58 V58 H6 Z" fill="url(#depth)"/>
+  <!-- V-bit: shank and cone, tip in the notch -->
+  <rect x="26.5" y="6" width="11" height="15" rx="2" fill="#7c8aa5"/>
+  <path d="M20 21 H44 L32 51 Z" fill="#e8edf5"/>
+</svg>
