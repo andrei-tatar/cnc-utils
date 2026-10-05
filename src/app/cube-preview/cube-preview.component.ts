@@ -67,6 +67,21 @@ export class CubePreviewComponent implements OnInit {
     );
     cubeRenderer.setPixelRatio(window.devicePixelRatio);
 
+    // Draw only when something changed (the camera, a hovered face, a face
+    // texture arriving), at most once per frame.
+    let renderPending = false;
+    const requestRender = () => {
+      if (renderPending) {
+        return;
+      }
+      renderPending = true;
+      requestAnimationFrame(() => {
+        renderPending = false;
+        updateCubeCamera();
+        cubeRenderer.render(cubeScene, cubeCamera);
+      });
+    };
+
     const updateCubeCamera = () => {
       cubeCamera.rotation.copy(this.camera.rotation);
       let dir = this.camera.position
@@ -140,7 +155,7 @@ export class CubePreviewComponent implements OnInit {
       ctx.fillText(texts[i], size / 2, size / 2);
       materials.push(
         new MeshBasicMaterial({
-          map: textureLoader.load(canvas.toDataURL()),
+          map: textureLoader.load(canvas.toDataURL(), requestRender),
         }),
       );
     }
@@ -221,6 +236,7 @@ export class CubePreviewComponent implements OnInit {
         activePlane!.material.opacity = 0.2;
         activePlane!.material.needsUpdate = true;
       }
+      requestRender();
     };
 
     let oldPosition = new Vector3();
@@ -252,9 +268,7 @@ export class CubePreviewComponent implements OnInit {
       this.controls.update();
     };
 
-    cubeRenderer.setAnimationLoop(() => {
-      cubeRenderer.render(cubeScene, cubeCamera);
-      updateCubeCamera();
-    });
+    this.controls.addEventListener('change', requestRender);
+    requestRender();
   }
 }

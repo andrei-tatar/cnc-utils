@@ -259,6 +259,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
   /** Arrows shown by the last thinning pass, to keep them stable. */
   private shownArrows = new WeakMap<DirectionArrows, Set<number>>();
   controls!: OrbitControls;
+  /** Draw the next frame (the preview only draws when asked). */
+  private requestRender = () => {};
 
   @Input()
   set shapes(value: Observable<CamShape[]>) {
@@ -312,6 +314,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
           this.camera.far = 1e6;
           this.camera.updateProjectionMatrix();
           renderer.setSize(width, height);
+          this.requestRender();
         }),
         takeUntil(this.destroy$),
       )
@@ -374,7 +377,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     let arrowsKey = '';
     let viewKey = '';
     let fittedBox = '';
-    renderer.setAnimationLoop(() => {
+    const frame = () => {
       const pixelsPerUnit =
         (renderer.domElement.clientHeight * this.camera.zoom) / frustumSize;
 
@@ -425,7 +428,24 @@ export class ViewerComponent implements OnInit, OnDestroy {
       }
 
       renderer.render(scene, this.camera);
-    });
+    };
+
+    // Draw only when something changed, at most once per frame: an idle
+    // preview costs nothing.
+    let renderPending = false;
+    this.requestRender = () => {
+      if (renderPending) {
+        return;
+      }
+      renderPending = true;
+      requestAnimationFrame(() => {
+        renderPending = false;
+        frame();
+      });
+    };
+    // The camera moved (orbit, pan, zoom, fit, top view, view cube).
+    this.controls.addEventListener('change', this.requestRender);
+    this.requestRender();
 
     const material = new LineBasicMaterial({
       transparent: true,
@@ -828,6 +848,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             o.scene.add(arrows.mesh);
             this.arrows.add(arrows);
             this.arrowsDirty = true;
+            this.requestRender();
 
             if (o.colorByDepth) {
               // Recolour whenever the job's deepest cut changes.
@@ -841,6 +862,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                   );
                   geometry.attributes['color'].needsUpdate = true;
                   arrows.colorBy((p) => depthColor(p.z, deepest, color));
+                  this.requestRender();
                 }),
               );
             }
@@ -850,6 +872,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
               this.arrows.delete(arrows);
               arrows.dispose();
               geometry.dispose();
+              this.requestRender();
             });
 
             clean.add(
@@ -860,6 +883,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 // Unhighlighted paths are fully transparent; hide their arrows too.
                 arrows.mesh.visible = highlight;
                 this.arrowsDirty = true;
+                this.requestRender();
               }),
             );
 
@@ -928,6 +952,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
               clean.add(() => o.scene.remove(line));
             }
+            this.requestRender();
+            clean.add(() => this.requestRender());
 
             clean.add(
               o.highlight$.subscribe((highlight) => {
@@ -941,13 +967,15 @@ export class ViewerComponent implements OnInit, OnDestroy {
                     item.material = highlight ? o.material : o.nullMaterial;
                   }
                 });
+                this.requestRender();
               }),
             );
 
             clean.add(
-              o.hidden$.subscribe((hidden) =>
-                sceneItems.forEach((item) => (item.visible = !hidden)),
-              ),
+              o.hidden$.subscribe((hidden) => {
+                sceneItems.forEach((item) => (item.visible = !hidden));
+                this.requestRender();
+              }),
             );
 
             return clean;
