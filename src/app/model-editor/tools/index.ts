@@ -1,8 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
-import {
-  ModelType as OperationsModelType,
-  field as operationsField,
-} from '../operations';
+import { rootModel } from '../shapes/describe';
 
 export type BitType = 'end-mill' | 'v-bit';
 
@@ -20,11 +17,21 @@ export type ToolType = {
   tipDiameter: number;
   feedRate: number;
   plungeFeedRate: number;
-} & OperationsModelType;
+};
 
 export type ModelType = {
   tools: Array<ToolType>;
 };
+
+/** All tools in the model, from any field in the form. */
+export function allTools(field: FormlyFieldConfig | undefined): ToolType[] {
+  return rootModel(field)?.tools ?? [];
+}
+
+/** The tool's own name, or one built from its settings. */
+export function toolLabel(tool: Partial<ToolType> | undefined): string {
+  return tool?.name || describeTool(tool);
+}
 
 /** A readable name built from the tool's settings, e.g. "Ø6 mm 60° v-bit". */
 export function describeTool(tool: Partial<ToolType> | undefined): string {
@@ -142,7 +149,6 @@ export const field: FormlyFieldConfig = {
           required: true,
         },
       },
-      operationsField,
     ],
   },
 };

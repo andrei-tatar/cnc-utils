@@ -36,6 +36,7 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
   model: ModelType = {
     shapes: [],
     tools: [],
+    operations: [],
   };
 
   @Output()

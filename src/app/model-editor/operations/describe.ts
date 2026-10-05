@@ -1,9 +1,11 @@
 import { shapeLabel } from '../shapes/describe';
+import { toolLabel, ToolType } from '../tools';
 
-/** A readable name built from the operation's settings and target shape. */
+/** A readable name built from the operation's settings, shape and tool. */
 export function describeOperation(
   operation: any,
   shapes: Array<{ id?: string; name?: string; type?: string }>,
+  tools: ToolType[],
 ): string {
   const mm = (value: number) => `${Math.round(value * 100) / 100} mm`;
   const total = (start: number, perStep: number, steps: number) =>
@@ -28,5 +30,8 @@ export function describeOperation(
   }
 
   const shape = shapes.find((s) => s.id === operation?.shapeId);
-  return shape ? `${what} · ${shapeLabel(shape, shapes)}` : what;
+  const tool = tools.find((t) => t.id === operation?.toolId);
+  return [what, shape && shapeLabel(shape, shapes), tool && toolLabel(tool)]
+    .filter(Boolean)
+    .join(' · ');
 }

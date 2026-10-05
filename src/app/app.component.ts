@@ -11,6 +11,7 @@ import {
   merge,
   NEVER,
   Observable,
+  of,
   race,
   ReplaySubject,
   scan,
@@ -25,6 +26,7 @@ import { CamPath, CamShape } from '../cam/types';
 import { AsyncPipe } from '@angular/common';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
 import {
+  migrateModel,
   ModelType,
   OperationParameters,
   ShapeParameters,
@@ -131,7 +133,7 @@ export class AppComponent implements OnInit, OnDestroy {
           if (foundLine) {
             return loadModelFromMetadata(
               foundLine.substring(modelPrefix.length),
-            );
+            ).then(migrateModel);
           }
 
           return EMPTY;
@@ -208,11 +210,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private loadModel(): ModelType {
     const model = localStorage.getItem('model');
-    if (!model) {
-      return { shapes: [], tools: [] };
-    }
-
-    return JSON.parse(model);
+    return migrateModel(model ? JSON.parse(model) : {});
   }
 
   private saveModel(model: ModelType) {
@@ -226,209 +224,194 @@ export class AppComponent implements OnInit, OnDestroy {
   ) {
     return model$.pipe(
       scan(
-        (ctx, { tools }) => {
-          return tools
-            .flatMap((tool) =>
-              tool.operations.map((operation) => ({ tool, operation })),
-            )
-            .map(
-              ({
-                tool: {
-                  id: toolId,
-                  expanded: ___,
-                  name: _____,
-                  operations: ____,
-                  ...toolParameters
-                },
-                operation: {
-                  id: operationId,
-                  expanded: _,
-                  name: __,
-                  shapeId,
-                  ...operationParameters
-                },
-              }) => {
-                const id = `${toolId}-${operationId}`;
-                const existing = ctx.find((e) => e.id === id);
-                if (existing) {
-                  existing.operationParameters$.next(operationParameters);
-                  existing.shapeId$.next(shapeId);
-                  existing.toolParameters$.next(toolParameters);
-                  return existing;
-                }
+        (ctx, { tools, operations }) => {
+          return (operations ?? []).map(
+            ({
+              id,
+              expanded: _,
+              name: __,
+              shapeId,
+              toolId,
+              ...operationParameters
+            }) => {
+              const tool = tools.find((t) => t.id === toolId);
+              const toolParameters: ToolParameters | null = tool
+                ? (({ id: _, expanded: __, name: ___, ...parameters }) =>
+                    parameters)(tool)
+                : null;
 
-                const operationParameters$ = new BehaviorSubject(
-                  operationParameters,
-                );
-                const shapeId$ = new BehaviorSubject(shapeId);
-                const toolParameters$ = new BehaviorSubject(toolParameters);
+              const existing = ctx.find((e) => e.id === id);
+              if (existing) {
+                existing.operationParameters$.next(operationParameters);
+                existing.shapeId$.next(shapeId);
+                existing.toolParameters$.next(toolParameters);
+                return existing;
+              }
 
-                const shape$ = combineLatest([
-                  shapeId$.pipe(distinctUntilChanged()),
-                  shapes$.pipe(debounceTime(0)),
-                ]).pipe(
-                  map(([shapeId, allShapes]) =>
-                    allShapes.filter(
-                      (shape) => shape.sourceShapeId === shapeId,
-                    ),
-                  ),
+              const operationParameters$ = new BehaviorSubject(
+                operationParameters,
+              );
+              const shapeId$ = new BehaviorSubject(shapeId);
+              const toolParameters$ = new BehaviorSubject(toolParameters);
+
+              const shape$ = combineLatest([
+                shapeId$.pipe(distinctUntilChanged()),
+                shapes$.pipe(debounceTime(0)),
+              ]).pipe(
+                map(([shapeId, allShapes]) =>
+                  allShapes.filter((shape) => shape.sourceShapeId === shapeId),
+                ),
+                distinctUntilChanged(
+                  (a, b) =>
+                    a.length === b.length &&
+                    a.every((aa, index) => b[index] === aa),
+                ),
+              );
+
+              const result$ = combineLatest([
+                shape$,
+                operationParameters$.pipe(
                   distinctUntilChanged(
-                    (a, b) =>
-                      a.length === b.length &&
-                      a.every((aa, index) => b[index] === aa),
+                    (a, b) => a === b,
+                    (s) => JSON.stringify(s),
                   ),
-                );
-
-                const result$ = combineLatest([
-                  shape$,
-                  operationParameters$.pipe(
-                    distinctUntilChanged(
-                      (a, b) => a === b,
-                      (s) => JSON.stringify(s),
-                    ),
+                ),
+                toolParameters$.pipe(
+                  distinctUntilChanged(
+                    (a, b) => a === b,
+                    (s) => JSON.stringify(s),
                   ),
-                  toolParameters$.pipe(
-                    distinctUntilChanged(
-                      (a, b) => a === b,
-                      (s) => JSON.stringify(s),
-                    ),
-                  ),
-                ]).pipe(
-                  switchMap(
-                    ([
-                      shape,
-                      op,
-                      {
-                        bitType,
-                        diameter,
-                        vAngle,
-                        tipDiameter,
-                        feedRate,
-                        plungeFeedRate,
-                      },
-                    ]) => {
-                      const toolGcode = new GCodeBuilder()
-                        .carveFeedrate(feedRate)
-                        .plungeFeedRate(plungeFeedRate);
-                      switch (op.type) {
-                        case 'pocket':
-                          return race(
-                            worker
-                              .routePocketHole(shape, {
-                                toolSize: diameter,
-                                toolEngagement: op.toolEngagement,
-                                leaveStock: op.leaveStock,
-                                depthPerStep: op.depth,
-                                steps: op.steps,
-                                startDepth: op.startDepth,
-                              })
-                              .pipe(
-                                map((r) =>
-                                  toolGcode.concat(GCodeBuilder.clone(r)),
-                                ),
-                              ),
-                            working$,
-                          );
-                        case 'flat':
-                          return race(
-                            worker
-                              .flatOutline(shape, {
-                                toolSize: diameter,
-                                toolEngagement: op.toolEngagement,
-                                depth: op.depthPerStep,
-                                steps: op.steps,
-                                interpolateStepSize: op.interpolateStepSize,
-                                allPassesInSameDirection:
-                                  op.allPassesInSameDirection,
-                                alongAxis: op.alongAxis,
-                                growByToolsize: op.growByToolsize,
-                                applyConvexHullOnShape:
-                                  op.applyConvexHullOnShape,
-                                pauseAfterEachStep: op.pauseAfterEachStep,
-                              })
-                              .pipe(
-                                map((r) =>
-                                  toolGcode.concat(GCodeBuilder.clone(r)),
-                                ),
-                              ),
-                            working$,
-                          );
-                        case 'profile':
-                          return race(
-                            worker
-                              .routeProfile(shape, {
-                                toolSize: diameter,
-                                side: op.side,
-                                direction: op.direction,
-                                startDepth: op.startDepth,
-                                depthPerStep: op.depth,
-                                steps: op.steps,
-                                tabsEnabled: op.tabsEnabled,
-                                tabCount: op.tabCount,
-                                tabWidth: op.tabWidth,
-                                tabHeight: op.tabHeight,
-                              })
-                              .pipe(
-                                map((r) =>
-                                  toolGcode.concat(GCodeBuilder.clone(r)),
-                                ),
-                              ),
-                            working$,
-                          );
-                        case 'v-carve':
-                          if (bitType !== 'v-bit') {
-                            return EMPTY;
-                          }
-                          return race(
-                            worker
-                              .routeVCarve(shape, {
-                                toolSize: diameter,
-                                vAngle,
-                                tipDiameter,
-                                startDepth: op.startDepth,
-                                maxDepth: op.maxDepth,
-                                stepover: op.stepover,
-                                clearFlatBottom: op.clearFlatBottom,
-                                sharpCorners: op.sharpCorners ?? true,
-                                sharpCornerAngle: op.sharpCornerAngle ?? 150,
-                              })
-                              .pipe(
-                                map((r) =>
-                                  toolGcode.concat(GCodeBuilder.clone(r)),
-                                ),
-                              ),
-                            working$,
-                          );
+                ),
+              ]).pipe(
+                switchMap(([shape, op, tool]) => {
+                  // No (or a deleted) tool selected yet: nothing to cut.
+                  if (!tool) {
+                    return of(new GCodeBuilder());
+                  }
+                  const {
+                    bitType,
+                    diameter,
+                    vAngle,
+                    tipDiameter,
+                    feedRate,
+                    plungeFeedRate,
+                  } = tool;
+                  const toolGcode = new GCodeBuilder()
+                    .carveFeedrate(feedRate)
+                    .plungeFeedRate(plungeFeedRate);
+                  switch (op.type) {
+                    case 'pocket':
+                      return race(
+                        worker
+                          .routePocketHole(shape, {
+                            toolSize: diameter,
+                            toolEngagement: op.toolEngagement,
+                            leaveStock: op.leaveStock,
+                            depthPerStep: op.depth,
+                            steps: op.steps,
+                            startDepth: op.startDepth,
+                          })
+                          .pipe(
+                            map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
+                          ),
+                        working$,
+                      );
+                    case 'flat':
+                      return race(
+                        worker
+                          .flatOutline(shape, {
+                            toolSize: diameter,
+                            toolEngagement: op.toolEngagement,
+                            depth: op.depthPerStep,
+                            steps: op.steps,
+                            interpolateStepSize: op.interpolateStepSize,
+                            allPassesInSameDirection:
+                              op.allPassesInSameDirection,
+                            alongAxis: op.alongAxis,
+                            growByToolsize: op.growByToolsize,
+                            applyConvexHullOnShape: op.applyConvexHullOnShape,
+                            pauseAfterEachStep: op.pauseAfterEachStep,
+                          })
+                          .pipe(
+                            map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
+                          ),
+                        working$,
+                      );
+                    case 'profile':
+                      return race(
+                        worker
+                          .routeProfile(shape, {
+                            toolSize: diameter,
+                            side: op.side,
+                            direction: op.direction,
+                            startDepth: op.startDepth,
+                            depthPerStep: op.depth,
+                            steps: op.steps,
+                            tabsEnabled: op.tabsEnabled,
+                            tabCount: op.tabCount,
+                            tabWidth: op.tabWidth,
+                            tabHeight: op.tabHeight,
+                          })
+                          .pipe(
+                            map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
+                          ),
+                        working$,
+                      );
+                    case 'v-carve':
+                      if (bitType !== 'v-bit') {
+                        return of(new GCodeBuilder());
                       }
+                      return race(
+                        worker
+                          .routeVCarve(shape, {
+                            toolSize: diameter,
+                            vAngle,
+                            tipDiameter,
+                            startDepth: op.startDepth,
+                            maxDepth: op.maxDepth,
+                            stepover: op.stepover,
+                            clearFlatBottom: op.clearFlatBottom,
+                            sharpCorners: op.sharpCorners ?? true,
+                            sharpCornerAngle: op.sharpCornerAngle ?? 150,
+                          })
+                          .pipe(
+                            map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
+                          ),
+                        working$,
+                      );
+                  }
 
-                      return EMPTY;
-                    },
-                  ),
-                  share({
-                    connector: () => new ReplaySubject(1),
-                    resetOnRefCountZero: () => timer(0),
-                  }),
-                );
+                  return of(new GCodeBuilder());
+                }),
+                share({
+                  connector: () => new ReplaySubject(1),
+                  resetOnRefCountZero: () => timer(0),
+                }),
+              );
 
-                return {
-                  id,
-                  operationParameters$,
-                  toolParameters$,
-                  result$,
-                  shapeId$,
-                };
-              },
-            );
+              return {
+                id,
+                operationParameters$,
+                toolParameters$,
+                result$,
+                shapeId$,
+              };
+            },
+          );
         },
         [] as Array<{
           id: string;
           operationParameters$: BehaviorSubject<OperationParameters>;
-          toolParameters$: BehaviorSubject<ToolParameters>;
+          toolParameters$: BehaviorSubject<ToolParameters | null>;
           shapeId$: BehaviorSubject<string>;
           result$: Observable<GCodeBuilder>;
         }>,
       ),
-      switchMap((s) => combineLatest(s.map((i) => i.result$))),
+      // Incomplete operations (no tool, shape or type yet) emit an empty
+      // builder rather than nothing, so they don't stall the whole G-code.
+      switchMap((s) =>
+        s.length ? combineLatest(s.map((i) => i.result$)) : of([]),
+      ),
       distinctUntilChanged((a, b) => {
         return a.length === b.length && a.every((aa, index) => b[index] === aa);
       }),
@@ -634,7 +617,10 @@ export class AppComponent implements OnInit, OnDestroy {
     );
 
     return shapes$.pipe(
-      switchMap((s) => combineLatest(s.map((i) => i.result$))),
+      // With no shapes, emit an empty list rather than nothing.
+      switchMap((s) =>
+        s.length ? combineLatest(s.map((i) => i.result$)) : of([]),
+      ),
       map((s) => s.flatMap((i) => i)),
       share({
         connector: () => new ReplaySubject(1),

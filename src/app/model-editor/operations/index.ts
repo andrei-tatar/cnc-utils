@@ -1,5 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { allShapes, shapeLabel } from '../shapes/describe';
+import { allTools, toolLabel } from '../tools';
 import { describeOperation } from './describe';
 
 import {
@@ -40,6 +41,7 @@ export type ModelType = {
       id: string;
       expanded: boolean;
       name?: string;
+      toolId: string;
       shapeId: string;
     } & (
       | PocketModelType
@@ -58,8 +60,13 @@ export const field: FormlyFieldConfig = {
     label: 'operations',
     itemLabel: 'operation',
     describeItem: (operation: any, field: FormlyFieldConfig) =>
-      describeOperation(operation, allShapes(field)),
+      describeOperation(
+        operation,
+        allShapes(field),
+        allTools(field),
+      ),
     accent: '#059669',
+    collapsible: true,
   },
   fieldArray: {
     fieldGroup: [
@@ -80,7 +87,26 @@ export const field: FormlyFieldConfig = {
         },
         expressions: {
           'props.placeholder': (field: FormlyFieldConfig) =>
-            describeOperation(field.model, allShapes(field)),
+            describeOperation(
+              field.model,
+              allShapes(field),
+              allTools(field),
+            ),
+        },
+      },
+      {
+        key: 'toolId',
+        type: 'enum',
+        props: {
+          label: 'tool',
+          required: true,
+        },
+        expressions: {
+          'props.options': (field: FormlyFieldConfig) =>
+            allTools(field).map((tool) => ({
+              value: tool.id,
+              label: toolLabel(tool),
+            })),
         },
       },
       {
@@ -109,8 +135,10 @@ export const field: FormlyFieldConfig = {
         },
         expressions: {
           'props.options': (field: FormlyFieldConfig) => {
-            const bitType =
-              field.parent?.parent?.parent?.model?.bitType ?? 'end-mill';
+            const tool = allTools(field).find(
+              (t) => t.id === field.model?.toolId,
+            );
+            const bitType = tool?.bitType ?? 'end-mill';
             return operations
               .filter(
                 (t) =>
