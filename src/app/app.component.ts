@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { ViewerComponent } from './viewer/viewer.component';
 import {
   BehaviorSubject,
@@ -38,6 +38,10 @@ import { gcodeToPaths } from '../cam/gcode-viewer';
 import { getModelMetadata, loadModelFromMetadata } from './store';
 import { deepEqual, readFile } from '../util';
 
+const EDITOR_WIDTH_STORAGE_KEY = 'ui.editorWidth';
+const MIN_EDITOR_WIDTH = 280;
+const MIN_VIEWER_WIDTH = 200;
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -46,6 +50,11 @@ import { deepEqual, readFile } from '../util';
   styleUrl: './app.component.scss',
 })
 export class AppComponent implements OnInit, OnDestroy {
+  readonly DEFAULT_EDITOR_WIDTH = 420;
+  editorWidth = signal(this.loadEditorWidth());
+  resizing = false;
+  private resizeOffset = 0;
+
   private destroy$ = new Subject<any>();
   private workLocks = new BehaviorSubject(0);
 
@@ -135,6 +144,66 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroy$.next(1);
+  }
+
+  startResize(event: PointerEvent) {
+    if (event.button !== 0) {
+      return;
+    }
+    const divider = event.currentTarget as HTMLElement;
+    divider.setPointerCapture(event.pointerId);
+    this.resizing = true;
+    // Keep the grab point under the cursor instead of snapping to it.
+    this.resizeOffset = event.clientX - this.editorWidth();
+    event.preventDefault();
+  }
+
+  resize(event: PointerEvent) {
+    if (this.resizing) {
+      this.setEditorWidth(event.clientX - this.resizeOffset, false);
+    }
+  }
+
+  endResize(event: PointerEvent) {
+    if (!this.resizing) {
+      return;
+    }
+    this.resizing = false;
+    this.setEditorWidth(this.editorWidth());
+
+    const divider = event.currentTarget as HTMLElement;
+    if (divider.hasPointerCapture(event.pointerId)) {
+      divider.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  setEditorWidth(width: number, persist = true) {
+    const max = Math.max(
+      MIN_EDITOR_WIDTH,
+      window.innerWidth - MIN_VIEWER_WIDTH,
+    );
+    const clamped = Math.round(
+      Math.min(max, Math.max(MIN_EDITOR_WIDTH, width)),
+    );
+    this.editorWidth.set(clamped);
+    if (persist) {
+      try {
+        localStorage.setItem(EDITOR_WIDTH_STORAGE_KEY, String(clamped));
+      } catch {}
+    }
+  }
+
+  private loadEditorWidth(): number {
+    try {
+      const stored = Number(localStorage.getItem(EDITOR_WIDTH_STORAGE_KEY));
+      if (stored >= MIN_EDITOR_WIDTH) {
+        return Math.min(
+          stored,
+          Math.max(MIN_EDITOR_WIDTH, window.innerWidth - MIN_VIEWER_WIDTH),
+        );
+      }
+    } catch {}
+    return this.DEFAULT_EDITOR_WIDTH;
   }
 
   private loadModel(): ModelType {

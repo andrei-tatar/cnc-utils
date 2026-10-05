@@ -3,12 +3,95 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+
+  &.resizing {
+    cursor: col-resize;
+    user-select: none;
+
+    app-viewer {
+      pointer-events: none;
+    }
+  }
 }
 
-.menu {
-  width: 400px;
+.editor {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--editor-panel-bg);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--editor-card-bg);
+  border-bottom: 1px solid var(--editor-border);
+}
+
+.toolbar_title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.toolbar_spacer {
+  flex: 1;
+}
+
+.toolbar_button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+}
+
+.icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.editor_content {
+  flex: 1;
   overflow-y: auto;
-  display: block;
+  padding: 12px;
+}
+
+.divider {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--editor-border);
+  position: relative;
+  touch-action: none;
+  transition: background-color 120ms ease;
+
+  // Wider invisible hit area than the visible bar.
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0 -4px;
+  }
+
+  &:hover,
+  &:focus-visible,
+  .resizing & {
+    background: var(--bs-primary);
+    outline: none;
+  }
 }
 
 app-viewer {
