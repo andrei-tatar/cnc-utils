@@ -61,7 +61,7 @@ The **G-code** section sets how the program is written: safe height, default fee
 
 ## Development
 
-Requires Node.js and npm.
+Requires Node.js 24.15 or newer (see `.nvmrc`; with nvm, run `nvm use`) and npm.
 
 ```bash
 npm install
@@ -72,7 +72,7 @@ npm test         # Karma + Jasmine unit tests
 
 Code is formatted with Prettier (`.prettierrc`).
 
-Built with Angular 18 (standalone components, zoneless change detection), [ngx-formly](https://formly.dev) for the form-driven editor, Three.js for the preview, [Clipper2](https://github.com/AngusJohnson/Clipper2) (WebAssembly) for polygon offsetting and boolean operations, and [opentype.js](https://opentype.js.org) for fonts. Geometry runs in Web Workers so the UI stays responsive.
+Built with Angular 22 (standalone components, zoneless change detection), [ngx-formly](https://formly.dev) for the form-driven editor, Three.js for the preview, [Clipper2](https://github.com/AngusJohnson/Clipper2) (WebAssembly) for polygon offsetting and boolean operations, and [opentype.js](https://opentype.js.org) for fonts. Geometry runs in Web Workers so the UI stays responsive.
 
 See [`CLAUDE.md`](CLAUDE.md) for an architecture overview: the reactive pipeline from model to shapes to G-code, the worker contract, and how to add a new shape, transform or operation.
 

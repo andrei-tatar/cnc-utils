@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A browser-based CAM tool (Angular 18, standalone components, zoneless change detection). The user defines 2D **shapes** and cutting **tools/operations** in a form-driven editor; the app converts shapes into polygons, routes toolpaths, and emits G-code, while previewing both shapes and toolpaths in a Three.js viewport. There is no backend — everything runs client-side and deploys to Firebase Hosting.
+A browser-based CAM tool (Angular 22, standalone components, zoneless change detection). The user defines 2D **shapes** and cutting **tools/operations** in a form-driven editor; the app converts shapes into polygons, routes toolpaths, and emits G-code, while previewing both shapes and toolpaths in a Three.js viewport. There is no backend — everything runs client-side and deploys to Firebase Hosting.
 
 ## Commands
 
@@ -68,7 +68,9 @@ Three.js renderer that draws `CamShape[]` (shape outlines) and `CamPath[]` (tool
 
 ## Conventions & gotchas
 
-- **Zoneless change detection** is enabled (`provideExperimentalZonelessChangeDetection`). Don't rely on Zone.js auto-detection; UI updates flow through the `async` pipe on observables.
+- **Zoneless change detection** is enabled (`provideZonelessChangeDetection`). Don't rely on Zone.js auto-detection; UI updates flow through the `async` pipe on observables. Components use `ChangeDetectionStrategy.Eager` (added by the Angular 22 migration to keep pre-22 behaviour).
+- Node 24.15+ is required (Angular 22); the version is pinned in `.nvmrc` and used by CI.
+- The worker parses SVG with `@xmldom/xmldom`, which lacks `querySelectorAll`; `svg-import.ts` adds a tag-name-only version that three's `SVGLoader` needs.
 - IDs are generated with `generateId()` (random base64url) in `src/util.ts`; equality of params is checked with `deepEqual` / `JSON.stringify` in `distinctUntilChanged` to avoid redundant worker work.
 - When touching the reactive graph in `app.component.ts`, respect the `scan`-based memoization (mutate existing entries, create only for new ids) or you'll cause every operation to recompute on every keystroke.
 - The worker contract is structural: a function exported from `src/worker/work/` is automatically callable as `worker.<name>()` with full types. Keep signatures serializable (structured-clone-able).
