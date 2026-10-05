@@ -21,6 +21,31 @@ export async function applyTransform(
         );
         return input.map((i) => applyMatrixTransform(i, translateMatrix));
 
+      case 'align': {
+        const box = getBoundingBox(input);
+        if (!Number.isFinite(box.width) || !Number.isFinite(box.height)) {
+          return input; // nothing to align
+        }
+        // Y points up: top is the largest Y.
+        const x = {
+          none: null,
+          left: box.x,
+          middle: box.x + box.width / 2,
+          right: box.x + box.width,
+        }[transform.alignX];
+        const y = {
+          none: null,
+          top: box.y + box.height,
+          middle: box.y + box.height / 2,
+          bottom: box.y,
+        }[transform.alignY];
+        const alignMatrix = new Matrix3().translate(
+          x === null ? 0 : transform.alignXTo - x,
+          y === null ? 0 : transform.alignYTo - y,
+        );
+        return input.map((i) => applyMatrixTransform(i, alignMatrix));
+      }
+
       case 'rotate': {
         const box = getBoundingBox(input);
 

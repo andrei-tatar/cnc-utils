@@ -28,7 +28,7 @@ The 3D preview updates as you edit: shape outlines (with holes shown as holes), 
 | text | any text in a [Google Font](https://fonts.google.com/); size by cap height, letter/line spacing, alignment |
 | boolean | union, intersection, difference or xor of two other shapes |
 
-Each shape can have a chain of **transforms**, applied in order: move, rotate, scale, flip, repeat (grid arrays), offset (`clipper:inflate`) and convex hull.
+Each shape can have a chain of **transforms**, applied in order: move, align (put the left/middle/right and/or top/middle/bottom of the shape on a coordinate), rotate, scale, flip, repeat (grid arrays), offset (`clipper:inflate`) and convex hull.
 
 ### Tools
 

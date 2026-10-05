@@ -9,6 +9,10 @@ import {
   ModelType as TranslateModelType,
 } from './transform-translate';
 import {
+  Definition as AlignDefinition,
+  ModelType as AlignModelType,
+} from './transform-align';
+import {
   Definition as RotateDefinition,
   ModelType as RotateModelType,
 } from './transform-rotate';
@@ -38,6 +42,7 @@ export type ModelType = {
     (
       | RepeatModelType
       | TranslateModelType
+      | AlignModelType
       | RotateModelType
       | ScaleModelType
       | FlipModelType
@@ -54,6 +59,7 @@ export type ModelType = {
 const transforms = [
   RepeatDefinition,
   TranslateDefinition,
+  AlignDefinition,
   RotateDefinition,
   ScaleDefinition,
   FlipDefinition,
