@@ -7,7 +7,7 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
-import { enterCut } from '../../cam/ramp';
+import { enterCut, Resume } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 
@@ -107,7 +107,10 @@ export async function routeProfile(
     );
 
   for (const polygon of polygons) {
-    const points = polygon.points;
+    let points = polygon.points;
+    // When ramping, each pass carries on from where the one before ended,
+    // without lifting: round a loop, or back along an open path.
+    let resume: Resume | undefined;
 
     for (let step = 0; step < options.steps; step++) {
       const depth = -(options.startDepth + options.depthPerStep * (step + 1));
@@ -126,10 +129,25 @@ export async function routeProfile(
 
       // Each pass starts where the previous one left off.
       const from = -(options.startDepth + options.depthPerStep * step);
-      carvePass(builder, points, polygon.close, from, depth, tabFloor, {
-        ...options,
-        rampAngle: options.rampAngle ?? null,
-      });
+      const cut = carvePass(
+        builder,
+        points,
+        polygon.close,
+        from,
+        depth,
+        tabFloor,
+        { ...options, rampAngle: options.rampAngle ?? null },
+        resume,
+      );
+      if (options.rampAngle) {
+        if (polygon.close) {
+          points = cut;
+        } else {
+          // Open paths end at the far end: go back the other way.
+          points = [...cut].reverse();
+        }
+        resume = { point: points[0], down: true };
+      }
     }
   }
 
@@ -247,10 +265,10 @@ function carvePass(
     rampAngle: number | null;
     toolSize: number;
   },
-) {
-  // Vertices the tool visits in order; a closed loop returns to its start.
-  const loop = close ? [...points, points[0]] : points;
-  const perimeter = pathLength(loop);
+  resume?: Resume,
+): CamPoint[] {
+  // Tabs only depend on the loop's length, not where it starts.
+  const perimeter = pathLength(close ? [...points, points[0]] : points);
   // When ramping, tabs start at the loop's start, so the ramp gets the whole
   // gap before it (ramps stay clear of tabs); otherwise they're centered
   // between starts, so plunges are clear of them.
@@ -265,9 +283,11 @@ function carvePass(
         );
   const edges = tabs.flatMap((t) => [t.start, t.end]);
 
-  builder.goToSafeHeight();
+  if (!resume?.down) {
+    builder.goToSafeHeight();
+  }
   // A ramp stays on the stretch after the last tab, which ends the loop.
-  enterCut(
+  points = enterCut(
     builder,
     points,
     close,
@@ -276,13 +296,16 @@ function carvePass(
     options.rampAngle,
     options.toolSize,
     tabs.length ? perimeter - tabs[tabs.length - 1].end : Infinity,
+    resume,
   );
+  // Vertices the tool visits in order; a closed loop returns to its start.
+  const loop = close ? [...points, points[0]] : points;
 
   if (tabFloor === null) {
     for (let i = 1; i < loop.length; i++) {
       builder.carveTo(loop[i].x, loop[i].y);
     }
-    return;
+    return points;
   }
 
   let traveled = 0;
@@ -328,6 +351,7 @@ function carvePass(
       setDepth(traveled);
     }
   }
+  return points;
 }
 
 /**

@@ -52,20 +52,23 @@ export async function routePocketHole(
 
   for (const shape of sorted) {
     const outlines = await getShapeOutlines(shape, { ...options, start });
+    // When ramping: where each loop's last ramp ended, so the next level's
+    // ramp carries on from there (the same loops are cut at every level).
+    const rampEnds = new Map<number, CamPoint>();
 
     for (let step = 0; step < options.steps; step++) {
       builder.goToSafeHeight();
       const depth = options.startDepth + options.depthPerStep * (step + 1);
 
       let lastOutline: PathD | null = null;
-      for (const outline of outlines) {
+      for (const [index, outline] of outlines.entries()) {
         const intersectsLastOutline = lastOutline
           ? await pathsIntersect(outline, lastOutline, decimals())
           : false;
 
         lastOutline = outline;
 
-        const outlinePoints = getPoints(outline);
+        let outlinePoints = getPoints(outline);
         const closestPointIndex = findClosestPointIndex(start, outlinePoints);
         const removed = outlinePoints.splice(0, closestPointIndex);
         outlinePoints.push(...removed);
@@ -80,6 +83,26 @@ export async function routePocketHole(
           builder.goToSafeHeight();
         }
 
+        const entering = builder.isAtSafetyHeight;
+        if (entering) {
+          // Ramp along this loop, from the level above.
+          const rampEnd = rampEnds.get(index);
+          outlinePoints = enterCut(
+            builder,
+            outlinePoints,
+            true,
+            -(depth - options.depthPerStep),
+            -depth,
+            options.rampAngle ?? null,
+            options.toolSize,
+            Infinity,
+            rampEnd && { point: rampEnd, down: false },
+          );
+          if (options.rampAngle) {
+            rampEnds.set(index, outlinePoints[0]);
+          }
+        }
+
         for (let i = 0; i < outlinePoints.length; i++) {
           const pt = outlinePoints[i];
 
@@ -90,18 +113,8 @@ export async function routePocketHole(
             lastPoint = pt;
           }
 
-          if (builder.isAtSafetyHeight) {
-            // Ramp along this loop, from the level above.
-            enterCut(
-              builder,
-              outlinePoints,
-              true,
-              -(depth - options.depthPerStep),
-              -depth,
-              options.rampAngle ?? null,
-              options.toolSize,
-            );
-          } else {
+          // (Entering left the bit at the first point.)
+          if (i > 0 || !entering) {
             builder.carveTo(pt.x, pt.y);
           }
         }

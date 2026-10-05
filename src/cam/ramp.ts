@@ -52,11 +52,29 @@ export function rampMoves(
 }
 
 /**
- * Get the bit to Z `to` at the start of `points` (from safe height): travel
- * there, then plunge, or ramp from `from` when `rampAngle` is set (see
- * rampMoves for `maxLength`). A ramp that wouldn't take the tool at least
- * its radius away from where it would plunge hardly helps (a short stretch
- * between tabs, a loop smaller than the tool), so it plunges instead.
+ * Where the bit is when a pass starts over a path it has just cut: at
+ * `point` on the path, still `down` at the depth of the pass before (the end
+ * of that pass) or up at safe height.
+ */
+export type Resume = { point: CamPoint; down: boolean };
+
+/**
+ * Get the bit to Z `to` at the start of a cut along `points`, and return the
+ * path to cut from there.
+ *
+ * Fresh (from safe height): travel to the path's start and plunge, or ramp
+ * from `from` when `rampAngle` is set (see rampMoves for `maxLength`).
+ *
+ * With `resume`, it carries on from where the previous pass was (see
+ * Resume), already at `from` there or plunging to it into the cut below:
+ * on a closed loop the ramp goes on forwards and the loop is returned
+ * starting where it ends (back and forth from there when it can't go
+ * further than `maxLength`); an open path must start at the resume point,
+ * and the ramp goes back and forth from there.
+ *
+ * A ramp that wouldn't take the tool at least its radius away from where it
+ * would plunge hardly helps (a short stretch between tabs, a loop smaller
+ * than the tool), so it plunges instead.
  */
 export function enterCut(
   builder: GCodeBuilder,
@@ -67,24 +85,121 @@ export function enterCut(
   rampAngle: number | null,
   toolSize: number,
   maxLength = Infinity,
-) {
-  const ramp = rampAngle
-    ? rampMoves(points, close, from, to, rampAngle, maxLength)
-    : [];
-  if (
-    !ramp.length ||
-    rampReach(points, close, from - to, rampAngle!, maxLength) <
-      toolSize / 2 - EPS
-  ) {
-    builder.travelTo(points[0].x, points[0].y);
-    builder.plunge(to);
-    return;
+  resume?: Resume,
+): CamPoint[] {
+  const ramps =
+    !!rampAngle &&
+    from - to > EPS &&
+    rampReach(points, close, from - to, rampAngle, maxLength) >=
+      toolSize / 2 - EPS;
+
+  if (!resume) {
+    const ramp = ramps
+      ? rampMoves(points, close, from, to, rampAngle!, maxLength)
+      : [];
+    if (!ramp.length) {
+      builder.travelTo(points[0].x, points[0].y);
+      builder.plunge(to);
+      return points;
+    }
+    builder.travelTo(ramp[0].x, ramp[0].y);
+    builder.plunge(from);
+    carveAll(builder, ramp.slice(1));
+    return points;
   }
-  builder.travelTo(ramp[0].x, ramp[0].y);
-  builder.plunge(from);
-  for (const move of ramp.slice(1)) {
+
+  const path = close ? startingAt(points, arcTo(points, resume.point)) : points;
+  if (!resume.down) {
+    builder.travelTo(path[0].x, path[0].y);
+    builder.plunge(from);
+  }
+  if (!ramps) {
+    builder.plunge(to);
+    return path;
+  }
+  const needed = (from - to) / Math.tan((rampAngle! * Math.PI) / 180);
+  if (!close || needed > maxLength) {
+    // Back and forth from here, ending here (see rampMoves).
+    carveAll(
+      builder,
+      rampMoves(path, close, from, to, rampAngle!, maxLength).slice(1),
+    );
+    return path;
+  }
+  // Forwards round the loop: walking back round the reversed loop.
+  const reversed = [path[0], ...path.slice(1).reverse()];
+  carveAll(
+    builder,
+    walkBack(reversed, needed)
+      .slice(1)
+      .map(({ point, distance }) => ({
+        ...point,
+        z: from - ((from - to) * distance) / needed,
+      })),
+  );
+  return startingAt(path, needed);
+}
+
+function carveAll(builder: GCodeBuilder, moves: CamPoint3[]) {
+  for (const move of moves) {
     builder.carveTo(move.x, move.y, move.z);
   }
+}
+
+/** How far round the closed loop (from points[0]) its nearest point to `p` is. */
+function arcTo(points: CamPoint[], p: CamPoint): number {
+  let best = { distance: Infinity, arc: 0 };
+  let traveled = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSq = dx * dx + dy * dy;
+    const t =
+      lengthSq > 0
+        ? Math.max(
+            0,
+            Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq),
+          )
+        : 0;
+    const distance = Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+    if (distance < best.distance) {
+      best = { distance, arc: traveled + t * Math.sqrt(lengthSq) };
+    }
+    traveled += Math.sqrt(lengthSq);
+  }
+  return best.arc;
+}
+
+/** The closed loop, starting `arc` along it from points[0] (wrapping). */
+function startingAt(points: CamPoint[], arc: number): CamPoint[] {
+  const n = points.length;
+  const perimeter = pathLength(points, true);
+  if (perimeter < EPS) {
+    return points;
+  }
+  let target = ((arc % perimeter) + perimeter) % perimeter;
+  for (let i = 0; i < n; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    const edge = getDistance(a, b);
+    if (target <= edge + EPS || i === n - 1) {
+      const rest = [...points.slice(i + 1), ...points.slice(0, i + 1)];
+      if (target < EPS) {
+        // On vertex i itself.
+        return [a, ...rest.slice(0, -1)];
+      }
+      if (target > edge - EPS) {
+        // On the next vertex.
+        return rest;
+      }
+      const t = target / edge;
+      return [{ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, ...rest];
+    }
+    target -= edge;
+  }
+  return points;
 }
 
 /**
