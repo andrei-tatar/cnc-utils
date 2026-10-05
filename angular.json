@@ -23,7 +23,7 @@
             "polyfills": ["@angular/localize/init"],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
-            "allowedCommonJsDependencies": ["xmldom"],
+            "allowedCommonJsDependencies": ["xmldom", "opentype.js"],
             "assets": [
               {
                 "glob": "**/*",
