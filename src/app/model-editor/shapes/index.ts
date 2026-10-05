@@ -29,6 +29,10 @@ import {
   Definition as BooleanDefinition,
   ModelType as BooleanModelType,
 } from './shape-boolean';
+import {
+  Definition as TextDefinition,
+  ModelType as TextModelType,
+} from './shape-text';
 
 type CommonShape = {
   id: string;
@@ -42,7 +46,8 @@ type ShapeType =
   | SvgModelType
   | LineModelType
   | PathDataModelType
-  | BooleanModelType;
+  | BooleanModelType
+  | TextModelType;
 
 export type ModelType = {
   shapes: Array<ShapeType & CommonShape>;
@@ -55,6 +60,7 @@ const shapes = [
   LineDefinition,
   PathDataDefinition,
   BooleanDefinition,
+  TextDefinition,
 ];
 
 export const field: FormlyFieldConfig = {

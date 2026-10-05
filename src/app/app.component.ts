@@ -515,6 +515,10 @@ export class AppComponent implements OnInit, OnDestroy {
                     return result$;
                   }
 
+                  if (t.type === 'text') {
+                    return worker.importText(t, shapeId);
+                  }
+
                   return worker.importSvg(this.createSvgFromShape(t), shapeId);
                 }),
                 switchMap((resolveShape) => race(resolveShape, working$)),
@@ -639,7 +643,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private static createSvgFromShape(
-    t: Exclude<ShapeParameters, { type: 'boolean' }>,
+    t: Exclude<ShapeParameters, { type: 'boolean' | 'text' }>,
   ) {
     switch (t.type) {
       case 'circle':

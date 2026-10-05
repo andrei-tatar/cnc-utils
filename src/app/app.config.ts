@@ -18,6 +18,7 @@ import { FormlyBootstrapModule } from '@ngx-formly/bootstrap';
 import { ArrayTypeComponent } from './model-editor/components/array-type-component';
 import { FileTypeComponent } from './model-editor/components/file-type-component';
 import { HiddenTypeComponent } from './model-editor/components/hidden-type-component';
+import { FontTypeComponent } from './model-editor/components/font-type-component';
 
 export function WholeNumberValidator(
   control: AbstractControl,
@@ -42,6 +43,11 @@ export const appConfig: ApplicationConfig = {
           { name: 'repeat', component: ArrayTypeComponent },
           { name: 'file', component: FileTypeComponent },
           { name: 'hidden', component: HiddenTypeComponent },
+          {
+            name: 'font',
+            component: FontTypeComponent,
+            wrappers: ['form-field'],
+          },
         ],
         validators: [
           { name: 'whole-number', validation: WholeNumberValidator },
