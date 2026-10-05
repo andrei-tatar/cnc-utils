@@ -17,6 +17,8 @@ export type ToolType = {
   tipDiameter: number;
   feedRate: number;
   plungeFeedRate: number;
+  /** Optional; overrides the G-code section's spindle speed. */
+  spindleSpeed?: number | null;
 };
 
 export type ModelType = {
@@ -147,6 +149,17 @@ export const field: FormlyFieldConfig = {
         props: {
           label: 'plunge fr',
           required: true,
+        },
+      },
+      {
+        key: 'spindleSpeed',
+        type: 'number',
+        props: {
+          label: 'spindle speed',
+          placeholder: 'G-code default',
+          description:
+            'RPM, used after changing to this tool (with spindle control on)',
+          min: 0,
         },
       },
     ],

@@ -32,7 +32,7 @@ Each shape can have a chain of **transforms**, applied in order: move, rotate, s
 
 ### Tools
 
-End mills and V-bits (angle and tip diameter), with feed and plunge rates. Leave the name empty and one is generated from the settings, e.g. "Ø6 mm 60° v-bit" — the same goes for shapes and operations.
+End mills and V-bits (angle and tip diameter), with feed and plunge rates and an optional spindle speed (used after changing to that tool when spindle control is on; otherwise the G-code section's speed applies). Leave the name empty and one is generated from the settings, e.g. "Ø6 mm 60° v-bit" — the same goes for shapes and operations.
 
 ### Operations
 

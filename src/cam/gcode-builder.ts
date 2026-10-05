@@ -74,8 +74,8 @@ export class GCodeBuilder {
    * (retract, then `T<n> M6`) is emitted wherever the tool differs from the
    * previous one, and for the first tool so it's loaded before cutting.
    */
-  useTool(toolNumber: number, label: string) {
-    this._instructions.push({ type: 'tool', toolNumber, label });
+  useTool(toolNumber: number, label: string, spindleSpeed?: number) {
+    this._instructions.push({ type: 'tool', toolNumber, label, spindleSpeed });
     return this;
   }
 
@@ -122,7 +122,10 @@ export class GCodeBuilder {
       carveFeedRate = o.carveFeedRate,
       plungeFeedRate = o.plungeFeedRate,
       currentTool: number | null = null,
-      spindleOn = false;
+      spindleOn = false,
+      // The current tool's own speed, if it has one; else the global one.
+      spindleSpeed = o.spindleSpeed,
+      runningSpeed: number | null = null;
 
     if (o.header) {
       gcode.push('G90 G21 G17 ; absolute, millimetres, XY plane');
@@ -131,7 +134,8 @@ export class GCodeBuilder {
     // Started lazily before the first cut, and again after a tool change.
     const startSpindle = () => {
       if (o.spindle && !spindleOn) {
-        gcode.push(`M3 S${Math.round(o.spindleSpeed)}`);
+        gcode.push(`M3 S${Math.round(spindleSpeed)}`);
+        runningSpeed = spindleSpeed;
         if (o.spindleDelay > 0) {
           gcode.push(`G4 P${round(o.spindleDelay)}`);
         }
@@ -214,6 +218,20 @@ export class GCodeBuilder {
             }
           }
           currentTool = instruction.toolNumber;
+
+          spindleSpeed =
+            instruction.spindleSpeed && instruction.spindleSpeed > 0
+              ? instruction.spindleSpeed
+              : o.spindleSpeed;
+          // No tool change (skipped or turned off) but a different speed:
+          // adjust the running spindle.
+          if (spindleOn && runningSpeed !== spindleSpeed) {
+            gcode.push(`M3 S${Math.round(spindleSpeed)}`);
+            if (o.spindleDelay > 0) {
+              gcode.push(`G4 P${round(o.spindleDelay)}`);
+            }
+            runningSpeed = spindleSpeed;
+          }
           break;
       }
     }
@@ -275,4 +293,10 @@ type PathInstruction =
   | { type: 'model'; model: string }
   | { type: 'stop-program' }
   | { type: 'pause' }
-  | { type: 'tool'; toolNumber: number; label: string };
+  | {
+      type: 'tool';
+      toolNumber: number;
+      label: string;
+      /** Overrides the global spindle speed while this tool is in use. */
+      spindleSpeed?: number;
+    };

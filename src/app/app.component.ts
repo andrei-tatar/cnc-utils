@@ -46,6 +46,7 @@ type ToolInfo = {
   /** Position in the tools list, from 1 (T1, T2, …). */
   number: number;
   label: string;
+  spindleSpeed?: number;
 };
 
 type VCarveSource = {
@@ -310,9 +311,15 @@ export class AppComponent implements OnInit, OnDestroy {
               ...operationParameters
             }) => {
               const tool = tools.find((t) => t.id === toolId);
+              // Spindle speed only affects the G-code text, not the routing.
               const toolParameters: ToolParameters | null = tool
-                ? (({ id: _, expanded: __, name: ___, ...parameters }) =>
-                    parameters)(tool)
+                ? (({
+                    id: _,
+                    expanded: __,
+                    name: ___,
+                    spindleSpeed: ____,
+                    ...parameters
+                  }) => parameters)(tool)
                 : null;
 
               // V-carve clearing borrows its shape, bit and depths from the
@@ -329,6 +336,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 ? {
                     number: tools.indexOf(tool) + 1,
                     label: toolLabel(tool),
+                    spindleSpeed: tool.spindleSpeed || undefined,
                   }
                 : null;
 
@@ -525,7 +533,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 map(([builder, info]) =>
                   info
                     ? new GCodeBuilder()
-                        .useTool(info.number, info.label)
+                        .useTool(info.number, info.label, info.spindleSpeed)
                         .concat(builder)
                     : builder,
                 ),

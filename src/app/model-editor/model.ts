@@ -26,9 +26,10 @@ export type OperationParameters = OmitUnion<
   OperationType,
   'id' | 'expanded' | 'name' | 'shapeId' | 'toolId'
 >;
+/** What a tool contributes to toolpath routing (not to G-code text). */
 export type ToolParameters = OmitUnion<
   ToolsModelType['tools'][number],
-  'id' | 'expanded' | 'name'
+  'id' | 'expanded' | 'name' | 'spindleSpeed'
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [
   shapesField,
