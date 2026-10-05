@@ -28,31 +28,15 @@ export function gcodeToPaths(gcode: string): CamPath[] {
 
     const [instruction, ...coords] = line.split(' ');
 
-    // Tool select / change ("T2 M6"): nothing to draw.
-    if (/^T\d+$/.test(instruction)) {
-      continue;
-    }
-
+    // Only moves are drawn; anything else (header, spindle, dwell, tool
+    // changes, pauses, end of program) is skipped.
     let type: CamPath['type'];
-    switch (instruction) {
-      case 'G0':
-        type = 'travel';
-        break;
-      case 'G1':
-        type = 'carve';
-        break;
-      case 'M30':
-        // stop program; nothing to show
-        continue;
-      case 'M00':
-        // pause; nothing to show
-        continue;
-      case 'M6':
-        // tool change on its own line; nothing to show
-        continue;
-
-      default:
-        throw new Error(`unsupported gcode instruction ${instruction}`);
+    if (instruction === 'G0') {
+      type = 'travel';
+    } else if (instruction === 'G1') {
+      type = 'carve';
+    } else {
+      continue;
     }
 
     const x: number | null =

@@ -16,6 +16,7 @@ import {
 import { FormlyFieldConfig, FormlyModule } from '@ngx-formly/core';
 import { debounceTime, Subject, takeUntil } from 'rxjs';
 import { ModelType, ModelFieldConfig } from './model';
+import { resolveGcodeOptions } from '../../cam/gcode-options';
 
 @Component({
   selector: 'app-model-editor',
@@ -42,6 +43,7 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
     shapes: [],
     tools: [],
     operations: [],
+    gcode: resolveGcodeOptions(undefined),
   };
 
   @Output()

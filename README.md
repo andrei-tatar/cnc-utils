@@ -46,9 +46,13 @@ End mills and V-bits (angle and tip diameter), with feed and plunge rates. Leave
 
 Items with problems (a missing value, a deleted tool or shape, a v-carve on an end mill…) are outlined in red, with a "to fix" count on their section.
 
+### G-code options
+
+The **G-code** section sets how the program is written: safe height, tool changes (`T<n> M6`, a pause with `M0` for changing tools by hand — e.g. on GRBL, which doesn't support `M6` — or none), whether to skip tool changes when only one tool is used, spindle control (`M3 S<rpm>` with a spin-up wait, `M5` before tool changes and at the end), a `G90 G21 G17` header, returning to X0 Y0 at the end, and the number of decimal places. The program loads the first tool at the start and changes tools between operations that use different ones.
+
 ### Usage notes
 
-- Units are millimetres. Depths are entered as positive numbers below the surface; Z = 0 is the top of the stock and travel moves happen at Z = 10.
+- Units are millimetres. Depths are entered as positive numbers below the surface; Z = 0 is the top of the stock and travel moves happen at the safe height (10 mm by default).
 - The editor and preview are separated by a draggable divider (double-click it to reset). Sections can be collapsed and every list can be reordered by dragging the ⠿ handle.
 - Text shapes download fonts on demand from [Fontsource](https://fontsource.org) via jsDelivr and cache them in the browser. Each project stores the exact font version, so it always produces the same outlines. If the chosen font can't draw some characters, the font field says which.
 

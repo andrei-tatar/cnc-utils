@@ -1,3 +1,4 @@
+import { GcodeOptions, resolveGcodeOptions } from './gcode-options';
 import { CamPoint } from './types';
 
 export class GCodeBuilder {
@@ -90,29 +91,69 @@ export class GCodeBuilder {
     return result;
   }
 
-  build(options: {
-    safetyHeight: number;
-    carveFeedRate: number;
-    plungeFeedRate: number;
-  }): string {
+  build(
+    options: Partial<GcodeOptions> & {
+      carveFeedRate: number;
+      plungeFeedRate: number;
+    },
+  ): string {
+    const o = {
+      ...resolveGcodeOptions(options),
+      carveFeedRate: options.carveFeedRate,
+      plungeFeedRate: options.plungeFeedRate,
+    };
+    const factor = 10 ** Math.max(0, Math.min(6, Math.round(o.decimals)));
+    const round = (v: number) => Math.round(v * factor) / factor;
     const gcode: string[] = [];
+
+    // Tool changes only make sense with more than one tool, unless asked.
+    const toolCount = new Set(
+      this._instructions.flatMap((i) =>
+        i.type === 'tool' ? [i.toolNumber] : [],
+      ),
+    ).size;
+    const emitToolChanges =
+      o.toolChange !== 'none' && !(o.skipSingleToolChange && toolCount <= 1);
 
     let x: number | null = null,
       y: number | null = null,
       z: number | null = null,
       feedRate: number | null = null,
-      carveFeedRate = options.carveFeedRate,
-      plungeFeedRate = options.plungeFeedRate,
-      currentTool: number | null = null;
+      carveFeedRate = o.carveFeedRate,
+      plungeFeedRate = o.plungeFeedRate,
+      currentTool: number | null = null,
+      spindleOn = false;
+
+    if (o.header) {
+      gcode.push('G90 G21 G17 ; absolute, millimetres, XY plane');
+    }
+
+    // Started lazily before the first cut, and again after a tool change.
+    const startSpindle = () => {
+      if (o.spindle && !spindleOn) {
+        gcode.push(`M3 S${Math.round(o.spindleSpeed)}`);
+        if (o.spindleDelay > 0) {
+          gcode.push(`G4 P${round(o.spindleDelay)}`);
+        }
+        spindleOn = true;
+      }
+    };
+    const stopSpindle = () => {
+      if (spindleOn) {
+        gcode.push('M5');
+        spindleOn = false;
+      }
+    };
 
     for (const instruction of this._instructions) {
       switch (instruction.type) {
         case 'safety-height':
-          move('G0', { z: options.safetyHeight });
+          move('G0', { z: o.safetyHeight });
           break;
 
         case 'plunge':
           //TODO: optional helical plunge ?
+          startSpindle();
           move('G1', { z: instruction.depth }, plungeFeedRate);
           break;
 
@@ -121,6 +162,7 @@ export class GCodeBuilder {
           break;
 
         case 'carve':
+          startSpindle();
           move('G1', { ...instruction.to, z: instruction.z }, carveFeedRate);
           break;
 
@@ -145,6 +187,11 @@ export class GCodeBuilder {
           break;
 
         case 'stop-program':
+          stopSpindle();
+          if (o.returnHome) {
+            move('G0', { z: o.safetyHeight });
+            move('G0', { x: 0, y: 0 });
+          }
           gcode.push('M30');
           break;
 
@@ -154,12 +201,17 @@ export class GCodeBuilder {
 
         case 'tool':
           // Also at the start, so the right tool is loaded before cutting.
-          if (instruction.toolNumber !== currentTool) {
-            move('G0', { z: options.safetyHeight });
-            gcode.push(
-              `; tool change: T${instruction.toolNumber} ${instruction.label}`,
-            );
-            gcode.push(`T${instruction.toolNumber} M6`);
+          if (emitToolChanges && instruction.toolNumber !== currentTool) {
+            move('G0', { z: o.safetyHeight });
+            stopSpindle();
+            const name = `T${instruction.toolNumber} ${instruction.label}`;
+            if (o.toolChange === 'm6') {
+              gcode.push(`; tool change: ${name}`);
+              gcode.push(`T${instruction.toolNumber} M6`);
+            } else {
+              gcode.push(`; insert ${name}, then resume`);
+              gcode.push('M0');
+            }
           }
           currentTool = instruction.toolNumber;
           break;
@@ -209,10 +261,6 @@ export class GCodeBuilder {
       }
     }
   }
-}
-
-function round(v: number) {
-  return Math.round(v * 100) / 100;
 }
 
 type PathInstruction =

@@ -5,9 +5,14 @@ import {
   ModelType as OperationsModelType,
   field as operationsField,
 } from './operations';
+import { ModelType as GcodeModelType, field as gcodeField } from './gcode';
+import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { OmitUnion } from '../../util';
 
-export type ModelType = ShapesModelType & ToolsModelType & OperationsModelType;
+export type ModelType = ShapesModelType &
+  ToolsModelType &
+  OperationsModelType &
+  GcodeModelType;
 
 export type ShapeType = ModelType['shapes'][number];
 export type ShapeParameters = OmitUnion<
@@ -29,6 +34,7 @@ export const ModelFieldConfig: FormlyFieldConfig[] = [
   shapesField,
   toolsField,
   operationsField,
+  gcodeField,
 ];
 
 /**
@@ -53,5 +59,7 @@ export function migrateModel(stored: any): ModelType {
       ...(Array.isArray(stored?.operations) ? stored.operations : []),
       ...nested,
     ],
+    // Projects from before G-code options existed get the defaults.
+    gcode: resolveGcodeOptions(stored?.gcode),
   };
 }

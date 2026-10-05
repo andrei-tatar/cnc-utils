@@ -38,6 +38,7 @@ import { GCodeBuilder } from '../cam/gcode-builder';
 import { gcodeToPaths } from '../cam/gcode-viewer';
 import { getModelMetadata, loadModelFromMetadata } from './store';
 import { toolLabel } from './model-editor/tools';
+import { resolveGcodeOptions } from '../cam/gcode-options';
 import { deepEqual, readFile } from '../util';
 
 /** How an operation's tool appears in the G-code. */
@@ -564,8 +565,21 @@ export class AppComponent implements OnInit, OnDestroy {
       distinctUntilChanged((a, b) => {
         return a.length === b.length && a.every((aa, index) => b[index] === aa);
       }),
+      // G-code options only affect how the program is written out: rebuild
+      // the text when they change, without re-running any routing.
+      (builders$) =>
+        combineLatest([
+          builders$,
+          model$.pipe(
+            map((model) => resolveGcodeOptions(model.gcode)),
+            distinctUntilChanged(
+              (a, b) => a === b,
+              (o) => JSON.stringify(o),
+            ),
+          ),
+        ]),
       withLatestFrom(model$),
-      switchMap(async ([builders, model]) => {
+      switchMap(async ([[builders, gcodeOptions], model]) => {
         const compressed = await getModelMetadata(model);
 
         const meta = new GCodeBuilder().addModelMetadata(compressed);
@@ -576,7 +590,7 @@ export class AppComponent implements OnInit, OnDestroy {
           .goToSafeHeight()
           .stopProgram()
           .build({
-            safetyHeight: 10,
+            ...gcodeOptions,
             carveFeedRate: 1200,
             plungeFeedRate: 300,
           });

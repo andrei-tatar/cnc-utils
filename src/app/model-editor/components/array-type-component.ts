@@ -17,9 +17,11 @@ import { generateId } from '../../../util';
 import { NgbCollapseModule, NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { rootModel } from '../shapes/describe';
 import { ConfirmDialogComponent } from './confirm-dialog.component';
+import {
+  readCollapsedSections,
+  writeCollapsedSections,
+} from './collapsed-sections';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
-
-const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
 
 @Component({
   imports: [FormlyModule, CommonModule, NgbCollapseModule, DragDropModule],
@@ -753,19 +755,4 @@ export class ArrayTypeComponent
       this.formControl.controls[i].get('expanded')?.setValue(false);
     }
   }
-}
-
-function readCollapsedSections(): string[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_KEY)!);
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeCollapsedSections(keys: string[]) {
-  try {
-    localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(keys));
-  } catch {}
 }

@@ -19,6 +19,7 @@ import { ArrayTypeComponent } from './model-editor/components/array-type-compone
 import { FileTypeComponent } from './model-editor/components/file-type-component';
 import { HiddenTypeComponent } from './model-editor/components/hidden-type-component';
 import { FontTypeComponent } from './model-editor/components/font-type-component';
+import { SectionTypeComponent } from './model-editor/components/section-type-component';
 
 export function WholeNumberValidator(
   control: AbstractControl,
@@ -47,6 +48,7 @@ export const appConfig: ApplicationConfig = {
             wrappers: ['form-field'],
           },
           { name: 'hidden', component: HiddenTypeComponent },
+          { name: 'section', component: SectionTypeComponent },
           {
             name: 'font',
             component: FontTypeComponent,
