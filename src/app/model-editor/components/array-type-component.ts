@@ -1,12 +1,14 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import {
   FieldArrayType,
   FormlyFieldConfig,
   FormlyModule,
 } from '@ngx-formly/core';
 import { generateId } from '../../../util';
-import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
+import { NgbCollapseModule, NgbModal } from '@ng-bootstrap/ng-bootstrap';
+import { rootModel } from '../shapes/describe';
+import { ConfirmDialogComponent } from './confirm-dialog.component';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 
 const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
@@ -60,17 +62,6 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
       align-items: center;
       gap: 6px;
       min-height: 30px;
-    }
-
-    .list--root > .list_header {
-      padding: 8px 10px 8px 12px;
-      border-top: 3px solid var(--accent);
-      cursor: pointer;
-      user-select: none;
-
-      &:hover {
-        background: var(--editor-hover-bg);
-      }
     }
 
     .list_title {
@@ -403,7 +394,7 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
                   [attr.aria-label]="
                     'Remove ' + itemLabel + ' ' + itemName(field.model)
                   "
-                  (click)="$event.stopPropagation(); remove($index)"
+                  (click)="$event.stopPropagation(); confirmRemove($index)"
                 >
                   <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
                     <path
@@ -428,6 +419,7 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
   `,
 })
 export class ArrayTypeComponent extends FieldArrayType implements OnInit {
+  private modals = inject(NgbModal);
   collapsed = false;
 
   get itemLabel(): string {
@@ -520,6 +512,69 @@ export class ArrayTypeComponent extends FieldArrayType implements OnInit {
     this.collapsed = this.collapsible ? false : this.collapsed;
     const id = await generateId();
     this.add(undefined, { id, expanded: true });
+  }
+
+  /** Ask before removing, mentioning anything that refers to the item. */
+  async confirmRemove(index: number) {
+    const model = this.field.fieldGroup?.[index]?.model;
+    const ref = this.modals.open(ConfirmDialogComponent, {
+      size: 'sm',
+      centered: true,
+      ariaLabelledBy: 'confirm-title',
+    });
+    Object.assign(ref.componentInstance, {
+      title: `Delete ${this.itemLabel}?`,
+      message: `“${this.itemName(model)}” will be removed.`,
+      details: this.usages([model?.id]),
+      confirmLabel: `Delete ${this.itemLabel}`,
+    });
+
+    const confirmed = await ref.result.catch(() => false);
+    if (!confirmed) {
+      return;
+    }
+    // Find it again: the list may have changed while the dialog was open.
+    const current = (this.model ?? []).findIndex(
+      (item: any) => item === model || (model?.id && item?.id === model.id),
+    );
+    if (current !== -1) {
+      this.remove(current);
+    }
+  }
+
+  /**
+   * What refers to any of `ids` elsewhere in the model, e.g. "2 operations
+   * use it". References are fields named like `toolId`, `shapeId`, ….
+   * Items being removed themselves don't count.
+   */
+  private usages(ids: string[]): string[] {
+    const removed = new Set(ids.filter(Boolean));
+    if (!removed.size) {
+      return [];
+    }
+    const root = rootModel(this.field) ?? {};
+    const sections: Array<[string, string, string]> = [
+      ['shapes', 'shape', 'shapes'],
+      ['tools', 'tool', 'tools'],
+      ['operations', 'operation', 'operations'],
+    ];
+    return sections.flatMap(([key, singular, plural]) => {
+      const count = (root[key] ?? []).filter(
+        (item: any) =>
+          !removed.has(item?.id) &&
+          Object.entries(item ?? {}).some(
+            ([field, value]) =>
+              field.endsWith('Id') && removed.has(value as string),
+          ),
+      ).length;
+      return count
+        ? [
+            `${count} ${count === 1 ? singular : plural} ${
+              count === 1 ? 'uses' : 'use'
+            } it and will need updating`,
+          ]
+        : [];
+    });
   }
 
   drop({ previousIndex, currentIndex }: CdkDragDrop<unknown>) {
