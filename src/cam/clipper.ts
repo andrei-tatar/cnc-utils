@@ -1,6 +1,7 @@
 import type { MainModule, PathD, PathsD } from 'clipper2-wasm/dist/clipper2z';
 import { CamPoint } from './types';
 import { lazy } from '../util';
+import { version as clipperVersion } from 'clipper2-wasm/package.json';
 
 type ClipperJoinType = 'miter' | 'square' | 'round';
 type ClipperEndType = 'polygon' | 'joined' | 'butt' | 'square' | 'round';
@@ -161,9 +162,10 @@ const ClipperModule = lazy(async () => {
     'clipper2-wasm/dist/es/clipper2z.js'
   );
   const module = await clipperFactory({
-    locateFile: () => {
-      return 'clipper2z.wasm';
-    },
+    // The version in the URL keeps a cached clipper2z.wasm from another
+    // version (the file name never changes) from being paired with this
+    // code, which fails to start with it.
+    locateFile: () => `clipper2z.wasm?v=${clipperVersion}`,
   });
   return module as MainModule;
 });
