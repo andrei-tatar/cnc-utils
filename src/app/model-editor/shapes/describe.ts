@@ -48,6 +48,14 @@ export function describeShape(
       const short = text.length > 24 ? `${text.slice(0, 23)}…` : text;
       return `“${short}” ${shape['font']?.family ?? ''}`.trim();
     }
+    case 'copy': {
+      const other = shapes.find((s) => s.id === shape['copyOfId']);
+      if (!other) return 'copy';
+      return `copy of ${
+        other.name ||
+        (depth < 2 ? describeShape(other, shapes, depth + 1) : '…')
+      }`;
+    }
     case 'boolean': {
       // Boolean shapes can reference each other; don't recurse forever.
       const operand = (id: string) => {

@@ -784,6 +784,24 @@ export class AppComponent implements OnInit, OnDestroy {
                     return result$;
                   }
 
+                  if (t.type === 'copy') {
+                    // Another shape's result, as this shape's (so the
+                    // transforms below and operations work on it).
+                    const copied$: Observable<CamShape[]> = shapes$.pipe(
+                      switchMap(
+                        (s) =>
+                          s.find((v) => v.shapeId === t.copyOfId)?.result$ ??
+                          // Deleted or unset shape: empty, not waiting.
+                          of([] as CamShape[]),
+                      ),
+                      distinctUntilChanged(),
+                      map((source) =>
+                        source.map((s) => ({ ...s, sourceShapeId: shapeId })),
+                      ),
+                    );
+                    return copied$;
+                  }
+
                   if (t.type === 'text') {
                     return worker.importText(t, shapeId, geometry);
                   }
@@ -919,7 +937,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private static createSvgFromShape(
-    t: Exclude<ShapeParameters, { type: 'boolean' | 'text' }>,
+    t: Exclude<ShapeParameters, { type: 'boolean' | 'text' | 'copy' }>,
   ) {
     switch (t.type) {
       case 'circle':

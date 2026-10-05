@@ -30,6 +30,10 @@ import {
   ModelType as BooleanModelType,
 } from './shape-boolean';
 import {
+  Definition as CopyDefinition,
+  ModelType as CopyModelType,
+} from './shape-copy';
+import {
   Definition as TextDefinition,
   ModelType as TextModelType,
 } from './shape-text';
@@ -49,6 +53,7 @@ type ShapeType =
   | LineModelType
   | PathDataModelType
   | BooleanModelType
+  | CopyModelType
   | TextModelType;
 
 export type ModelType = {
@@ -62,6 +67,7 @@ const shapes = [
   LineDefinition,
   PathDataDefinition,
   BooleanDefinition,
+  CopyDefinition,
   TextDefinition,
 ];
 

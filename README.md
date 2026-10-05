@@ -27,6 +27,7 @@ The 3D preview updates as you edit: shape outlines (with holes shown as holes), 
 | svg | an SVG file — click or drop a file onto the field |
 | text | any text in a [Google Font](https://fonts.google.com/); size by cap height, letter/line spacing, alignment |
 | boolean | union, intersection, difference or xor of two other shapes |
+| copy of a shape | another shape's result (after its transforms), for this shape's own transforms: a transformed version next to the original that follows any change to it |
 
 Each shape can have a chain of **transforms**, applied in order: move, align (put the left/middle/right and/or top/middle/bottom of the shape on a coordinate), rotate, scale, flip, repeat (grid arrays), offset (`clipper:inflate`) and convex hull.
 
