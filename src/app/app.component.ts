@@ -9,7 +9,6 @@ import {
   ignoreElements,
   map,
   merge,
-  NEVER,
   Observable,
   of,
   race,
@@ -464,7 +463,9 @@ export class AppComponent implements OnInit, OnDestroy {
                       switchMap(
                         (s) =>
                           s.find((v) => v.shapeId === t.shape1Id)?.result$ ??
-                          NEVER,
+                          // Deleted or unset shape: treat as empty instead of
+                          // waiting forever (which stalls every shape).
+                          of([] as CamShape[]),
                       ),
                       distinctUntilChanged(),
                     );
@@ -472,7 +473,9 @@ export class AppComponent implements OnInit, OnDestroy {
                       switchMap(
                         (s) =>
                           s.find((v) => v.shapeId === t.shape2Id)?.result$ ??
-                          NEVER,
+                          // Deleted or unset shape: treat as empty instead of
+                          // waiting forever (which stalls every shape).
+                          of([] as CamShape[]),
                       ),
                       distinctUntilChanged(),
                     );
