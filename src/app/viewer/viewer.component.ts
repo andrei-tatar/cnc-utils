@@ -26,7 +26,9 @@ import {
   BufferAttribute,
   Color,
   Box3,
+  Frustum,
   Group,
+  Matrix4,
   Object3D,
   Plane,
   Raycaster,
@@ -352,8 +354,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
       if (pixelsPerUnit > 0 && (key !== arrowsKey || this.arrowsDirty)) {
         arrowsKey = key;
         this.arrowsDirty = false;
-        this.arrows.forEach((arrows) => arrows.update(pixelsPerUnit));
-        this.thinArrows(width, height);
+        this.layoutArrows(pixelsPerUnit, width, height);
       }
 
       if (pixelsPerUnit > 0 && key !== viewKey) {
@@ -532,74 +533,112 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Thin arrows across all visible paths so parallel passes (pockets,
-   * v-carves) don't bury the view: a new arrow needs SPACING_PX of free
-   * screen around it. Every path's midpoint gets a chance before any
-   * second arrow. Arrows already on screen only give way once something is
-   * closer than KEEP_PX, so moving the view doesn't make them flicker.
-   * Distances (unlike a fixed grid) don't change when panning or rotating.
+   * Lay out direction arrows for the current view, then thin them across all
+   * visible paths so parallel passes (pockets, v-carves) don't bury the view:
+   * a new arrow needs SPACING_PX of free screen around it. Every path's
+   * midpoint gets a chance before any second arrow. Arrows already on screen
+   * only give way once something is closer than KEEP_PX, so moving the view
+   * doesn't make them flicker (distances don't change when panning or
+   * rotating, unlike a fixed grid).
+   *
+   * Runs every frame while the view moves, so it only works on what's on
+   * screen: paths outside the view are skipped entirely, and off-screen
+   * arrows of partly visible paths take no part in the thinning.
    */
-  private thinArrows(width: number, height: number) {
+  private layoutArrows(pixelsPerUnit: number, width: number, height: number) {
     const SPACING_PX = 62;
     const KEEP_PX = 40;
+    const MARGIN_PX = SPACING_PX;
+
+    const camera = this.camera;
+    camera.updateMatrixWorld();
+    const viewProjection = new Matrix4().multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse,
+    );
+    const frustum = new Frustum().setFromProjectionMatrix(viewProjection);
+    const e = viewProjection.elements;
 
     const shownBefore = this.shownArrows;
     this.shownArrows = new WeakMap();
 
-    type Candidate = {
-      arrows: DirectionArrows;
-      index: number;
-      level: number;
-      x: number;
-      y: number;
-    };
-    const kept: Candidate[] = [];
-    const fresh: Candidate[] = [];
-    const screen = new Vector3();
+    // Screen-space candidates, in flat arrays to keep this allocation-light.
+    const owners: DirectionArrows[] = [];
+    const indices: number[] = [];
+    const levels: number[] = [];
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const kept: number[] = [];
+    const fresh: number[] = [];
+
     this.arrows.forEach((arrows) => {
-      if (!arrows.mesh.visible) return;
+      if (!arrows.mesh.visible || !frustum.intersectsBox(arrows.bounds)) {
+        arrows.clear();
+        return;
+      }
+      arrows.update(pixelsPerUnit);
       const before = shownBefore.get(arrows);
-      for (const { index, level, position } of arrows.visibleArrows()) {
-        screen.copy(position).project(this.camera);
-        const candidate = {
-          arrows,
-          index,
-          level,
-          x: ((screen.x + 1) / 2) * width,
-          y: ((1 - screen.y) / 2) * height,
-        };
-        (before?.has(index) ? kept : fresh).push(candidate);
+      for (let index = 0; index < arrows.laidOut; index++) {
+        // Project to screen (orthographic: w = 1).
+        const p = arrows.positionOf(index);
+        const x =
+          ((e[0] * p.x + e[4] * p.y + e[8] * p.z + e[12] + 1) / 2) * width;
+        const y =
+          ((1 - (e[1] * p.x + e[5] * p.y + e[9] * p.z + e[13])) / 2) * height;
+        if (
+          x < -MARGIN_PX ||
+          y < -MARGIN_PX ||
+          x > width + MARGIN_PX ||
+          y > height + MARGIN_PX
+        ) {
+          continue; // off-screen: drawn but invisible, no need to thin
+        }
+        const c = owners.length;
+        owners.push(arrows);
+        indices.push(index);
+        levels.push(arrows.levelOf(index));
+        xs.push(x);
+        ys.push(y);
+        (before?.has(index) ? kept : fresh).push(c);
       }
     });
-    kept.sort((a, b) => a.level - b.level);
-    fresh.sort((a, b) => a.level - b.level);
+    const byLevel = (a: number, b: number) => levels[a] - levels[b];
+    kept.sort(byLevel);
+    fresh.sort(byLevel);
 
     // Spatial hash of accepted arrows for quick "anything within r?" checks.
-    const buckets = new Map<string, Candidate[]>();
-    const bucketKey = (x: number, y: number) =>
-      `${Math.floor(x / SPACING_PX)},${Math.floor(y / SPACING_PX)}`;
-    const crowded = (c: Candidate, radius: number) => {
-      const bx = Math.floor(c.x / SPACING_PX);
-      const by = Math.floor(c.y / SPACING_PX);
+    const buckets = new Map<number, number[]>();
+    const bucketKey = (bx: number, by: number) => bx * 100003 + by;
+    const crowded = (c: number, radius: number) => {
+      const bx = Math.floor(xs[c] / SPACING_PX);
+      const by = Math.floor(ys[c] / SPACING_PX);
       for (let dx = -1; dx <= 1; dx++)
-        for (let dy = -1; dy <= 1; dy++)
-          for (const o of buckets.get(`${bx + dx},${by + dy}`) ?? [])
-            if (Math.hypot(o.x - c.x, o.y - c.y) < radius) return true;
+        for (let dy = -1; dy <= 1; dy++) {
+          const bucket = buckets.get(bucketKey(bx + dx, by + dy));
+          if (!bucket) continue;
+          for (const o of bucket)
+            if (Math.hypot(xs[o] - xs[c], ys[o] - ys[c]) < radius) return true;
+        }
       return false;
     };
-    const place = (c: Candidate, radius: number) => {
-      const show = !crowded(c, radius);
-      if (show) {
-        const key = bucketKey(c.x, c.y);
-        buckets.set(key, [...(buckets.get(key) ?? []), c]);
-        let shown = this.shownArrows.get(c.arrows);
-        if (!shown) {
-          shown = new Set();
-          this.shownArrows.set(c.arrows, shown);
-        }
-        shown.add(c.index);
+    const place = (c: number, radius: number) => {
+      if (crowded(c, radius)) {
+        owners[c].hideArrow(indices[c]);
+        return;
       }
-      c.arrows.setArrowVisible(c.index, show);
+      const key = bucketKey(
+        Math.floor(xs[c] / SPACING_PX),
+        Math.floor(ys[c] / SPACING_PX),
+      );
+      const bucket = buckets.get(key);
+      if (bucket) bucket.push(c);
+      else buckets.set(key, [c]);
+      let shown = this.shownArrows.get(owners[c]);
+      if (!shown) {
+        shown = new Set();
+        this.shownArrows.set(owners[c], shown);
+      }
+      shown.add(indices[c]);
     };
 
     kept.forEach((c) => place(c, KEEP_PX));

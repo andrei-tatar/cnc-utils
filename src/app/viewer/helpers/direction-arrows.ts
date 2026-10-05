@@ -1,4 +1,5 @@
 import {
+  Box3,
   Color,
   ConeGeometry,
   InstancedMesh,
@@ -20,6 +21,8 @@ const MAX_LEVEL = 9;
 const MIN_SPACING = 0.25;
 
 const UP = new Vector3(0, 1, 0);
+const ZERO_SCALE = new Vector3(0, 0, 0);
+const ZERO_SCALE_MATRIX = new Matrix4();
 
 // Unit cone pointing along +Y, centered on the origin.
 const geometry = new ConeGeometry(0.35, 1, 10);
@@ -35,6 +38,8 @@ const geometry = new ConeGeometry(0.35, 1, 10);
  */
 export class DirectionArrows {
   readonly mesh: InstancedMesh;
+  /** All candidate positions: lets the viewer skip off-screen paths. */
+  readonly bounds: Box3;
 
   private readonly length: number;
   private readonly maxLevel: number;
@@ -77,6 +82,7 @@ export class DirectionArrows {
     this.mesh.count = 0;
     // Instances move around as the zoom changes; skip per-instance culling.
     this.mesh.frustumCulled = false;
+    this.bounds = new Box3().setFromPoints(this.positions);
   }
 
   /** Lay the arrows out for the current scale (screen pixels per unit). */
@@ -96,33 +102,33 @@ export class DirectionArrows {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
-  /** The arrows currently laid out, with their subdivision level. */
-  *visibleArrows(): Generator<{
-    index: number;
-    level: number;
-    position: Vector3;
-  }> {
-    for (let index = 0; index < this.mesh.count; index++) {
-      yield {
-        index,
-        level: this.levels[index],
-        position: this.positions[index],
-      };
-    }
+  /** Number of arrows currently laid out (a prefix of all candidates). */
+  get laidOut() {
+    return this.mesh.count;
   }
 
-  /** Show or hide one arrow (used to thin out arrows across paths). */
-  setArrowVisible(index: number, visible: boolean) {
-    const scale = visible ? this.scale : 0;
-    this.mesh.setMatrixAt(
-      index,
-      new Matrix4().compose(
-        this.positions[index],
-        this.rotations[index],
-        new Vector3(scale, scale, scale),
-      ),
+  levelOf(index: number) {
+    return this.levels[index];
+  }
+
+  positionOf(index: number) {
+    return this.positions[index];
+  }
+
+  /** Hide one laid-out arrow (used to thin out arrows across paths). */
+  hideArrow(index: number) {
+    ZERO_SCALE_MATRIX.compose(
+      this.positions[index],
+      this.rotations[index],
+      ZERO_SCALE,
     );
+    this.mesh.setMatrixAt(index, ZERO_SCALE_MATRIX);
     this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Lay out nothing (the path is off-screen or hidden). */
+  clear() {
+    this.mesh.count = 0;
   }
 
   /** Give each arrow its own colour (multiplied with the material's). */
