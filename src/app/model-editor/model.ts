@@ -24,7 +24,7 @@ export type TransformParameters = OmitUnion<TransformType, 'id' | 'expanded'>;
 export type OperationType = OperationsModelType['operations'][number];
 export type OperationParameters = OmitUnion<
   OperationType,
-  'id' | 'expanded' | 'name' | 'shapeId' | 'toolId'
+  'id' | 'expanded' | 'name' | 'shapeId' | 'toolId' | 'disabled'
 >;
 /** What a tool contributes to toolpath routing (not to G-code text). */
 export type ToolParameters = OmitUnion<

@@ -54,6 +54,8 @@ export type ModelType = {
       id: string;
       expanded: boolean;
       name?: string;
+      /** Left out of the G-code (and so the preview). */
+      disabled?: boolean;
       toolId: string;
       shapeId: string;
     } & (
@@ -82,12 +84,23 @@ export const field: FormlyFieldConfig = {
       ),
     accent: '#059669',
     collapsible: true,
+    toggle: {
+      key: 'disabled',
+      icon: 'switch',
+      onTitle: 'Disable: leave out of the G-code and preview',
+      offTitle: 'Disabled — click to include in the G-code again',
+    },
   },
   fieldArray: {
     fieldGroup: [
       {
         key: 'id',
         type: 'hidden',
+      },
+      {
+        key: 'disabled',
+        type: 'hidden',
+        defaultValue: false,
       },
       {
         key: 'expanded',

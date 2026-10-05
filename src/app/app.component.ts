@@ -318,6 +318,7 @@ export class AppComponent implements OnInit, OnDestroy {
     return operations.some(
       (o, index) =>
         index < vcarveIndex &&
+        !o.disabled &&
         o.type === 'v-carve-clear' &&
         o.vcarveOperationId === vcarveId &&
         (tools.find((t) => t.id === o.toolId)?.bitType ?? 'end-mill') !==
@@ -340,6 +341,7 @@ export class AppComponent implements OnInit, OnDestroy {
               name: __,
               shapeId,
               toolId,
+              disabled,
               ...operationParameters
             }) => {
               const tool = tools.find((t) => t.id === toolId);
@@ -388,6 +390,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 existing.source$.next(source);
                 existing.beyondCone$.next(beyondCone);
                 existing.toolInfo$.next(toolInfo);
+                existing.enabled$.next(!disabled);
                 return existing;
               }
 
@@ -399,6 +402,7 @@ export class AppComponent implements OnInit, OnDestroy {
               const source$ = new BehaviorSubject(source);
               const beyondCone$ = new BehaviorSubject(beyondCone);
               const toolInfo$ = new BehaviorSubject(toolInfo);
+              const enabled$ = new BehaviorSubject(!disabled);
 
               const shape$ = combineLatest([
                 shapeId$.pipe(distinctUntilChanged()),
@@ -556,7 +560,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
               // Tag the routed G-code with its tool afterwards, so renumbering
               // tools (reordering the list) doesn't re-run the routing.
-              const result$ = combineLatest([
+              const tagged$ = combineLatest([
                 routed$,
                 toolInfo$.pipe(
                   distinctUntilChanged(
@@ -580,9 +584,23 @@ export class AppComponent implements OnInit, OnDestroy {
                 }),
               );
 
+              // A disabled operation contributes nothing, and isn't routed at
+              // all while it stays disabled.
+              const result$ = enabled$.pipe(
+                distinctUntilChanged(),
+                switchMap((enabled) =>
+                  enabled ? tagged$ : of(new GCodeBuilder()),
+                ),
+                share({
+                  connector: () => new ReplaySubject(1),
+                  resetOnRefCountZero: () => timer(0),
+                }),
+              );
+
               return {
                 id,
                 toolInfo$,
+                enabled$,
                 operationParameters$,
                 toolParameters$,
                 result$,
@@ -601,6 +619,7 @@ export class AppComponent implements OnInit, OnDestroy {
           source$: BehaviorSubject<VCarveSource | null>;
           beyondCone$: BehaviorSubject<boolean>;
           toolInfo$: BehaviorSubject<ToolInfo | null>;
+          enabled$: BehaviorSubject<boolean>;
           result$: Observable<GCodeBuilder>;
         }>,
       ),
