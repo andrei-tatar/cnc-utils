@@ -18,7 +18,7 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { getCentroid } from './utils';
-import { enterCut, rampWarning } from '../../cam/ramp';
+import { enterCut } from '../../cam/ramp';
 
 // Irrelevant with round joins.
 const MITER_LIMIT = 2;
@@ -37,11 +37,6 @@ export async function routePocketHole(
     startDepth: number;
     /** Ramp down into the cut at this angle (degrees) instead of plunging. */
     rampAngle?: number | null;
-    /**
-     * Collects how much room each ramp had (see enterCut) for the caller to
-     * warn about, instead of warning here.
-     */
-    rampReaches?: Array<number | null>;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
   },
@@ -55,8 +50,6 @@ export async function routePocketHole(
   const groups = await groupShapes(input);
   const sorted = sortPaths(groups, start);
 
-  // How much path each ramp had (see enterCut).
-  const reaches: Array<number | null> = options.rampReaches ?? [];
   for (const shape of sorted) {
     const outlines = await getShapeOutlines(shape, { ...options, start });
 
@@ -99,15 +92,14 @@ export async function routePocketHole(
 
           if (builder.isAtSafetyHeight) {
             // Ramp along this loop, from the level above.
-            reaches.push(
-              enterCut(
-                builder,
-                outlinePoints,
-                true,
-                -(depth - options.depthPerStep),
-                -depth,
-                options.rampAngle ?? null,
-              ),
+            enterCut(
+              builder,
+              outlinePoints,
+              true,
+              -(depth - options.depthPerStep),
+              -depth,
+              options.rampAngle ?? null,
+              options.toolSize,
             );
           } else {
             builder.carveTo(pt.x, pt.y);
@@ -127,13 +119,6 @@ export async function routePocketHole(
   }
 
   sorted.forEach((s) => s.delete());
-
-  const warning = options.rampReaches
-    ? null
-    : rampWarning(reaches, options.toolSize);
-  if (warning) {
-    builder.warn(warning);
-  }
 
   return builder;
 }

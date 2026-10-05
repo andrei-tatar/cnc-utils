@@ -1,4 +1,4 @@
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { ViewerComponent } from './viewer/viewer.component';
 import {
   BehaviorSubject,
@@ -17,7 +17,6 @@ import {
   share,
   Subject,
   switchMap,
-  takeUntil,
   tap,
   timer,
   withLatestFrom,
@@ -42,7 +41,6 @@ import { toolLabel } from './model-editor/tools';
 import { resolveGcodeOptions } from '../cam/gcode-options';
 import { GeometrySettings } from '../cam/geometry';
 import { deepEqual, readFile } from '../util';
-import { ItemWarnings } from './item-warnings';
 
 /** How an operation's tool appears in the G-code. */
 type ToolInfo = {
@@ -86,7 +84,6 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<any>();
   private workLocks = new BehaviorSubject(0);
-  private itemWarnings = inject(ItemWarnings);
 
   private working$ = new Observable<never>(() => {
     this.workLocks.next(this.workLocks.value + 1);
@@ -153,15 +150,11 @@ export class AppComponent implements OnInit, OnDestroy {
     const shapes$ = AppComponent.generateShapesFromModel(model$, this.working$);
     this.drawShapes$ = shapes$;
 
-    const generated$ = AppComponent.generateGcodeFromOperations(
+    const gcode$ = AppComponent.generateGcodeFromOperations(
       model$,
       shapes$,
       this.working$,
     ).pipe(share({ connector: () => new ReplaySubject(1) }));
-    const gcode$ = generated$.pipe(map(({ gcode }) => gcode));
-    generated$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(({ warnings }) => this.itemWarnings.byId.set(warnings));
 
     this.drawPaths$ = gcode$.pipe(map((gcode) => gcodeToPaths(gcode)));
 
@@ -679,7 +672,7 @@ export class AppComponent implements OnInit, OnDestroy {
           .goToSafeHeight()
           .stopProgram()
           .build(gcodeOptions);
-        return { gcode, warnings: result.warningsByOperation() };
+        return gcode;
       }),
     );
   }

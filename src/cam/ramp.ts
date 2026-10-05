@@ -54,10 +54,9 @@ export function rampMoves(
 /**
  * Get the bit to Z `to` at the start of `points` (from safe height): travel
  * there, then plunge, or ramp from `from` when `rampAngle` is set (see
- * rampMoves for `maxLength`). Returns how far a ramp takes the tool from
- * where it would have plunged: the stretch it goes along, or a loop's
- * diameter when it goes round and round (0: no room, it plunged); null when
- * there was no ramp to make.
+ * rampMoves for `maxLength`). A ramp that wouldn't take the tool at least
+ * its radius away from where it would plunge hardly helps (a short stretch
+ * between tabs, a loop smaller than the tool), so it plunges instead.
  */
 export function enterCut(
   builder: GCodeBuilder,
@@ -66,28 +65,41 @@ export function enterCut(
   from: number,
   to: number,
   rampAngle: number | null,
+  toolSize: number,
   maxLength = Infinity,
-): number | null {
+) {
   const ramp = rampAngle
     ? rampMoves(points, close, from, to, rampAngle, maxLength)
     : [];
-  if (!ramp.length) {
+  if (
+    !ramp.length ||
+    rampReach(points, close, from - to, rampAngle!, maxLength) <
+      toolSize / 2 - EPS
+  ) {
     builder.travelTo(points[0].x, points[0].y);
     builder.plunge(to);
-  } else {
-    builder.travelTo(ramp[0].x, ramp[0].y);
-    builder.plunge(from);
-    for (const move of ramp.slice(1)) {
-      builder.carveTo(move.x, move.y, move.z);
-    }
+    return;
   }
-  if (!rampAngle || !(from - to > EPS)) {
-    return null;
+  builder.travelTo(ramp[0].x, ramp[0].y);
+  builder.plunge(from);
+  for (const move of ramp.slice(1)) {
+    builder.carveTo(move.x, move.y, move.z);
   }
-  if (!ramp.length) {
-    return 0;
-  }
-  const needed = (from - to) / Math.tan((rampAngle * Math.PI) / 180);
+}
+
+/**
+ * How far a ramp dropping `drop` takes the tool from where it would have
+ * plunged: the stretch it goes along, or a loop's diameter when it goes
+ * round and round.
+ */
+function rampReach(
+  points: CamPoint[],
+  close: boolean,
+  drop: number,
+  angle: number,
+  maxLength: number,
+): number {
+  const needed = drop / Math.tan((angle * Math.PI) / 180);
   const length = pathLength(points, close);
   if (!close) {
     // Back and forth up to half the ramp's length out (see zigZagRamp).
@@ -95,33 +107,7 @@ export function enterCut(
   }
   // Along the end of the loop, or back and forth on its last `maxLength`;
   // round a small loop, it's the loop's size that counts.
-  const along = needed <= maxLength ? needed : maxLength;
-  return Math.min(along, length / Math.PI);
-}
-
-/**
- * A warning for ramps that take the tool less than its radius from where it
- * would have plunged (`reaches` from enterCut), so they hardly help; null
- * when they all had room.
- */
-export function rampWarning(
-  reaches: Array<number | null>,
-  toolSize: number,
-): string | null {
-  const ramps = reaches.filter((r): r is number => r !== null);
-  const short = ramps.filter((r) => r < toolSize / 2 - EPS);
-  if (!short.length) {
-    return null;
-  }
-  const plunged = short.filter((r) => r === 0).length;
-  const shuffled = short.length - plunged;
-  const parts = [
-    shuffled &&
-      `${shuffled} of ${ramps.length} ramps have less than ${toolSize / 2} mm (the tool's radius) to move along, so they're close to plunging`,
-    plunged &&
-      `${plunged} of ${ramps.length} ramps have no room at all and plunge`,
-  ].filter(Boolean);
-  return `${parts.join('; ')}.`;
+  return Math.min(Math.min(needed, maxLength), length / Math.PI);
 }
 
 function pathLength(points: CamPoint[], close: boolean) {

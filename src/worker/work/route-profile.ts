@@ -7,7 +7,7 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
-import { enterCut, rampWarning } from '../../cam/ramp';
+import { enterCut } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 
@@ -106,8 +106,6 @@ export async function routeProfile(
       ),
     );
 
-  // How much path each ramp had (see enterCut).
-  const reaches: Array<number | null> = [];
   for (const polygon of polygons) {
     const points = polygon.points;
 
@@ -128,19 +126,13 @@ export async function routeProfile(
 
       // Each pass starts where the previous one left off.
       const from = -(options.startDepth + options.depthPerStep * step);
-      reaches.push(
-        carvePass(builder, points, polygon.close, from, depth, tabFloor, {
-          ...options,
-          rampAngle: options.rampAngle ?? null,
-        }),
-      );
+      carvePass(builder, points, polygon.close, from, depth, tabFloor, {
+        ...options,
+        rampAngle: options.rampAngle ?? null,
+      });
     }
   }
 
-  const warning = rampWarning(reaches, options.toolSize);
-  if (warning) {
-    builder.warn(warning);
-  }
   return builder;
 }
 
@@ -249,8 +241,13 @@ function carvePass(
   from: number,
   depth: number,
   tabFloor: number | null,
-  options: { tabCount: number; tabWidth: number; rampAngle: number | null },
-): number | null {
+  options: {
+    tabCount: number;
+    tabWidth: number;
+    rampAngle: number | null;
+    toolSize: number;
+  },
+) {
   // Vertices the tool visits in order; a closed loop returns to its start.
   const loop = close ? [...points, points[0]] : points;
   const perimeter = pathLength(loop);
@@ -270,13 +267,14 @@ function carvePass(
 
   builder.goToSafeHeight();
   // A ramp stays on the stretch after the last tab, which ends the loop.
-  const reach = enterCut(
+  enterCut(
     builder,
     points,
     close,
     from,
     depth,
     options.rampAngle,
+    options.toolSize,
     tabs.length ? perimeter - tabs[tabs.length - 1].end : Infinity,
   );
 
@@ -284,7 +282,7 @@ function carvePass(
     for (let i = 1; i < loop.length; i++) {
       builder.carveTo(loop[i].x, loop[i].y);
     }
-    return reach;
+    return;
   }
 
   let traveled = 0;
@@ -330,7 +328,6 @@ function carvePass(
       setDepth(traveled);
     }
   }
-  return reach;
 }
 
 /**
