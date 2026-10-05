@@ -7,6 +7,7 @@ import {
 } from '../../cam/vcarve-geometry';
 import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
+import { AxisPoint, medialAxis } from '../../cam/medial-axis';
 import { GeometrySettings, precision, useGeometry } from '../../cam/geometry';
 import { getDistance } from '../../util';
 import {
@@ -37,7 +38,8 @@ export async function routeVCarve(
     startDepth: number;
     /** Null: no limit, a pointed V everywhere. */
     maxDepth: number | null;
-    stepover: number;
+    /** Null: a single pass along the shape's centre line (medial axis). */
+    stepover: number | null;
     clearFlatBottom: boolean;
     sharpCorners: boolean;
     sharpCornerAngle: number;
@@ -54,7 +56,6 @@ export async function routeVCarve(
   builder.sourceShapeId(input?.[0]?.sourceShapeId);
 
   const geometry = vCarveGeometry(options);
-  const stepover = Math.max(precision(), options.stepover);
   if (!geometry) {
     return builder;
   }
@@ -100,6 +101,22 @@ export async function routeVCarve(
   // the parts growing out from the holes.
   const keepAt: (inset: number) => ((p: CamPoint) => boolean) | null =
     options.mode === 'holes' ? await holeSide(closed) : () => null;
+
+  if (!(options.stepover && options.stepover > 0)) {
+    await carveSinglePass(
+      builder,
+      region,
+      geometry,
+      depthAt,
+      keepAt,
+      position,
+      // Cutting into corners is how a single pass works: only how sharp a
+      // corner must be applies.
+      (options.sharpCornerAngle * Math.PI) / 180,
+    );
+    return builder;
+  }
+  const stepover = Math.max(precision(), options.stepover);
 
   const corners: CornerOptions | null = options.sharpCorners
     ? {
@@ -186,6 +203,115 @@ export async function routeVCarve(
   }
 
   return builder;
+}
+
+/**
+ * Carve in a single pass along the medial axis, each point at the depth for
+ * its distance to the edges: the cone then touches the nearest edge, which
+ * makes the whole V, sharp convex corners included (the axis runs into
+ * them). Where the shape is wider than the max depth allows, the axis isn't
+ * cut (it would groove the uncut middle); the walls there get one pass along
+ * the max-depth inset instead.
+ */
+async function carveSinglePass(
+  builder: GCodeBuilder,
+  region: CamPoint[][],
+  geometry: { tipRadius: number; maxInset: number },
+  depthAt: (inset: number) => number,
+  keepAt: (inset: number) => ((p: CamPoint) => boolean) | null,
+  position: CamPoint,
+  sharpCornerAngle: number,
+) {
+  const { tipRadius, maxInset } = geometry;
+  const limited = Number.isFinite(maxInset);
+  const z = (d: number) => depthAt(Math.max(d, tipRadius));
+
+  // The parts of the axis to cut: narrow enough (ending exactly at the max
+  // depth inset), and on the holes' side for "holes only".
+  const runs: AxisPoint[][] = [];
+  for (const axis of medialAxis(
+    region,
+    Math.max(0.1, 5 * precision()),
+    sharpCornerAngle,
+  )) {
+    let run: AxisPoint[] = [];
+    // (A single point is a plunge: e.g. the centre of a circle.)
+    const end = () => {
+      if (run.length) runs.push(run);
+      run = [];
+    };
+    for (let i = 0; i < axis.length; i++) {
+      const p = axis[i];
+      const narrow = !limited || p.d <= maxInset;
+      if (narrow && (keepAt(p.d)?.(p) ?? true)) {
+        const prev = axis[i - 1];
+        if (!run.length && prev && limited && prev.d > maxInset) {
+          run.push(crossing(prev, p, maxInset));
+        }
+        run.push(p);
+      } else {
+        const prev = axis[i - 1];
+        if (run.length && limited && !narrow && prev && prev.d <= maxInset) {
+          run.push(crossing(prev, p, maxInset));
+        }
+        end();
+      }
+    }
+    end();
+  }
+
+  // Cut them nearest first, carrying straight on where one starts where the
+  // last one ended.
+  while (runs.length) {
+    let best = 0;
+    let reversed = false;
+    let bestDistance = Infinity;
+    runs.forEach((run, i) => {
+      const toStart = getDistance(position, run[0]);
+      const toEnd = getDistance(position, run[run.length - 1]);
+      if (Math.min(toStart, toEnd) < bestDistance) {
+        bestDistance = Math.min(toStart, toEnd);
+        best = i;
+        reversed = toEnd < toStart;
+      }
+    });
+    const [taken] = runs.splice(best, 1);
+    const run = reversed ? taken.reverse() : taken;
+    if (bestDistance > 1e-6) {
+      builder.goToSafeHeight();
+      builder.travelTo(run[0].x, run[0].y);
+      builder.plunge(z(run[0].d));
+    }
+    for (const p of run.slice(1)) {
+      builder.carveTo(p.x, p.y, z(p.d));
+    }
+    position = run[run.length - 1];
+  }
+
+  if (limited) {
+    for (const contour of orderByProximity(
+      groupComponents(await insetContours(region, maxInset)).flat(),
+      position,
+    )) {
+      cutContour(
+        builder,
+        contour,
+        maxInset,
+        maxInset,
+        depthAt,
+        null,
+        keepAt(maxInset),
+      );
+      position = contour[0];
+    }
+  }
+  return position;
+}
+
+/** Where the distance crosses `d` between two axis points. */
+function crossing(a: AxisPoint, b: AxisPoint, d: number): AxisPoint {
+  const t = b.d !== a.d ? (d - a.d) / (b.d - a.d) : 0;
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, d };
 }
 
 type Component = {

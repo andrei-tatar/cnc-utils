@@ -531,7 +531,10 @@ export class AppComponent implements OnInit, OnDestroy {
                             tipDiameter,
                             startDepth: op.startDepth,
                             maxDepth: op.unlimitedDepth ? null : op.maxDepth,
-                            stepover: op.stepover,
+                            stepover:
+                              op.stepover && op.stepover > 0
+                                ? op.stepover
+                                : null,
                             // Without a max depth there's no flat bottom.
                             clearFlatBottom:
                               !op.unlimitedDepth && op.clearFlatBottom,

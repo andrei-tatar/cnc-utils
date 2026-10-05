@@ -10,7 +10,8 @@ export interface ModelType {
   /** No max depth: carve the full V everywhere, no flat bottom. */
   unlimitedDepth?: boolean;
   maxDepth: number;
-  stepover: number;
+  /** Empty: a single pass along the shape's centre line. */
+  stepover?: number | null;
   clearFlatBottom: boolean;
   sharpCorners: boolean;
   sharpCornerAngle: number;
@@ -22,8 +23,12 @@ const hideUnlessVCarve = (field: FormlyFieldConfig) =>
 const hideIfUnlimited = (field: FormlyFieldConfig) =>
   field.model?.type !== Definition.type || !!field.model?.unlimitedDepth;
 
+const singlePass = (field: FormlyFieldConfig) => !(field.model?.stepover > 0);
+
+// A single pass always cuts into corners: only how sharp they must be applies.
 const hideUnlessSharpCorners = (field: FormlyFieldConfig) =>
-  field.model?.type !== Definition.type || !field.model?.sharpCorners;
+  field.model?.type !== Definition.type ||
+  (!singlePass(field) && !field.model?.sharpCorners);
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
@@ -83,7 +88,9 @@ const field: FormlyFieldConfig = {
       props: {
         min: 0.01,
         label: 'stepover',
-        required: true,
+        placeholder: 'single pass',
+        description:
+          'mm between passes; empty: one pass along the shape’s centre line',
       },
     },
     {
@@ -93,7 +100,10 @@ const field: FormlyFieldConfig = {
       props: {
         label: 'clear flat bottom at max depth',
       },
-      expressions: { hide: hideIfUnlimited },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideIfUnlimited(field) || singlePass(field),
+      },
     },
     {
       key: 'sharpCorners',
@@ -101,6 +111,10 @@ const field: FormlyFieldConfig = {
       defaultValue: true,
       props: {
         label: 'sharp corners',
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          field.model?.type !== Definition.type || singlePass(field),
       },
     },
     {
