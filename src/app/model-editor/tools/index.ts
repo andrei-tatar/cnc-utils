@@ -24,6 +24,9 @@ export const field: FormlyFieldConfig = {
   defaultValue: [],
   props: {
     label: 'tools',
+    itemLabel: 'tool',
+    accent: '#ea580c',
+    collapsible: true,
   },
   fieldArray: {
     fieldGroup: [

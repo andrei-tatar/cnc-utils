@@ -35,6 +35,8 @@ export const field: FormlyFieldConfig = {
   defaultValue: [],
   props: {
     label: 'operations',
+    itemLabel: 'operation',
+    accent: '#059669',
   },
   fieldArray: {
     fieldGroup: [

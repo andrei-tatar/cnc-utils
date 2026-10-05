@@ -67,6 +67,8 @@ export const field: FormlyFieldConfig = {
   type: 'repeat',
   props: {
     label: 'transforms',
+    itemLabel: 'transform',
+    accent: '#7c3aed',
   },
   fieldArray: {
     fieldGroup: [

@@ -17,7 +17,7 @@ import { ModelType, ModelFieldConfig } from './model';
   standalone: true,
   imports: [FormlyModule, CommonModule, ReactiveFormsModule],
   template: `
-    <form [formGroup]="form" class="p-2">
+    <form [formGroup]="form">
       <formly-form
         [form]="form"
         [fields]="fields"

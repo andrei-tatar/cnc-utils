@@ -62,6 +62,9 @@ export const field: FormlyFieldConfig = {
   defaultValue: [],
   props: {
     label: 'shapes',
+    itemLabel: 'shape',
+    accent: '#2563eb',
+    collapsible: true,
   },
   fieldArray: {
     fieldGroup: [

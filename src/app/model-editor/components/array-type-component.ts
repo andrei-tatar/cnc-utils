@@ -1,121 +1,431 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { FieldArrayType, FormlyModule } from '@ngx-formly/core';
 import { generateId } from '../../../util';
 import { NgbCollapseModule } from '@ng-bootstrap/ng-bootstrap';
+import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
+
+const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
 
 @Component({
-  imports: [FormlyModule, CommonModule, NgbCollapseModule],
+  imports: [FormlyModule, CommonModule, NgbCollapseModule, DragDropModule],
   standalone: true,
   styles: `
-    .header {
+    :host {
+      display: block;
+    }
+
+    .icon {
+      width: 14px;
+      height: 14px;
+      flex: none;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+
+      .dots {
+        fill: currentColor;
+        stroke: none;
+      }
+    }
+
+    .list {
+      --accent: var(--bs-secondary);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      background: var(--editor-nested-bg);
+      padding: 6px 8px 8px;
+      margin: 4px 0 8px;
+    }
+
+    .list--root {
+      border-left: none;
+      border-radius: 10px;
+      background: var(--editor-section-bg);
+      border: 1px solid var(--editor-border);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      padding: 0;
+      margin: 0 0 12px;
+      overflow: hidden;
+    }
+
+    .list_header {
       display: flex;
-      flex-direction: row;
-      justify-content: space-between;
       align-items: center;
+      gap: 6px;
+      min-height: 30px;
     }
 
-    .fields {
-    }
-
-    .field_item-expansion {
-      display: flex;
-      flex-direction: row;
-      justify-content: space-between;
+    .list--root > .list_header {
+      padding: 8px 10px 8px 12px;
+      border-top: 3px solid var(--accent);
       cursor: pointer;
+      user-select: none;
+
+      &:hover {
+        background: var(--editor-hover-bg);
+      }
     }
 
-    .fields_item {
-      position: relative;
+    .list_title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .list--root > .list_header .list_title {
+      font-size: 0.85rem;
+    }
+
+    .list_count {
+      font-size: 0.7rem;
+      font-weight: 600;
+      line-height: 1;
+      padding: 3px 7px;
+      border-radius: 999px;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+
+    .list_spacer {
+      flex: 1;
+    }
+
+    .chevron {
+      display: inline-flex;
+      color: var(--bs-secondary-color);
+      transition: transform 150ms ease;
+
+      &.open {
+        transform: rotate(90deg);
+      }
+    }
+
+    .add-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      --bs-btn-padding-y: 0.15rem;
+      --bs-btn-padding-x: 0.5rem;
+      --bs-btn-font-size: 0.75rem;
+      --bs-btn-font-weight: 500;
+      --bs-btn-color: var(--accent);
+      --bs-btn-border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-bg: var(--accent);
+      --bs-btn-hover-border-color: var(--accent);
+      --bs-btn-disabled-color: var(--accent);
+      --bs-btn-disabled-border-color: color-mix(
+        in srgb,
+        var(--accent) 30%,
+        transparent
+      );
+    }
+
+    .list_items {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .list--root > .list_items {
+      margin: 0;
+      padding: 10px;
+      border-top: 1px solid var(--editor-border);
+    }
+
+    .list_items.collapsed {
       display: none;
+    }
+
+    .list_empty {
+      font-size: 0.8rem;
+      color: var(--bs-secondary-color);
+      font-style: italic;
+      padding: 4px 2px;
+    }
+
+    .item {
+      background: var(--editor-card-bg);
+      border: 1px solid var(--editor-border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .item--expanded {
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--editor-border));
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    }
+
+    .item.cdk-drag-preview {
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+    }
+
+    .item.cdk-drag-placeholder {
+      opacity: 0.35;
+      border-style: dashed;
+    }
+
+    .item.cdk-drag-animating,
+    .list_items.cdk-drop-list-dragging .item:not(.cdk-drag-placeholder) {
+      transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+    }
+
+    .item_header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 6px 5px 4px;
+      cursor: pointer;
+      user-select: none;
+
+      &:hover {
+        background: var(--editor-hover-bg);
+      }
+    }
+
+    .item--expanded > .item_header {
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+      border-bottom: 1px solid var(--editor-border);
+    }
+
+    .drag-handle {
+      display: inline-flex;
+      cursor: grab;
+      padding: 2px 0;
+      color: var(--bs-tertiary-color);
+      touch-action: none;
+
+      &:hover {
+        color: var(--bs-body-color);
+      }
+    }
+
+    .item_index {
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .item_name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .item_type {
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      color: var(--bs-secondary-color);
+      background: var(--editor-chip-bg);
+      white-space: nowrap;
+    }
+
+    .remove-button {
+      display: inline-flex;
+      align-items: center;
+      --bs-btn-padding-y: 0.25rem;
+      --bs-btn-padding-x: 0.35rem;
+      --bs-btn-color: var(--bs-tertiary-color);
+      --bs-btn-border-color: transparent;
+      --bs-btn-hover-color: var(--bs-danger);
+      --bs-btn-hover-bg: var(--bs-danger-bg-subtle);
+      --bs-btn-hover-border-color: transparent;
+    }
+
+    .item_body {
+      display: none;
+      padding: 8px 10px 4px;
+
       &.visible {
-        display: flex;
-      }
-
-      &:before {
-        content: ' ';
-        top: 5px;
-        bottom: 5px;
-        left: 0;
-        width: 2px;
-        position: absolute;
-        background-color: green;
-      }
-
-      flex-direction: row;
-
-      // align-items: center;
-
-      formly-field {
-        flex: 1;
-      }
-
-      button {
-        align-self: start;
-      }
-
-      &:not(:last-child) {
-        border-bottom: 1px solid lightgray;
-        margin-bottom: 5px;
+        display: block;
       }
     }
   `,
   template: `
-    <div class="header">
-      <div class="header_text">
-        @if (props.label) {
-          <label>{{ props.label }}</label>
+    <div
+      class="list"
+      [class.list--root]="collapsible"
+      [style.--accent]="props['accent']"
+    >
+      <div
+        class="list_header"
+        (click)="collapsible && toggleCollapsed()"
+        [attr.role]="collapsible ? 'button' : null"
+        [attr.aria-expanded]="collapsible ? !collapsed : null"
+      >
+        @if (collapsible) {
+          <span class="chevron" [class.open]="!collapsed"
+            ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5" /></svg
+          ></span>
+        }
+        <span class="list_title">{{ props.label }}</span>
+        <span class="list_count">{{ field.fieldGroup?.length ?? 0 }}</span>
+        <span class="list_spacer"></span>
+        <button
+          class="btn btn-sm add-button"
+          type="button"
+          (click)="$event.stopPropagation(); addNewItem()"
+          [disabled]="!isValid"
+          [title]="
+            isValid
+              ? 'Add ' + itemLabel
+              : 'Fix the invalid fields before adding'
+          "
+        >
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+          <span>Add {{ itemLabel }}</span>
+        </button>
+      </div>
+
+      <div
+        class="list_items"
+        [class.collapsed]="collapsible && collapsed"
+        cdkDropList
+        cdkDropListLockAxis="y"
+        (cdkDropListDropped)="drop($event)"
+      >
+        @for (field of field.fieldGroup; track $index) {
+          <div
+            class="item"
+            [class.item--expanded]="field.model.expanded"
+            cdkDrag
+          >
+            <div class="item_header" (click)="toggleExpanded($index)">
+              <span
+                class="drag-handle"
+                cdkDragHandle
+                title="drag to reorder"
+                (click)="$event.stopPropagation()"
+                ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <g class="dots">
+                    <circle cx="6" cy="4" r="1.2" />
+                    <circle cx="10" cy="4" r="1.2" />
+                    <circle cx="6" cy="8" r="1.2" />
+                    <circle cx="10" cy="8" r="1.2" />
+                    <circle cx="6" cy="12" r="1.2" />
+                    <circle cx="10" cy="12" r="1.2" />
+                  </g></svg
+              ></span>
+              <span class="chevron" [class.open]="field.model.expanded"
+                ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M6 3.5 10.5 8 6 12.5" /></svg
+              ></span>
+              <span class="item_index">{{ $index + 1 }}</span>
+              <span class="item_name">{{ itemName(field.model) }}</span>
+              @if (itemType(field.model); as type) {
+                <span class="item_type">{{ type }}</span>
+              }
+              @if (field.props?.['removable'] !== false) {
+                <button
+                  class="btn btn-sm remove-button"
+                  type="button"
+                  [title]="'Remove ' + itemLabel"
+                  [attr.aria-label]="
+                    'Remove ' + itemLabel + ' ' + itemName(field.model)
+                  "
+                  (click)="$event.stopPropagation(); remove($index)"
+                >
+                  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
+                    />
+                  </svg>
+                </button>
+              }
+            </div>
+
+            <div class="item_body" [class.visible]="field.model.expanded">
+              <formly-field [field]="field"></formly-field>
+            </div>
+          </div>
+        } @empty {
+          <div class="list_empty">
+            No {{ props.label }} yet — use “Add {{ itemLabel }}” above.
+          </div>
         }
       </div>
-      <button
-        class="btn btn-sm btn-primary"
-        type="button"
-        (click)="addNewItem()"
-        [disabled]="!isValid"
-      >
-        +
-      </button>
-    </div>
-
-    <div class="fields">
-      @for (field of field.fieldGroup; track $index) {
-        <div class="field_item-expansion" (click)="toggleExpanded($index)">
-          {{ $index + 1 }} -
-          {{
-            (field.model.name ??
-              field.model.type ??
-              field.parent?.props?.label ??
-              field.parent?.key) ||
-              'unknown'
-          }}
-
-          @if (field.props?.['removable'] !== false) {
-            <button
-              class="btn btn-sm btn-outline-danger ms-1 mt-1"
-              type="button"
-              (click)="remove($index)"
-            >
-              -
-            </button>
-          }
-        </div>
-
-        <div class="fields_item ps-2" [class.visible]="field.model.expanded">
-          <formly-field [field]="field"></formly-field>
-        </div>
-      }
     </div>
   `,
 })
-export class ArrayTypeComponent extends FieldArrayType {
+export class ArrayTypeComponent extends FieldArrayType implements OnInit {
+  collapsed = false;
+
+  get itemLabel(): string {
+    return this.props['itemLabel'] ?? 'item';
+  }
+
+  get collapsible() {
+    return this.props['collapsible'] === true;
+  }
+
   get isValid() {
     return this.field.fieldGroup?.every((v) => v.formControl?.valid);
   }
 
+  ngOnInit() {
+    if (this.collapsible) {
+      this.collapsed = readCollapsedSections().includes(this.storageKey);
+    }
+  }
+
+  itemName(model: any): string {
+    return model?.name || model?.type || 'unnamed';
+  }
+
+  itemType(model: any): string | null {
+    const type = model?.type ?? model?.bitType;
+    // Unnamed items already show their type as the name.
+    return type && type !== this.itemName(model) ? type : null;
+  }
+
+  toggleCollapsed() {
+    this.collapsed = !this.collapsed;
+    const others = readCollapsedSections().filter((k) => k !== this.storageKey);
+    writeCollapsedSections(
+      this.collapsed ? [...others, this.storageKey] : others,
+    );
+  }
+
   async addNewItem() {
     this.collapseAllItems();
+    this.collapsed = this.collapsible ? false : this.collapsed;
     const id = await generateId();
     this.add(undefined, { id, expanded: true });
+  }
+
+  drop({ previousIndex, currentIndex }: CdkDragDrop<unknown>) {
+    if (previousIndex === currentIndex) {
+      return;
+    }
+
+    // Formly has no "move": rebuild the item at its new position from a copy
+    // of its model. Ids are preserved, so downstream pipelines keyed by id
+    // are reused rather than recomputed.
+    const item = structuredClone(this.model[previousIndex]);
+    this.remove(previousIndex, { markAsDirty: false });
+    this.add(currentIndex, item);
   }
 
   toggleExpanded(index: number) {
@@ -124,10 +434,29 @@ export class ArrayTypeComponent extends FieldArrayType {
     expandedControl?.setValue(!expandedControl.value);
   }
 
+  private get storageKey() {
+    return String(this.field.key);
+  }
+
   private collapseAllItems(except?: number) {
     for (let i = 0; i < this.formControl.controls.length; i++) {
       if (i === except) continue;
       this.formControl.controls[i].get('expanded')?.setValue(false);
     }
   }
+}
+
+function readCollapsedSections(): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_KEY)!);
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCollapsedSections(keys: string[]) {
+  try {
+    localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(keys));
+  } catch {}
 }
