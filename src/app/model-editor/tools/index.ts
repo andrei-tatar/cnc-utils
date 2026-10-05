@@ -21,6 +21,13 @@ export type ToolType = {
   plungeFeedRate?: number | null;
   /** Optional; overrides the G-code section's spindle speed. */
   spindleSpeed?: number | null;
+  /**
+   * Ramp down into cuts along the toolpath instead of plunging (pocket,
+   * profile and v-carve clearing).
+   */
+  ramp?: boolean;
+  /** Degrees below horizontal. */
+  rampAngle?: number;
 };
 
 export type ModelType = {
@@ -153,6 +160,30 @@ export const field: FormlyFieldConfig = {
           placeholder: 'G-code default',
           description: 'mm/min; empty uses the G-code section’s plunge rate',
           min: 0,
+        },
+      },
+      {
+        key: 'ramp',
+        type: 'boolean',
+        defaultValue: false,
+        props: {
+          label: 'ramp in instead of plunging',
+        },
+      },
+      {
+        key: 'rampAngle',
+        type: 'number',
+        defaultValue: 3,
+        props: {
+          min: 0.5,
+          max: 45,
+          label: 'ramp angle',
+          description:
+            '° below horizontal; pockets and clearings go round each loop down to the next depth, profiles along the end of the loop (clear of tabs)',
+          required: true,
+        },
+        expressions: {
+          hide: (field: FormlyFieldConfig) => !field.model?.ramp,
         },
       },
       {

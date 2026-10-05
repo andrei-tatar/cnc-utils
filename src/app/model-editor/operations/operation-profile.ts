@@ -13,9 +13,6 @@ export interface ModelType {
   tabCount: number;
   tabWidth: number;
   tabHeight: number;
-  /** Ramp down into each pass along the toolpath instead of plunging. */
-  ramp?: boolean;
-  rampAngle?: number;
 }
 
 const hideUnlessProfile = (field: FormlyFieldConfig) =>
@@ -94,31 +91,6 @@ const field: FormlyFieldConfig = {
         min: 1,
         label: 'steps',
         required: true,
-      },
-    },
-    {
-      key: 'ramp',
-      type: 'boolean',
-      defaultValue: false,
-      props: {
-        label: 'ramp in instead of plunging',
-      },
-    },
-    {
-      key: 'rampAngle',
-      type: 'number',
-      defaultValue: 3,
-      props: {
-        min: 0.5,
-        max: 45,
-        label: 'ramp angle',
-        description:
-          '° below horizontal; along the end of the loop (back and forth on open paths), over the tabs',
-        required: true,
-      },
-      expressions: {
-        hide: (field: FormlyFieldConfig) =>
-          field.model?.type !== Definition.type || !field.model?.ramp,
       },
     },
     {

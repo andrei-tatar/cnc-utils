@@ -37,6 +37,11 @@ export async function routePocketHole(
     startDepth: number;
     /** Ramp down into the cut at this angle (degrees) instead of plunging. */
     rampAngle?: number | null;
+    /**
+     * Collects how much room each ramp had (see enterCut) for the caller to
+     * warn about, instead of warning here.
+     */
+    rampReaches?: Array<number | null>;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
   },
@@ -51,7 +56,7 @@ export async function routePocketHole(
   const sorted = sortPaths(groups, start);
 
   // How much path each ramp had (see enterCut).
-  const reaches: Array<number | null> = [];
+  const reaches: Array<number | null> = options.rampReaches ?? [];
   for (const shape of sorted) {
     const outlines = await getShapeOutlines(shape, { ...options, start });
 
@@ -123,7 +128,9 @@ export async function routePocketHole(
 
   sorted.forEach((s) => s.delete());
 
-  const warning = rampWarning(reaches, options.toolSize);
+  const warning = options.rampReaches
+    ? null
+    : rampWarning(reaches, options.toolSize);
   if (warning) {
     builder.warn(warning);
   }

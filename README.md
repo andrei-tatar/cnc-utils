@@ -32,17 +32,17 @@ Each shape can have a chain of **transforms**, applied in order: move, rotate, s
 
 ### Tools
 
-End mills and V-bits (angle and tip diameter). Feed rate, plunge rate and spindle speed are optional per tool: when set they're used while that tool cuts, otherwise the G-code section's defaults apply. Leave the name empty and one is generated from the settings, e.g. "Ø6 mm 60° v-bit" — the same goes for shapes and operations.
+End mills and V-bits (angle and tip diameter). Feed rate, plunge rate and spindle speed are optional per tool: when set they're used while that tool cuts, otherwise the G-code section's defaults apply. A tool can also ramp in instead of plunging, at a set angle: pockets and v-carve clearings go round each step's first loop down to the next depth, profiles come down along the end of each loop (with tabs moved to leave the ramp the whole gap before the loop's start) or back and forth along open paths. Leave the name empty and one is generated from the settings, e.g. "Ø6 mm 60° v-bit" — the same goes for shapes and operations.
 
 ### Operations
 
 | Operation | Tool | |
 | --- | --- | --- |
-| profile | any | cut along the outline — outside, inside or on the line; climb or conventional; optional holding tabs; optionally ramp in instead of plunging (along the end of each loop, with the tabs moved to leave it the whole gap; back and forth on open paths). Profile the outlines and holes, only the holes, or the outlines with holes ignored |
-| pocket | any | clear the inside of a shape in depth steps; optionally ramp in (round the first loop of each step) instead of plunging |
+| profile | any | cut along the outline — outside, inside or on the line; climb or conventional; optional holding tabs. Profile the outlines and holes, only the holes, or the outlines with holes ignored |
+| pocket | any | clear the inside of a shape in depth steps |
 | flat | any | surface an area with parallel passes along X or Y |
 | v-carve | V-bit | carve with a V-bit; the depth follows the shape's width, with sharp corners, a max depth and optional flat-bottom clearing. Carve the outlines minus their holes, only the cuts around the holes (the same cuts, growing out from each hole and stopping halfway to the outer outline — e.g. a groove around letters cut out of a sign), or the outlines with holes ignored |
-| v-carve clearing | end mill | rough out the bulk of a v-carve so the V-bit only finishes the walls; follows its v-carve automatically — list it **before** the v-carve. A V-bit alone can't go deeper than its cone (its shank would push through the uncut middle); with a clearing before it, the v-carve and the clearing go all the way to the max depth |
+| v-carve clearing | end mill | rough out the bulk of a v-carve so the V-bit only finishes the walls; follows its v-carve automatically — list it **before** the v-carve. A V-bit alone can't go deeper than its cone (its shank would push through the uncut middle); with a clearing before it, the v-carve and the clearing go all the way to the max depth. |
 
 Items with problems (a missing value, a deleted tool or shape, a v-carve on an end mill…) are outlined in red, with a "to fix" count on their section. Operations that generate but with a catch — e.g. ramps with too little room, which end up close to plunging — get an amber ⚠ with the details.
 

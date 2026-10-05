@@ -10,6 +10,7 @@ import {
   vCarveGeometry,
 } from '../../cam/vcarve-geometry';
 import { routePocketHole } from './route-pocket-hole';
+import { rampWarning } from '../../cam/ramp';
 
 /**
  * Extra margin from the V's walls on top of `leaveStock`: the pocket router
@@ -47,6 +48,8 @@ export async function routeVCarveClearing(
     beyondCone?: boolean;
     /** The v-carve's mode: clear the same part of the shape. */
     mode?: ShapePart;
+    /** Ramp down into each level at this angle (degrees) instead of plunging. */
+    rampAngle?: number | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
   },
@@ -85,6 +88,8 @@ export async function routeVCarveClearing(
     return builder;
   }
 
+  // How much room each ramp had, over all levels, for a single warning.
+  const reaches: Array<number | null> = [];
   let previous = 0;
   while (previous < maxDepth - 1e-6) {
     const depth = Math.min(maxDepth, previous + step);
@@ -121,11 +126,17 @@ export async function routeVCarveClearing(
         startDepth: options.startDepth + previous,
         depthPerStep: depth - previous,
         steps: 1,
+        rampAngle: options.rampAngle,
+        rampReaches: reaches,
       },
     );
     builder = builder.concat(level);
     previous = depth;
   }
 
+  const warning = rampWarning(reaches, options.toolSize);
+  if (warning) {
+    builder.warn(warning);
+  }
   return builder;
 }

@@ -7,9 +7,6 @@ export interface ModelType {
   steps: number;
   leaveStock: number;
   toolEngagement: number;
-  /** Ramp down into each pass along the toolpath instead of plunging. */
-  ramp?: boolean;
-  rampAngle?: number;
 }
 
 const field: FormlyFieldConfig = {
@@ -61,31 +58,6 @@ const field: FormlyFieldConfig = {
         min: 0,
         label: 'engagement',
         required: true,
-      },
-    },
-    {
-      key: 'ramp',
-      type: 'boolean',
-      defaultValue: false,
-      props: {
-        label: 'ramp in instead of plunging',
-      },
-    },
-    {
-      key: 'rampAngle',
-      type: 'number',
-      defaultValue: 3,
-      props: {
-        min: 0.5,
-        max: 45,
-        label: 'ramp angle',
-        description:
-          '° below horizontal; goes round each loop down to the next depth',
-        required: true,
-      },
-      expressions: {
-        hide: (field: FormlyFieldConfig) =>
-          field.model?.type !== Definition.type || !field.model?.ramp,
       },
     },
   ],
