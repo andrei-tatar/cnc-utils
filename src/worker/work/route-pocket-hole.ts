@@ -38,7 +38,7 @@ export async function routePocketHole(
   let start: CamPoint = { x: 0, y: 0 };
 
   const builder = new GCodeBuilder();
-  builder.sourceShapeId(input?.[0].sourceShapeId);
+  builder.sourceShapeId(input?.[0]?.sourceShapeId);
 
   const groups = await groupShapes(input);
   const sorted = sortPaths(groups, start);

@@ -367,8 +367,9 @@ export class AppComponent implements OnInit, OnDestroy {
                 ),
               ]).pipe(
                 switchMap(([shape, op, tool, source]) => {
-                  // No (or a deleted) tool selected yet: nothing to cut.
-                  if (!tool) {
+                  // No (or a deleted) tool or shape: nothing to cut. Routing
+                  // functions expect at least one shape.
+                  if (!tool || !shape.length) {
                     return of(new GCodeBuilder());
                   }
                   const {
