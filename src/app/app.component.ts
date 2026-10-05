@@ -39,6 +39,15 @@ import { gcodeToPaths } from '../cam/gcode-viewer';
 import { getModelMetadata, loadModelFromMetadata } from './store';
 import { deepEqual, readFile } from '../util';
 
+type VCarveSource = {
+  shapeId: string;
+  vToolSize: number;
+  vAngle: number;
+  tipDiameter: number;
+  startDepth: number;
+  maxDepth: number;
+};
+
 const EDITOR_WIDTH_STORAGE_KEY = 'ui.editorWidth';
 const MIN_EDITOR_WIDTH = 280;
 const MIN_VIEWER_WIDTH = 200;
@@ -216,6 +225,37 @@ export class AppComponent implements OnInit, OnDestroy {
     localStorage.setItem('model', JSON.stringify(model));
   }
 
+  /**
+   * For a v-carve clearing operation: the v-carve it clears for (shape,
+   * V-bit and depths). Null for other operations, or while that v-carve or
+   * its V-bit is missing.
+   */
+  private static vCarveSource(
+    operation: OperationParameters,
+    operations: ModelType['operations'],
+    tools: ModelType['tools'],
+  ): VCarveSource | null {
+    if (operation.type !== 'v-carve-clear') {
+      return null;
+    }
+    const vcarve = operations.find((o) => o.id === operation.vcarveOperationId);
+    if (vcarve?.type !== 'v-carve') {
+      return null;
+    }
+    const tool = tools.find((t) => t.id === vcarve.toolId);
+    if (tool?.bitType !== 'v-bit') {
+      return null;
+    }
+    return {
+      shapeId: vcarve.shapeId,
+      vToolSize: tool.diameter,
+      vAngle: tool.vAngle,
+      tipDiameter: tool.tipDiameter,
+      startDepth: vcarve.startDepth,
+      maxDepth: vcarve.maxDepth,
+    };
+  }
+
   private static generateGcodeFromOperations(
     model$: Observable<ModelType>,
     shapes$: Observable<CamShape[]>,
@@ -239,19 +279,30 @@ export class AppComponent implements OnInit, OnDestroy {
                     parameters)(tool)
                 : null;
 
+              // V-carve clearing borrows its shape, bit and depths from the
+              // v-carve it clears for, so it follows any change made there.
+              const source = AppComponent.vCarveSource(
+                operationParameters,
+                operations,
+                tools,
+              );
+              const effectiveShapeId = source ? source.shapeId : shapeId;
+
               const existing = ctx.find((e) => e.id === id);
               if (existing) {
                 existing.operationParameters$.next(operationParameters);
-                existing.shapeId$.next(shapeId);
+                existing.shapeId$.next(effectiveShapeId);
                 existing.toolParameters$.next(toolParameters);
+                existing.source$.next(source);
                 return existing;
               }
 
               const operationParameters$ = new BehaviorSubject(
                 operationParameters,
               );
-              const shapeId$ = new BehaviorSubject(shapeId);
+              const shapeId$ = new BehaviorSubject(effectiveShapeId);
               const toolParameters$ = new BehaviorSubject(toolParameters);
+              const source$ = new BehaviorSubject(source);
 
               const shape$ = combineLatest([
                 shapeId$.pipe(distinctUntilChanged()),
@@ -281,8 +332,14 @@ export class AppComponent implements OnInit, OnDestroy {
                     (s) => JSON.stringify(s),
                   ),
                 ),
+                source$.pipe(
+                  distinctUntilChanged(
+                    (a, b) => a === b,
+                    (s) => JSON.stringify(s),
+                  ),
+                ),
               ]).pipe(
-                switchMap(([shape, op, tool]) => {
+                switchMap(([shape, op, tool, source]) => {
                   // No (or a deleted) tool selected yet: nothing to cut.
                   if (!tool) {
                     return of(new GCodeBuilder());
@@ -378,6 +435,28 @@ export class AppComponent implements OnInit, OnDestroy {
                           ),
                         working$,
                       );
+                    case 'v-carve-clear':
+                      if (!source || bitType === 'v-bit') {
+                        return of(new GCodeBuilder());
+                      }
+                      return race(
+                        worker
+                          .routeVCarveClearing(shape, {
+                            toolSize: diameter,
+                            toolEngagement: op.toolEngagement,
+                            depthPerStep: op.depthPerStep,
+                            leaveStock: op.leaveStock,
+                            vToolSize: source.vToolSize,
+                            vAngle: source.vAngle,
+                            tipDiameter: source.tipDiameter,
+                            startDepth: source.startDepth,
+                            maxDepth: source.maxDepth,
+                          })
+                          .pipe(
+                            map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
+                          ),
+                        working$,
+                      );
                   }
 
                   return of(new GCodeBuilder());
@@ -394,6 +473,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 toolParameters$,
                 result$,
                 shapeId$,
+                source$,
               };
             },
           );
@@ -403,6 +483,7 @@ export class AppComponent implements OnInit, OnDestroy {
           operationParameters$: BehaviorSubject<OperationParameters>;
           toolParameters$: BehaviorSubject<ToolParameters | null>;
           shapeId$: BehaviorSubject<string>;
+          source$: BehaviorSubject<VCarveSource | null>;
           result$: Observable<GCodeBuilder>;
         }>,
       ),

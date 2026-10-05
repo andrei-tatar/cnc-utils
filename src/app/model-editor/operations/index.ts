@@ -2,7 +2,7 @@ import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { allShapes, shapeLabel } from '../shapes/describe';
 import { allTools, toolLabel } from '../tools';
-import { describeOperation } from './describe';
+import { allOperations, describeOperation } from './describe';
 
 import {
   Definition as PocketDefinition,
@@ -24,16 +24,28 @@ import {
   ModelType as VCarveModelType,
 } from './operation-vcarve';
 
+import {
+  Definition as VCarveClearDefinition,
+  ModelType as VCarveClearModelType,
+} from './operation-vcarve-clear';
+
 const operations = [
   PocketDefinition,
   FlatDefinition,
   ProfileDefinition,
   VCarveDefinition,
+  VCarveClearDefinition,
 ];
+
+const BIT_NAMES: Record<string, string> = {
+  'v-bit': 'a V-bit',
+  'end-mill': 'an end mill',
+};
 
 // Operations that only make sense with a particular bit; others work with any.
 const requiredBitType: Partial<Record<string, string>> = {
   [VCarveDefinition.type]: 'v-bit',
+  [VCarveClearDefinition.type]: 'end-mill',
 };
 
 export type ModelType = {
@@ -49,6 +61,7 @@ export type ModelType = {
       | FlatModelType
       | ProfileModelType
       | VCarveModelType
+      | VCarveClearModelType
     )
   >;
 };
@@ -65,6 +78,7 @@ export const field: FormlyFieldConfig = {
         operation,
         allShapes(field),
         allTools(field),
+        allOperations(field),
       ),
     accent: '#059669',
     collapsible: true,
@@ -92,6 +106,7 @@ export const field: FormlyFieldConfig = {
               field.model,
               allShapes(field),
               allTools(field),
+              allOperations(field),
             ),
         },
       },
@@ -134,6 +149,9 @@ export const field: FormlyFieldConfig = {
           },
         },
         expressions: {
+          // Clearing uses the shape of the v-carve it clears for.
+          hide: (field: FormlyFieldConfig) =>
+            field.model?.type === VCarveClearDefinition.type,
           'props.options': (field: FormlyFieldConfig) => {
             const shapes = allShapes(field);
             return shapes.map((shape) => ({
@@ -164,8 +182,11 @@ export const field: FormlyFieldConfig = {
                 !required || !tool || (tool.bitType ?? 'end-mill') === required
               );
             },
-            message: (_: unknown, field: FormlyFieldConfig) =>
-              `${field.formControl?.value} needs a ${requiredBitType[field.formControl?.value]} tool`,
+            message: (_: unknown, field: FormlyFieldConfig) => {
+              const type = field.formControl?.value;
+              const label = operations.find((o) => o.type === type)?.label;
+              return `${label ?? type} needs ${BIT_NAMES[requiredBitType[type] ?? ''] ?? 'another'} tool`;
+            },
           },
         },
         expressions: {
