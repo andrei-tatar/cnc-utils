@@ -4,6 +4,7 @@ import { CamPolygon, CamShape } from '../../cam/types';
 import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
 import { applyConvexHull } from './convex-hull-transform';
+import { pointInPolygon } from '../../cam/polygon-nesting';
 import { getCentroid } from './utils';
 
 export async function applyTransform(
@@ -147,6 +148,9 @@ export async function applyTransform(
         }
 
         return result.polygons.length ? [result] : [];
+      case 'bounds':
+        return boundingRectangles(input, transform.boundsOf);
+
       case 'convexhull':
         return applyConvexHull(input, {
           atShapeLevel: transform.atShapeLevel,
@@ -195,6 +199,59 @@ function getRotationOrigin(start: number, size: number, type: string) {
     default:
       return start + size / 2;
   }
+}
+
+/**
+ * The rectangle around all of `input`, or around each of its polygons
+ * except holes (polygons inside an odd number of others).
+ */
+function boundingRectangles(
+  input: CamShape[],
+  of: 'shape' | 'polygon',
+): CamShape[] {
+  const sourceShapeId = input[0]?.sourceShapeId;
+  const rectangle = (points: CamPolygon['points']): CamPolygon | null => {
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const [x0, x1, y0, y1] = [
+      Math.min(...xs),
+      Math.max(...xs),
+      Math.min(...ys),
+      Math.max(...ys),
+    ];
+    if (!(x1 > x0) || !(y1 > y0)) {
+      return null; // no area (a straight line or a point)
+    }
+    return {
+      close: true,
+      points: [
+        { x: x0, y: y0 },
+        { x: x1, y: y0 },
+        { x: x1, y: y1 },
+        { x: x0, y: y1 },
+      ],
+    };
+  };
+
+  const polygons = input.flatMap((s) => s.polygons);
+  if (of === 'shape') {
+    const r = rectangle(polygons.flatMap((p) => p.points));
+    return r ? [{ sourceShapeId, polygons: [r] }] : [];
+  }
+  const closed = polygons.filter((p) => p.close && p.points.length > 2);
+  const isHole = (p: CamPolygon) =>
+    p.close &&
+    closed.filter((o) => o !== p && pointInPolygon(p.points[0], o.points))
+      .length %
+      2 ===
+      1;
+  return input.map((shape) => ({
+    ...shape,
+    polygons: shape.polygons
+      .filter((p) => p.points.length && !isHole(p))
+      .map((p) => rectangle(p.points))
+      .filter((r): r is CamPolygon => r !== null),
+  }));
 }
 
 function getBoundingBox(input: CamShape[]) {

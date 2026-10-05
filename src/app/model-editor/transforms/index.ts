@@ -33,6 +33,10 @@ import {
   ModelType as ConvexHullModelType,
 } from './transform-convexhull';
 import {
+  Definition as BoundsDefinition,
+  ModelType as BoundsModelType,
+} from './transform-bounds';
+import {
   Definition as OneTimeDefinition,
   ModelType as OneTimeModelType,
 } from './transform-onetime';
@@ -48,6 +52,7 @@ export type ModelType = {
       | FlipModelType
       | ClipperInflateModelType
       | ConvexHullModelType
+      | BoundsModelType
       | OneTimeModelType
     ) & {
       id: string;
@@ -65,6 +70,7 @@ const transforms = [
   FlipDefinition,
   ClipperInflateDefinition,
   ConvexHullDefinition,
+  BoundsDefinition,
   OneTimeDefinition,
 ];
 
