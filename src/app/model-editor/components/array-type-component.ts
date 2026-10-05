@@ -100,6 +100,21 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
       }
     }
 
+    .clear-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      --bs-btn-padding-y: 0.15rem;
+      --bs-btn-padding-x: 0.45rem;
+      --bs-btn-font-size: 0.75rem;
+      --bs-btn-color: var(--bs-secondary-color);
+      --bs-btn-border-color: transparent;
+      --bs-btn-hover-color: var(--bs-danger);
+      --bs-btn-hover-bg: var(--bs-danger-bg-subtle);
+      --bs-btn-hover-border-color: transparent;
+      --bs-btn-disabled-border-color: transparent;
+    }
+
     .add-button {
       display: inline-flex;
       align-items: center;
@@ -331,6 +346,19 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
           </svg>
           <span>Add {{ itemLabel }}</span>
         </button>
+        <button
+          class="btn btn-sm clear-button"
+          type="button"
+          (click)="$event.stopPropagation(); confirmClear()"
+          [disabled]="!field.fieldGroup?.length"
+          [title]="'Remove all ' + props.label"
+          [attr.aria-label]="'Clear all ' + props.label"
+        >
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+          <span>Clear</span>
+        </button>
       </div>
 
       <div
@@ -547,7 +575,7 @@ export class ArrayTypeComponent extends FieldArrayType implements OnInit {
    * use it". References are fields named like `toolId`, `shapeId`, ….
    * Items being removed themselves don't count.
    */
-  private usages(ids: string[]): string[] {
+  private usages(ids: string[], pronoun = 'it'): string[] {
     const removed = new Set(ids.filter(Boolean));
     if (!removed.size) {
       return [];
@@ -571,10 +599,44 @@ export class ArrayTypeComponent extends FieldArrayType implements OnInit {
         ? [
             `${count} ${count === 1 ? singular : plural} ${
               count === 1 ? 'uses' : 'use'
-            } it and will need updating`,
+            } ${pronoun} and will need updating`,
           ]
         : [];
     });
+  }
+
+  /** Ask, then remove every item in this list. */
+  async confirmClear() {
+    const items: any[] = this.model ?? [];
+    if (!items.length) {
+      return;
+    }
+    const noun = items.length === 1 ? this.itemLabel : this.props.label;
+    const ref = this.modals.open(ConfirmDialogComponent, {
+      size: 'sm',
+      centered: true,
+      ariaLabelledBy: 'confirm-title',
+    });
+    Object.assign(ref.componentInstance, {
+      title: `Clear all ${this.props.label}?`,
+      message:
+        items.length === 1
+          ? `“${this.itemName(items[0])}” will be removed.`
+          : `All ${items.length} ${noun} will be removed.`,
+      details: this.usages(
+        items.map((item) => item?.id),
+        items.length === 1 ? 'it' : 'them',
+      ),
+      confirmLabel: 'Clear all',
+    });
+
+    if (!(await ref.result.catch(() => false))) {
+      return;
+    }
+    for (let i = (this.model?.length ?? 0) - 1; i >= 0; i--) {
+      this.remove(i, { markAsDirty: false });
+    }
+    this.formControl.markAsDirty();
   }
 
   drop({ previousIndex, currentIndex }: CdkDragDrop<unknown>) {
