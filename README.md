@@ -48,7 +48,7 @@ Items with problems (a missing value, a deleted tool or shape, a v-carve on an e
 
 ### G-code options
 
-The **G-code** section sets how the program is written: safe height, default feed and plunge rates, tool changes (`T<n> M6`, a pause with `M0` for changing tools by hand — e.g. on GRBL, which doesn't support `M6` — or none), whether to skip tool changes when only one tool is used, spindle control (`M3 S<rpm>` with a spin-up wait, `M5` before tool changes and at the end), a `G90 G21 G17` header, returning to X0 Y0 at the end, and the number of decimal places. The program loads the first tool at the start and changes tools between operations that use different ones.
+The **G-code** section sets how the program is written: safe height, default feed and plunge rates, tool changes (`T<n> M6`, a pause with `M0` for changing tools by hand — e.g. on GRBL, which doesn't support `M6` — or none), whether to skip tool changes when only one tool is used, spindle control (`M3 S<rpm>` with a spin-up wait, `M5` before tool changes and at the end), a `G90 G21 G17` header, returning to X0 Y0 at the end, the number of decimal places, and how precisely shapes are processed: the curve precision (how closely circles, arcs, SVG and text curves are followed) and the geometry precision (what offsets, pockets and shape booleans are rounded to). The program loads the first tool at the start and changes tools between operations that use different ones.
 
 ### Usage notes
 

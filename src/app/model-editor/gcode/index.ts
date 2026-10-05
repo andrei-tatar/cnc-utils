@@ -139,5 +139,35 @@ export const field: FormlyFieldConfig = {
       },
       validators: { validation: ['whole-number'] },
     },
+    {
+      key: 'curveTolerance',
+      type: 'number',
+      defaultValue: d.curveTolerance,
+      props: {
+        label: 'curve precision',
+        description:
+          'mm: how closely circles, arcs, SVG and text curves are followed; smaller is smoother but slower',
+        min: 0.001,
+        max: 1,
+        required: true,
+      },
+    },
+    {
+      key: 'geometryDecimals',
+      type: 'enum',
+      defaultValue: d.geometryDecimals,
+      props: {
+        label: 'geometry precision',
+        description:
+          'what offsets, pockets and shape booleans are rounded to; finer is slower',
+        required: true,
+        options: [
+          { value: 1, label: '0.1 mm' },
+          { value: 2, label: '0.01 mm' },
+          { value: 3, label: '0.001 mm' },
+          { value: 4, label: '0.0001 mm' },
+        ],
+      },
+    },
   ],
 };

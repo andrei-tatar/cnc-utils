@@ -1,4 +1,5 @@
 import { Matrix3, Vector2 } from 'three';
+import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { CamPolygon, CamShape } from '../../cam/types';
 import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
@@ -8,7 +9,9 @@ import { getCentroid } from './utils';
 export async function applyTransform(
   input: CamShape[],
   transform: TransformParameters,
+  geometry?: GeometrySettings,
 ): Promise<CamShape[]> {
+  useGeometry(geometry);
   try {
     switch (transform.type) {
       case 'translate':
@@ -89,6 +92,9 @@ export async function applyTransform(
           transform.offset,
           transform.joinType,
           transform.endType,
+          // The transform's "precision" has always reached Clipper as the
+          // miter limit and its "miter limit" as the decimal places; kept so
+          // existing projects come out the same.
           transform.precision,
           transform.miterLimit,
           transform.arcTolerance,

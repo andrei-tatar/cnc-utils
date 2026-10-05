@@ -2,6 +2,12 @@ import type { Font, Glyph } from 'opentype.js';
 import { clipperBooleanOperation, makePaths } from '../../cam/clipper';
 import { CamPoint, CamShape } from '../../cam/types';
 import {
+  curveTolerance,
+  decimals,
+  GeometrySettings,
+  useGeometry,
+} from '../../cam/geometry';
+import {
   FontRef,
   fontFileUrl,
   fontUnicodeUrl,
@@ -22,9 +28,6 @@ export type TextParameters = {
   align: 'left' | 'center' | 'right';
 };
 
-/** Max distance between a curve and its polyline approximation, in mm. */
-const CURVE_TOLERANCE = 0.01;
-const DECIMALS = 3;
 const CACHE_NAME = 'cnc-utils-fonts';
 
 /**
@@ -35,7 +38,9 @@ const CACHE_NAME = 'cnc-utils-fonts';
 export async function importText(
   params: TextParameters,
   sourceShapeId: string,
+  geometry?: GeometrySettings,
 ): Promise<CamShape[]> {
+  useGeometry(geometry);
   const lines = (params.text ?? '').split(/\r?\n/);
   if (!params.font || !(params.size > 0) || !lines.some((l) => l.trim())) {
     return [];
@@ -207,7 +212,7 @@ function flatten(commands: any[]): CamPoint[][] {
         const p1 = { x: c.x1, y: c.y1 };
         const p2 = { x: c.x, y: c.y };
         const d = deviation(pen, p1, p2);
-        const n = Math.max(1, Math.ceil(Math.sqrt(d / (4 * CURVE_TOLERANCE))));
+        const n = Math.max(1, Math.ceil(Math.sqrt(d / (4 * curveTolerance()))));
         for (let i = 1; i <= n; i++) {
           const t = i / n;
           const u = 1 - t;
@@ -226,7 +231,7 @@ function flatten(commands: any[]): CamPoint[][] {
         const d = Math.max(deviation(pen, p1, p2), deviation(p1, p2, p3));
         const n = Math.max(
           1,
-          Math.ceil(Math.sqrt((3 * d) / (4 * CURVE_TOLERANCE))),
+          Math.ceil(Math.sqrt((3 * d) / (4 * curveTolerance()))),
         );
         for (let i = 1; i <= n; i++) {
           const t = i / n;
@@ -278,7 +283,7 @@ async function unionContours(contours: CamPoint[][]) {
     empty,
     'union',
     'non-zero',
-    DECIMALS,
+    decimals(),
   );
   paths.delete();
   empty.delete();

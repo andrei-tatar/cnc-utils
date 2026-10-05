@@ -6,6 +6,7 @@ import {
 } from './clipper';
 import { CamPoint } from './types';
 import { distanceToBoundary, pointInPolygon } from './polygon-nesting';
+import { decimals, precision } from './geometry';
 
 /**
  * Which part of a shape an operation (v-carve, profile) works on:
@@ -16,17 +17,13 @@ import { distanceToBoundary, pointInPolygon } from './polygon-nesting';
  */
 export type ShapePart = 'both' | 'holes' | 'contours';
 
-export const PRECISION = 0.01;
 /**
  * How much further than its offset a point on a cut must be from the outer
- * outlines to count as coming from a hole (Clipper rounds offsets).
+ * outlines to count as coming from a hole, in precision steps (Clipper
+ * rounds offsets).
  */
-const HOLE_SIDE_TOLERANCE = 5 * PRECISION;
-// Clipper rounds coordinates to this many decimal places (= PRECISION).
-export const DECIMALS = 2;
-// Clipper2's native order is (miterLimit, decimals), the reverse of the
-// clipperInflateRaw parameter names; both are 2 so either reading is correct.
-// Miter limit is irrelevant with round joins anyway.
+const HOLE_SIDE_TOLERANCE = 5;
+// Irrelevant with round joins.
 const MITER_LIMIT = 2;
 const ARC_TOLERANCE = 0;
 
@@ -101,7 +98,7 @@ export async function subtractRegions(
   const pa = await makePaths(a);
   const pb = await makePaths(b);
   const result = toPoints(
-    await clipperBooleanOperation(pa, pb, 'difference', 'non-zero', DECIMALS),
+    await clipperBooleanOperation(pa, pb, 'difference', 'non-zero', decimals()),
   );
   pa.delete();
   pb.delete();
@@ -116,7 +113,8 @@ export async function subtractRegions(
 export async function holeSide(closed: CamPoint[][]) {
   const outlines = await filledOutlines(closed);
   return (offset: number) => (p: CamPoint) =>
-    distanceToBoundary(p, outlines) > Math.abs(offset) + HOLE_SIDE_TOLERANCE;
+    distanceToBoundary(p, outlines) >
+    Math.abs(offset) + HOLE_SIDE_TOLERANCE * precision();
 }
 
 /** Inside any outer outline (a path not nested in any other), holes ignored. */
@@ -137,7 +135,13 @@ async function unionAll(contours: CamPoint[][]): Promise<CamPoint[][]> {
   const paths = await makePaths(oriented);
   const empty = await makePaths([]);
   const result = toPoints(
-    await clipperBooleanOperation(paths, empty, 'union', 'non-zero', DECIMALS),
+    await clipperBooleanOperation(
+      paths,
+      empty,
+      'union',
+      'non-zero',
+      decimals(),
+    ),
   );
   paths.delete();
   empty.delete();
@@ -165,7 +169,7 @@ export async function normalizedRegion(
   const raw = await makePaths(closed);
   const empty = await makePaths([]);
   const region = toPoints(
-    await clipperBooleanOperation(raw, empty, 'union', 'even-odd', DECIMALS),
+    await clipperBooleanOperation(raw, empty, 'union', 'even-odd', decimals()),
   );
   raw.delete();
   empty.delete();
@@ -184,8 +188,8 @@ export async function insetContours(
     -inset,
     'round',
     'polygon',
-    DECIMALS,
     MITER_LIMIT,
+    decimals(),
     ARC_TOLERANCE,
   );
   paths.delete();

@@ -1,6 +1,4 @@
 import {
-  DECIMALS,
-  PRECISION,
   insetContours,
   carveRegion,
   holeSide,
@@ -9,6 +7,7 @@ import {
 } from '../../cam/vcarve-geometry';
 import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
+import { GeometrySettings, precision, useGeometry } from '../../cam/geometry';
 import { getDistance } from '../../util';
 import {
   distanceToBoundary,
@@ -45,13 +44,16 @@ export async function routeVCarve(
     beyondCone?: boolean;
     /** Which part of the shape to carve. */
     mode?: ShapePart;
+    /** How precisely to work (see GeometrySettings). */
+    geometry?: GeometrySettings;
   },
 ): Promise<GCodeBuilder> {
+  useGeometry(options.geometry);
   const builder = new GCodeBuilder();
   builder.sourceShapeId(input?.[0]?.sourceShapeId);
 
   const geometry = vCarveGeometry(options);
-  const stepover = Math.max(PRECISION, options.stepover);
+  const stepover = Math.max(precision(), options.stepover);
   if (!geometry) {
     return builder;
   }
@@ -110,7 +112,7 @@ export async function routeVCarve(
   // Step size that lands exactly on the max-depth inset, so the walls reach
   // full depth before any flat-bottom clearing starts.
   const stepFrom = (inset: number) =>
-    inset < maxInset - PRECISION
+    inset < maxInset - precision()
       ? Math.min(stepover, maxInset - inset)
       : stepover;
 
@@ -140,7 +142,7 @@ export async function routeVCarve(
       position = contour[0];
     }
 
-    if (inset >= maxInset - PRECISION && !options.clearFlatBottom) {
+    if (inset >= maxInset - precision() && !options.clearFlatBottom) {
       continue;
     }
 
@@ -206,7 +208,7 @@ async function findCollapse(contours: CamPoint[][], step: number) {
   let hi = step;
   let found: CamPoint[][] | null = null;
 
-  while (hi - lo > PRECISION) {
+  while (hi - lo > precision()) {
     const mid = (lo + hi) / 2;
     const inset = await insetContours(contours, mid);
     if (inset.length) {
@@ -217,7 +219,7 @@ async function findCollapse(contours: CamPoint[][], step: number) {
     }
   }
 
-  return found && lo > PRECISION ? { contours: found, inset: lo } : null;
+  return found && lo > precision() ? { contours: found, inset: lo } : null;
 }
 
 /**
@@ -347,7 +349,7 @@ function cutContour(
     });
     let lo = 0;
     let hi = 1;
-    while ((hi - lo) * getDistance(a, b) > PRECISION) {
+    while ((hi - lo) * getDistance(a, b) > precision()) {
       const mid = (lo + hi) / 2;
       if (keep!(at(mid))) {
         lo = mid;
@@ -416,7 +418,7 @@ function cornerRun(
   fromInset: number,
   corners: CornerOptions,
 ): CamPoint3[] | null {
-  if (inset - fromInset <= PRECISION) {
+  if (inset - fromInset <= precision()) {
     return null;
   }
 
@@ -462,8 +464,8 @@ function cornerRun(
   const isValid = samples.every(
     (t) =>
       Math.abs(distanceToBoundary(at(t), corners.boundary) - t) <=
-        3 * PRECISION &&
-      (t <= 3 * PRECISION || insideRegion(at(t), corners.boundary)),
+        3 * precision() &&
+      (t <= 3 * precision() || insideRegion(at(t), corners.boundary)),
   );
   if (!isValid) {
     return null;
@@ -485,7 +487,7 @@ function neighbour(contour: CamPoint[], i: number, direction: 1 | -1) {
   const n = contour.length;
   for (let k = 1; k < n; k++) {
     const candidate = contour[(i + direction * k + n * k) % n];
-    if (getDistance(contour[i], candidate) >= 5 * PRECISION) {
+    if (getDistance(contour[i], candidate) >= 5 * precision()) {
       return candidate;
     }
   }

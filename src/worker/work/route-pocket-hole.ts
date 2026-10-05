@@ -11,19 +11,20 @@ import {
 import { CamShape, CamPoint } from '../../cam/types';
 import { getDistance, pointsEqual } from '../../util';
 import { GCodeBuilder } from '../../cam/gcode-builder';
+import {
+  decimals,
+  GeometrySettings,
+  precision,
+  useGeometry,
+} from '../../cam/geometry';
 import { getCentroid } from './utils';
 import { enterCut, rampWarning } from '../../cam/ramp';
 
-const PRECISION = 0.01;
+// Irrelevant with round joins.
 const MITER_LIMIT = 2;
 const ARC_TOLERANCE = 0;
-const COMMON_ARGS = [
-  'round',
-  'polygon',
-  PRECISION,
-  MITER_LIMIT,
-  ARC_TOLERANCE,
-] as const;
+const offsetArgs = () =>
+  ['round', 'polygon', MITER_LIMIT, decimals(), ARC_TOLERANCE] as const;
 
 export async function routePocketHole(
   input: CamShape[],
@@ -36,8 +37,11 @@ export async function routePocketHole(
     startDepth: number;
     /** Ramp down into the cut at this angle (degrees) instead of plunging. */
     rampAngle?: number | null;
+    /** How precisely to work (see GeometrySettings). */
+    geometry?: GeometrySettings;
   },
 ): Promise<GCodeBuilder> {
+  useGeometry(options.geometry);
   let start: CamPoint = { x: 0, y: 0 };
 
   const builder = new GCodeBuilder();
@@ -58,7 +62,7 @@ export async function routePocketHole(
       let lastOutline: PathD | null = null;
       for (const outline of outlines) {
         const intersectsLastOutline = lastOutline
-          ? await pathsIntersect(outline, lastOutline, PRECISION)
+          ? await pathsIntersect(outline, lastOutline, decimals())
           : false;
 
         lastOutline = outline;
@@ -139,15 +143,15 @@ async function getShapeOutlines(
   //small grow to join any overlapping polygons
   currentPaths = await clipperInflateRaw(
     currentPaths,
-    PRECISION * 2,
-    ...COMMON_ARGS,
+    precision() * 2,
+    ...offsetArgs(),
   );
 
   //shrink to leave stock and half tool size
   currentPaths = await clipperInflateRaw(
     currentPaths,
     -options.leaveStock,
-    ...COMMON_ARGS,
+    ...offsetArgs(),
   );
 
   const outlines: PathD[] = [];
@@ -158,7 +162,7 @@ async function getShapeOutlines(
     currentPaths = await clipperInflateRaw(
       currentPaths,
       firstStep ? -options.toolSize / 2 : stepSize,
-      ...COMMON_ARGS,
+      ...offsetArgs(),
     );
 
     firstStep = false;
@@ -173,7 +177,7 @@ async function getShapeOutlines(
     const currentBatch: PathD[] = [];
     for (let i = 0; i < pathsSize; i++) {
       const path = currentPaths.get(i);
-      const simplified = await simplifyPath(path, PRECISION);
+      const simplified = await simplifyPath(path, precision());
       currentBatch.push(simplified);
       path.delete();
     }
@@ -203,7 +207,7 @@ async function getShapeOutlines(
       for (const path of currentBatch) {
         let inserted = false;
         for (const testOutline of outlines) {
-          if (await pathsIntersect(path, testOutline, PRECISION)) {
+          if (await pathsIntersect(path, testOutline, decimals())) {
             const index = outlines.indexOf(testOutline);
             outlines.splice(index, 0, path);
             inserted = true;
@@ -242,7 +246,7 @@ async function groupShapes(input: CamShape[]) {
 
     let found = false;
     for (const group of groups) {
-      if (await pathIntersectsAnyFromGroup(test, group, PRECISION)) {
+      if (await pathIntersectsAnyFromGroup(test, group, decimals())) {
         group.push_back(test);
         found = true;
         break;

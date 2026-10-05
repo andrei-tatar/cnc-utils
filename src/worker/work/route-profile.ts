@@ -1,11 +1,12 @@
 import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import {
-  PRECISION,
-  ShapePart,
-  filledOutlines,
-  holeSide,
-} from '../../cam/vcarve-geometry';
+  decimals,
+  GeometrySettings,
+  precision,
+  useGeometry,
+} from '../../cam/geometry';
+import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
 import { enterCut, rampWarning } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
@@ -31,8 +32,11 @@ export async function routeProfile(
     mode?: ShapePart;
     /** Ramp down into each pass at this angle (degrees) instead of plunging. */
     rampAngle?: number | null;
+    /** How precisely to work (see GeometrySettings). */
+    geometry?: GeometrySettings;
   },
 ): Promise<GCodeBuilder> {
+  useGeometry(options.geometry);
   const builder = new GCodeBuilder();
   const sourceShapeId = input?.[0]?.sourceShapeId;
   builder.sourceShapeId(sourceShapeId);
@@ -67,8 +71,10 @@ export async function routeProfile(
           offset,
           endType: 'polygon',
           joinType: 'round',
-          miterLimit: 2,
-          precision: 0.01,
+          // The offset transform's fields reach Clipper swapped (see
+          // applyTransform): miter limit 2, the settings' decimal places.
+          precision: 2,
+          miterLimit: decimals(),
           arcTolerance: 0,
         });
 
@@ -168,7 +174,7 @@ function keptStretches(
     });
     let lo = 0;
     let hi = 1;
-    while ((hi - lo) * getDistance(a, b) > PRECISION) {
+    while ((hi - lo) * getDistance(a, b) > precision()) {
       const mid = (lo + hi) / 2;
       if (keep!(at(mid))) {
         lo = mid;

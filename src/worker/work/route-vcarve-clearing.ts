@@ -1,4 +1,5 @@
 import { CamShape } from '../../cam/types';
+import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import {
   insetContours,
@@ -46,8 +47,11 @@ export async function routeVCarveClearing(
     beyondCone?: boolean;
     /** The v-carve's mode: clear the same part of the shape. */
     mode?: ShapePart;
+    /** How precisely to work (see GeometrySettings). */
+    geometry?: GeometrySettings;
   },
 ): Promise<GCodeBuilder> {
+  useGeometry(options.geometry);
   const sourceShapeId = input?.[0]?.sourceShapeId;
   let builder = new GCodeBuilder().sourceShapeId(sourceShapeId);
 

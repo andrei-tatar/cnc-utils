@@ -28,6 +28,13 @@ export type GcodeOptions = {
   returnHome: boolean;
   /** Decimal places for coordinates. */
   decimals: number;
+  /**
+   * Max distance (mm) between a curve (circle, arc, SVG, text) and the
+   * polygon that stands in for it.
+   */
+  curveTolerance: number;
+  /** Decimal places for geometry (Clipper offsets and booleans). */
+  geometryDecimals: number;
 };
 
 export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
@@ -42,6 +49,8 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   spindleDelay: 3,
   returnHome: false,
   decimals: 2,
+  curveTolerance: 0.01,
+  geometryDecimals: 2,
 };
 
 /** Complete options from a (possibly partial or older) stored value. */

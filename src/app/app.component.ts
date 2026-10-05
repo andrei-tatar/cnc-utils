@@ -40,6 +40,7 @@ import { gcodeToPaths } from '../cam/gcode-viewer';
 import { getModelMetadata, loadModelFromMetadata } from './store';
 import { toolLabel } from './model-editor/tools';
 import { resolveGcodeOptions } from '../cam/gcode-options';
+import { GeometrySettings } from '../cam/geometry';
 import { deepEqual, readFile } from '../util';
 import { ItemWarnings } from './item-warnings';
 
@@ -340,6 +341,7 @@ export class AppComponent implements OnInit, OnDestroy {
     shapes$: Observable<CamShape[]>,
     working$: Observable<never>,
   ) {
+    const geometry$ = AppComponent.geometrySettings(model$);
     return model$.pipe(
       scan(
         (ctx, { tools, operations }) => {
@@ -448,8 +450,9 @@ export class AppComponent implements OnInit, OnDestroy {
                   ),
                 ),
                 beyondCone$.pipe(distinctUntilChanged()),
+                geometry$,
               ]).pipe(
-                switchMap(([shape, op, tool, source, beyondCone]) => {
+                switchMap(([shape, op, tool, source, beyondCone, geometry]) => {
                   // No (or a deleted) tool or shape: nothing to cut. Routing
                   // functions expect at least one shape.
                   if (!tool || !shape.length) {
@@ -462,6 +465,7 @@ export class AppComponent implements OnInit, OnDestroy {
                       return race(
                         worker
                           .routePocketHole(shape, {
+                            geometry,
                             toolSize: diameter,
                             toolEngagement: op.toolEngagement,
                             leaveStock: op.leaveStock,
@@ -479,6 +483,7 @@ export class AppComponent implements OnInit, OnDestroy {
                       return race(
                         worker
                           .flatOutline(shape, {
+                            geometry,
                             toolSize: diameter,
                             toolEngagement: op.toolEngagement,
                             depth: op.depthPerStep,
@@ -500,6 +505,7 @@ export class AppComponent implements OnInit, OnDestroy {
                       return race(
                         worker
                           .routeProfile(shape, {
+                            geometry,
                             toolSize: diameter,
                             side: op.side,
                             direction: op.direction,
@@ -525,6 +531,7 @@ export class AppComponent implements OnInit, OnDestroy {
                       return race(
                         worker
                           .routeVCarve(shape, {
+                            geometry,
                             toolSize: diameter,
                             vAngle,
                             tipDiameter,
@@ -549,6 +556,7 @@ export class AppComponent implements OnInit, OnDestroy {
                       return race(
                         worker
                           .routeVCarveClearing(shape, {
+                            geometry,
                             toolSize: diameter,
                             toolEngagement: op.toolEngagement,
                             depthPerStep: op.depthPerStep,
@@ -675,10 +683,34 @@ export class AppComponent implements OnInit, OnDestroy {
     );
   }
 
+  /**
+   * The geometry settings from the G-code section; shapes and toolpaths are
+   * regenerated when they change.
+   */
+  private static geometrySettings(
+    model$: Observable<ModelType>,
+  ): Observable<GeometrySettings> {
+    return model$.pipe(
+      map(({ gcode }) => {
+        const options = resolveGcodeOptions(gcode);
+        return {
+          curveTolerance: options.curveTolerance,
+          decimals: options.geometryDecimals,
+        };
+      }),
+      distinctUntilChanged((a, b) => deepEqual(a, b)),
+      share({
+        connector: () => new ReplaySubject(1),
+        resetOnRefCountZero: () => timer(0),
+      }),
+    );
+  }
+
   private static generateShapesFromModel(
     model$: Observable<ModelType>,
     working$: Observable<never>,
   ) {
+    const geometry$ = AppComponent.geometrySettings(model$);
     const shapes$ = model$.pipe(
       scan(
         (ctx, { shapes }) => {
@@ -701,9 +733,13 @@ export class AppComponent implements OnInit, OnDestroy {
               const shapeParameters$ = new BehaviorSubject(shapeParameters);
               const shapeTransforms$ = new BehaviorSubject(shapeTransforms);
 
-              const shape$ = shapeParameters$.pipe(
-                distinctUntilChanged((a, b) => deepEqual(a, b)),
-                map((t) => {
+              const shape$ = combineLatest([
+                shapeParameters$.pipe(
+                  distinctUntilChanged((a, b) => deepEqual(a, b)),
+                ),
+                geometry$,
+              ]).pipe(
+                map(([t, geometry]) => {
                   if (t.type === 'boolean') {
                     const shape1$ = shapes$.pipe(
                       switchMap(
@@ -741,6 +777,7 @@ export class AppComponent implements OnInit, OnDestroy {
                           t.operationType,
                           t.fillRule,
                           shapeId,
+                          geometry,
                         );
                       }),
                     );
@@ -748,10 +785,14 @@ export class AppComponent implements OnInit, OnDestroy {
                   }
 
                   if (t.type === 'text') {
-                    return worker.importText(t, shapeId);
+                    return worker.importText(t, shapeId, geometry);
                   }
 
-                  return worker.importSvg(this.createSvgFromShape(t), shapeId);
+                  return worker.importSvg(
+                    this.createSvgFromShape(t),
+                    shapeId,
+                    geometry,
+                  );
                 }),
                 switchMap((resolveShape) => race(resolveShape, working$)),
                 share({

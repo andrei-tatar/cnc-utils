@@ -5,6 +5,7 @@ import {
   makePaths,
 } from '../../cam/clipper';
 import { CamPolygon, CamShape } from '../../cam/types';
+import { decimals, GeometrySettings, useGeometry } from '../../cam/geometry';
 
 export async function applyBooleanOperation(
   shape1: CamShape[],
@@ -12,14 +13,22 @@ export async function applyBooleanOperation(
   clipType: ClipperClipType,
   fillRule: ClipperFillRule,
   resultShapeId: string,
+  geometry?: GeometrySettings,
 ): Promise<CamShape[]> {
+  useGeometry(geometry);
   const a = await makePaths(
     shape1.flatMap((p) => p.polygons).map((p) => p.points),
   );
   const b = await makePaths(
     shape2.flatMap((p) => p.polygons).map((p) => p.points),
   );
-  const paths = await clipperBooleanOperation(a, b, clipType, fillRule, 1);
+  const paths = await clipperBooleanOperation(
+    a,
+    b,
+    clipType,
+    fillRule,
+    decimals(),
+  );
 
   const pathsSize = paths.size();
   const result: CamShape = {

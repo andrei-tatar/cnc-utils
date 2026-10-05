@@ -12,7 +12,8 @@ export async function clipperBooleanOperation(
   b: PathsD,
   clipType: ClipperClipType,
   fillRule: ClipperFillRule,
-  precision: number,
+  /** Decimal places to work to. */
+  decimals: number,
 ) {
   const { BooleanOpD, ClipType, PathsD, FillRule } = await ClipperModule.value;
 
@@ -21,7 +22,7 @@ export async function clipperBooleanOperation(
     getFillRule(fillRule, FillRule),
     a,
     b,
-    precision,
+    decimals,
   );
 
   return result;
@@ -32,8 +33,9 @@ export async function clipperInflateRaw(
   offset: number,
   joinType: 'miter' | 'square' | 'round',
   endType: 'polygon' | 'joined' | 'butt' | 'square' | 'round',
-  precision: number,
   miterLimit: number,
+  /** Decimal places to work to. */
+  decimals: number,
   arcTolerance: number,
 ) {
   const module = await ClipperModule.value;
@@ -42,8 +44,8 @@ export async function clipperInflateRaw(
     offset,
     getJoinType(joinType, module.JoinType),
     getEndType(endType, module.EndType),
-    precision,
     miterLimit,
+    decimals,
     arcTolerance,
   );
   return result;
@@ -54,7 +56,7 @@ export async function getAreaResolver() {
   return (path: PathD) => AreaPathD(path);
 }
 
-export async function pathsIntersect(a: PathD, b: PathD, precision: number) {
+export async function pathsIntersect(a: PathD, b: PathD, decimals: number) {
   const { IntersectD, PathsD, FillRule } = await ClipperModule.value;
 
   const aa = new PathsD();
@@ -63,7 +65,7 @@ export async function pathsIntersect(a: PathD, b: PathD, precision: number) {
   const bb = new PathsD();
   bb.push_back(b);
 
-  const result = IntersectD(aa, bb, FillRule.NonZero, precision * 200);
+  const result = IntersectD(aa, bb, FillRule.NonZero, decimals);
   const intersect = result.size() > 0;
 
   aa.delete();
@@ -76,14 +78,14 @@ export async function pathsIntersect(a: PathD, b: PathD, precision: number) {
 export async function pathIntersectsAnyFromGroup(
   path: PathD,
   group: PathsD,
-  precision: number,
+  decimals: number,
 ) {
   const { IntersectD, PathsD, FillRule } = await ClipperModule.value;
 
   const aa = new PathsD();
   aa.push_back(path);
 
-  const result = IntersectD(aa, group, FillRule.NonZero, precision * 200);
+  const result = IntersectD(aa, group, FillRule.NonZero, decimals);
   const intersect = result.size() > 0;
 
   aa.delete();
@@ -92,10 +94,11 @@ export async function pathIntersectsAnyFromGroup(
   return intersect;
 }
 
-export async function simplifyPath(a: PathD, precision: number) {
+/** Drop vertices that are less than `epsilon` (mm) off the outline. */
+export async function simplifyPath(a: PathD, epsilon: number, closed = true) {
   const { SimplifyPathD } = await ClipperModule.value;
 
-  const simplified = SimplifyPathD(a, precision, true);
+  const simplified = SimplifyPathD(a, epsilon, closed);
 
   return simplified;
 }
