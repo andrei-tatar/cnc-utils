@@ -49,13 +49,21 @@ export class GCodeBuilder {
     return this;
   }
 
-  carveFeedrate(feedRate: number) {
-    this._instructions.push({ type: 'carve-feedrate', feedRate });
+  /** The cutting feed for what follows; empty means the G-code default. */
+  carveFeedrate(feedRate?: number | null) {
+    this._instructions.push({
+      type: 'carve-feedrate',
+      feedRate: feedRate ?? null,
+    });
     return this;
   }
 
-  plungeFeedRate(feedRate: number) {
-    this._instructions.push({ type: 'plunge-feedrate', feedRate });
+  /** The plunge feed for what follows; empty means the G-code default. */
+  plungeFeedRate(feedRate?: number | null) {
+    this._instructions.push({
+      type: 'plunge-feedrate',
+      feedRate: feedRate ?? null,
+    });
     return this;
   }
 
@@ -91,17 +99,8 @@ export class GCodeBuilder {
     return result;
   }
 
-  build(
-    options: Partial<GcodeOptions> & {
-      carveFeedRate: number;
-      plungeFeedRate: number;
-    },
-  ): string {
-    const o = {
-      ...resolveGcodeOptions(options),
-      carveFeedRate: options.carveFeedRate,
-      plungeFeedRate: options.plungeFeedRate,
-    };
+  build(options: Partial<GcodeOptions> = {}): string {
+    const o = resolveGcodeOptions(options);
     const factor = 10 ** Math.max(0, Math.min(6, Math.round(o.decimals)));
     const round = (v: number) => Math.round(v * factor) / factor;
     const gcode: string[] = [];
@@ -179,11 +178,17 @@ export class GCodeBuilder {
           break;
 
         case 'carve-feedrate':
-          carveFeedRate = instruction.feedRate;
+          carveFeedRate =
+            instruction.feedRate && instruction.feedRate > 0
+              ? instruction.feedRate
+              : o.carveFeedRate;
           break;
 
         case 'plunge-feedrate':
-          plungeFeedRate = instruction.feedRate;
+          plungeFeedRate =
+            instruction.feedRate && instruction.feedRate > 0
+              ? instruction.feedRate
+              : o.plungeFeedRate;
           break;
 
         case 'model':
@@ -288,8 +293,8 @@ type PathInstruction =
   | { type: 'carve'; to: CamPoint; z?: number }
   | { type: 'source-shape'; id: string }
   | { type: 'source-operation'; id: string }
-  | { type: 'carve-feedrate'; feedRate: number }
-  | { type: 'plunge-feedrate'; feedRate: number }
+  | { type: 'carve-feedrate'; feedRate: number | null }
+  | { type: 'plunge-feedrate'; feedRate: number | null }
   | { type: 'model'; model: string }
   | { type: 'stop-program' }
   | { type: 'pause' }

@@ -32,7 +32,7 @@ Each shape can have a chain of **transforms**, applied in order: move, rotate, s
 
 ### Tools
 
-End mills and V-bits (angle and tip diameter), with feed and plunge rates and an optional spindle speed (used after changing to that tool when spindle control is on; otherwise the G-code section's speed applies). Leave the name empty and one is generated from the settings, e.g. "Ø6 mm 60° v-bit" — the same goes for shapes and operations.
+End mills and V-bits (angle and tip diameter). Feed rate, plunge rate and spindle speed are optional per tool: when set they're used while that tool cuts, otherwise the G-code section's defaults apply. Leave the name empty and one is generated from the settings, e.g. "Ø6 mm 60° v-bit" — the same goes for shapes and operations.
 
 ### Operations
 
@@ -48,7 +48,7 @@ Items with problems (a missing value, a deleted tool or shape, a v-carve on an e
 
 ### G-code options
 
-The **G-code** section sets how the program is written: safe height, tool changes (`T<n> M6`, a pause with `M0` for changing tools by hand — e.g. on GRBL, which doesn't support `M6` — or none), whether to skip tool changes when only one tool is used, spindle control (`M3 S<rpm>` with a spin-up wait, `M5` before tool changes and at the end), a `G90 G21 G17` header, returning to X0 Y0 at the end, and the number of decimal places. The program loads the first tool at the start and changes tools between operations that use different ones.
+The **G-code** section sets how the program is written: safe height, default feed and plunge rates, tool changes (`T<n> M6`, a pause with `M0` for changing tools by hand — e.g. on GRBL, which doesn't support `M6` — or none), whether to skip tool changes when only one tool is used, spindle control (`M3 S<rpm>` with a spin-up wait, `M5` before tool changes and at the end), a `G90 G21 G17` header, returning to X0 Y0 at the end, and the number of decimal places. The program loads the first tool at the start and changes tools between operations that use different ones.
 
 ### Usage notes
 

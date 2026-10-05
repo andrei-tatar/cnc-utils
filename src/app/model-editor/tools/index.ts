@@ -15,8 +15,10 @@ export type ToolType = {
   diameter: number;
   vAngle: number;
   tipDiameter: number;
-  feedRate: number;
-  plungeFeedRate: number;
+  /** Optional; overrides the G-code section's carve feed rate. */
+  feedRate?: number | null;
+  /** Optional; overrides the G-code section's plunge feed rate. */
+  plungeFeedRate?: number | null;
   /** Optional; overrides the G-code section's spindle speed. */
   spindleSpeed?: number | null;
 };
@@ -136,19 +138,21 @@ export const field: FormlyFieldConfig = {
       {
         key: 'feedRate',
         type: 'number',
-        defaultValue: 1200,
         props: {
           label: 'feed rate',
-          required: true,
+          placeholder: 'G-code default',
+          description: 'mm/min; empty uses the G-code section’s feed rate',
+          min: 0,
         },
       },
       {
         key: 'plungeFeedRate',
         type: 'number',
-        defaultValue: 300,
         props: {
           label: 'plunge fr',
-          required: true,
+          placeholder: 'G-code default',
+          description: 'mm/min; empty uses the G-code section’s plunge rate',
+          min: 0,
         },
       },
       {

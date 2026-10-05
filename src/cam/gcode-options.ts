@@ -2,6 +2,10 @@
 export type GcodeOptions = {
   /** Height for rapid moves and tool changes, in mm above the stock. */
   safetyHeight: number;
+  /** Default cutting feed rate (mm/min), for tools without their own. */
+  carveFeedRate: number;
+  /** Default plunge feed rate (mm/min), for tools without their own. */
+  plungeFeedRate: number;
   /** Start with G90 G21 G17 (absolute, millimetres, XY plane). */
   header: boolean;
   /**
@@ -28,6 +32,8 @@ export type GcodeOptions = {
 
 export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   safetyHeight: 10,
+  carveFeedRate: 1200,
+  plungeFeedRate: 300,
   header: true,
   toolChange: 'm6',
   skipSingleToolChange: true,

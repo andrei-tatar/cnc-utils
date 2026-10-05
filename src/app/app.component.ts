@@ -47,6 +47,9 @@ type ToolInfo = {
   number: number;
   label: string;
   spindleSpeed?: number;
+  /** Empty means the G-code section's defaults. */
+  feedRate?: number;
+  plungeFeedRate?: number;
 };
 
 type VCarveSource = {
@@ -311,13 +314,16 @@ export class AppComponent implements OnInit, OnDestroy {
               ...operationParameters
             }) => {
               const tool = tools.find((t) => t.id === toolId);
-              // Spindle speed only affects the G-code text, not the routing.
+              // Spindle speed and feed rates only affect the G-code text,
+              // not the routing.
               const toolParameters: ToolParameters | null = tool
                 ? (({
                     id: _,
                     expanded: __,
                     name: ___,
                     spindleSpeed: ____,
+                    feedRate: _____,
+                    plungeFeedRate: ______,
                     ...parameters
                   }) => parameters)(tool)
                 : null;
@@ -337,6 +343,8 @@ export class AppComponent implements OnInit, OnDestroy {
                     number: tools.indexOf(tool) + 1,
                     label: toolLabel(tool),
                     spindleSpeed: tool.spindleSpeed || undefined,
+                    feedRate: tool.feedRate || undefined,
+                    plungeFeedRate: tool.plungeFeedRate || undefined,
                   }
                 : null;
 
@@ -399,18 +407,8 @@ export class AppComponent implements OnInit, OnDestroy {
                   if (!tool || !shape.length) {
                     return of(new GCodeBuilder());
                   }
-                  const {
-                    bitType,
-                    diameter,
-                    vAngle,
-                    tipDiameter,
-                    feedRate,
-                    plungeFeedRate,
-                  } = tool;
-                  const toolGcode = new GCodeBuilder()
-                    .sourceOperationId(id)
-                    .carveFeedrate(feedRate)
-                    .plungeFeedRate(plungeFeedRate);
+                  const { bitType, diameter, vAngle, tipDiameter } = tool;
+                  const toolGcode = new GCodeBuilder().sourceOperationId(id);
                   switch (op.type) {
                     case 'pocket':
                       return race(
@@ -534,6 +532,8 @@ export class AppComponent implements OnInit, OnDestroy {
                   info
                     ? new GCodeBuilder()
                         .useTool(info.number, info.label, info.spindleSpeed)
+                        .carveFeedrate(info.feedRate)
+                        .plungeFeedRate(info.plungeFeedRate)
                         .concat(builder)
                     : builder,
                 ),
@@ -597,11 +597,7 @@ export class AppComponent implements OnInit, OnDestroy {
           .sourceOperationId('')
           .goToSafeHeight()
           .stopProgram()
-          .build({
-            ...gcodeOptions,
-            carveFeedRate: 1200,
-            plungeFeedRate: 300,
-          });
+          .build(gcodeOptions);
         return gcode;
       }),
     );

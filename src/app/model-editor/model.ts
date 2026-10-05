@@ -29,7 +29,7 @@ export type OperationParameters = OmitUnion<
 /** What a tool contributes to toolpath routing (not to G-code text). */
 export type ToolParameters = OmitUnion<
   ToolsModelType['tools'][number],
-  'id' | 'expanded' | 'name' | 'spindleSpeed'
+  'id' | 'expanded' | 'name' | 'spindleSpeed' | 'feedRate' | 'plungeFeedRate'
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [
   shapesField,

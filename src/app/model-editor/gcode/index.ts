@@ -33,6 +33,28 @@ export const field: FormlyFieldConfig = {
       },
     },
     {
+      key: 'carveFeedRate',
+      type: 'number',
+      defaultValue: d.carveFeedRate,
+      props: {
+        label: 'feed rate',
+        description: 'mm/min, for tools without their own',
+        min: 1,
+        required: true,
+      },
+    },
+    {
+      key: 'plungeFeedRate',
+      type: 'number',
+      defaultValue: d.plungeFeedRate,
+      props: {
+        label: 'plunge fr',
+        description: 'mm/min, for tools without their own',
+        min: 1,
+        required: true,
+      },
+    },
+    {
       key: 'toolChange',
       type: 'enum',
       defaultValue: d.toolChange,
