@@ -4,6 +4,8 @@ import { allOperations } from './describe';
 
 export interface ModelType {
   type?: 'v-carve';
+  /** Which part of the shape to carve (see ShapePart). */
+  mode?: 'both' | 'holes' | 'contours';
   startDepth: number;
   maxDepth: number;
   stepover: number;
@@ -20,6 +22,20 @@ const hideUnlessSharpCorners = (field: FormlyFieldConfig) =>
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
+    {
+      key: 'mode',
+      type: 'enum',
+      defaultValue: 'both',
+      props: {
+        label: 'carve',
+        required: true,
+        options: [
+          { value: 'both', label: 'outlines minus holes' },
+          { value: 'holes', label: 'around the holes only' },
+          { value: 'contours', label: 'outlines only, holes ignored' },
+        ],
+      },
+    },
     {
       key: 'startDepth',
       type: 'number',

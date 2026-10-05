@@ -2,13 +2,19 @@ import {
   DECIMALS,
   PRECISION,
   insetContours,
-  normalizedRegion,
+  carveRegion,
+  holeSide,
+  ShapePart,
   vCarveGeometry,
 } from '../../cam/vcarve-geometry';
 import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { getDistance } from '../../util';
-import { nestContours, pointInPolygon } from '../../cam/polygon-nesting';
+import {
+  distanceToBoundary,
+  nestContours,
+  pointInPolygon,
+} from '../../cam/polygon-nesting';
 
 /**
  * V-carve by successive inward offsets. A V-bit whose center sits `d` inside
@@ -37,6 +43,8 @@ export async function routeVCarve(
     sharpCornerAngle: number;
     /** The groove's middle is cleared first, so carve below the cone. */
     beyondCone?: boolean;
+    /** Which part of the shape to carve. */
+    mode?: ShapePart;
   },
 ): Promise<GCodeBuilder> {
   const builder = new GCodeBuilder();
@@ -54,10 +62,14 @@ export async function routeVCarve(
 
   let position: CamPoint = { x: 0, y: 0 };
 
-  // Open paths have no width to derive a depth from: engrave them at max depth.
-  const openPolylines = input
-    .flatMap((s) => s.polygons)
-    .filter((p) => !p.close && p.points.length > 1);
+  // Open paths have no width to derive a depth from: engrave them at max
+  // depth. They aren't holes, so "holes only" leaves them out.
+  const openPolylines =
+    options.mode === 'holes'
+      ? []
+      : input
+          .flatMap((s) => s.polygons)
+          .filter((p) => !p.close && p.points.length > 1);
 
   for (const polyline of openPolylines) {
     const points =
@@ -79,7 +91,12 @@ export async function routeVCarve(
     return builder;
   }
 
-  const region = await normalizedRegion(closed);
+  const region = await carveRegion(closed, options.mode);
+
+  // "Holes only" makes the same cuts as "outlines minus holes" but keeps just
+  // the parts growing out from the holes.
+  const keepAt: (inset: number) => ((p: CamPoint) => boolean) | null =
+    options.mode === 'holes' ? await holeSide(closed) : () => null;
 
   const corners: CornerOptions | null = options.sharpCorners
     ? {
@@ -111,7 +128,15 @@ export async function routeVCarve(
     const { contours, inset, fromInset } = stack.pop()!;
 
     for (const contour of orderByProximity(contours, position)) {
-      cutContour(builder, contour, inset, fromInset, depthAt, corners);
+      cutContour(
+        builder,
+        contour,
+        inset,
+        fromInset,
+        depthAt,
+        corners,
+        keepAt(inset),
+      );
       position = contour[0];
     }
 
@@ -150,6 +175,7 @@ export async function routeVCarve(
           inset,
           depthAt,
           corners,
+          keepAt(inset + collapse.inset),
         );
         position = contour[0];
       }
@@ -283,7 +309,8 @@ function cutPath(builder: GCodeBuilder, points: CamPoint[], depth: number) {
  * Cut one closed inset contour at the depth for `inset`. At each sharp convex
  * corner, run out along the bisector to where the previous level (`fromInset`)
  * had that corner, rising to its depth, and come back. The contour must have
- * the region on its left (see `groupComponents`).
+ * the region on its left (see `groupComponents`). With `keep`, only the parts
+ * of the contour where it holds are cut.
  */
 function cutContour(
   builder: GCodeBuilder,
@@ -292,16 +319,66 @@ function cutContour(
   fromInset: number,
   depthAt: (inset: number) => number,
   corners: CornerOptions | null,
+  keep: ((p: CamPoint) => boolean) | null = null,
 ) {
-  const depth = depthAt(inset);
-  builder.goToSafeHeight();
-  builder.travelTo(contour[0].x, contour[0].y);
-  builder.plunge(depth);
-
+  const kept = contour.map((p) => !keep || keep(p));
   const n = contour.length;
+  // Start where a kept stretch begins (none: nothing to cut).
+  const first = kept.every(Boolean)
+    ? 0
+    : kept.findIndex((k, i) => k && !kept[(i - 1 + n) % n]);
+  if (first < 0) {
+    return;
+  }
+  contour = [...contour.slice(first), ...contour.slice(0, first)];
+  kept.push(...kept.splice(0, first));
+
+  const depth = depthAt(inset);
+  const startAt = (p: CamPoint) => {
+    builder.goToSafeHeight();
+    builder.travelTo(p.x, p.y);
+    builder.plunge(depth);
+  };
+  // How far the edge from kept `a` towards dropped `b` stays kept.
+  const lastKept = (a: CamPoint, b: CamPoint) => {
+    const at = (t: number) => ({
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+    });
+    let lo = 0;
+    let hi = 1;
+    while ((hi - lo) * getDistance(a, b) > PRECISION) {
+      const mid = (lo + hi) / 2;
+      if (keep!(at(mid))) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return at(lo);
+  };
+
+  if (kept[n - 1]) {
+    startAt(contour[0]);
+  } else {
+    const entry = lastKept(contour[0], contour[n - 1]);
+    startAt(entry);
+    builder.carveTo(contour[0].x, contour[0].y);
+  }
+
   for (let i = 0; i < n; i++) {
     const vertex = contour[i];
     const next = contour[(i + 1) % n];
+    const nextKept = kept[(i + 1) % n];
+
+    if (!kept[i]) {
+      // Resume where the edge to the next kept point comes back in.
+      if (nextKept) {
+        startAt(lastKept(next, vertex));
+        builder.carveTo(next.x, next.y);
+      }
+      continue;
+    }
 
     const run = corners
       ? cornerRun(
@@ -321,7 +398,8 @@ function cutContour(
       builder.carveTo(vertex.x, vertex.y, depth);
     }
 
-    builder.carveTo(next.x, next.y);
+    const end = nextKept ? next : lastKept(vertex, next);
+    builder.carveTo(end.x, end.y);
   }
 }
 
@@ -417,34 +495,6 @@ function neighbour(contour: CamPoint[], i: number, direction: 1 | -1) {
 function unit(x: number, y: number): CamPoint | null {
   const length = Math.hypot(x, y);
   return length > 1e-9 ? { x: x / length, y: y / length } : null;
-}
-
-function distanceToBoundary(point: CamPoint, boundary: CamPoint[][]) {
-  let min = Infinity;
-  for (const contour of boundary) {
-    for (let i = 0; i < contour.length; i++) {
-      const a = contour[i];
-      const b = contour[(i + 1) % contour.length];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const lengthSq = dx * dx + dy * dy;
-      const t =
-        lengthSq > 0
-          ? Math.max(
-              0,
-              Math.min(
-                1,
-                ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq,
-              ),
-            )
-          : 0;
-      min = Math.min(
-        min,
-        Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t)),
-      );
-    }
-  }
-  return min;
 }
 
 function insideRegion(point: CamPoint, region: CamPoint[][]) {

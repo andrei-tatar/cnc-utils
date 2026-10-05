@@ -5,8 +5,23 @@ import {
   makePaths,
 } from './clipper';
 import { CamPoint } from './types';
+import { distanceToBoundary, pointInPolygon } from './polygon-nesting';
+
+/**
+ * Which part of a shape an operation (v-carve, profile) works on:
+ * - `both`: the outlines and their holes
+ * - `holes`: the same cuts, but only those coming from the holes, not from the
+ *   outer outlines (where the two meet, halfway between them)
+ * - `contours`: the outer outlines filled in, holes ignored
+ */
+export type ShapePart = 'both' | 'holes' | 'contours';
 
 export const PRECISION = 0.01;
+/**
+ * How much further than its offset a point on a cut must be from the outer
+ * outlines to count as coming from a hole (Clipper rounds offsets).
+ */
+const HOLE_SIDE_TOLERANCE = 5 * PRECISION;
 // Clipper rounds coordinates to this many decimal places (= PRECISION).
 export const DECIMALS = 2;
 // Clipper2's native order is (miterLimit, decimals), the reverse of the
@@ -54,6 +69,89 @@ export function vCarveGeometry(options: {
     maxInset: tipRadius + maxDepth * tan,
     coneHeight: geometricMaxDepth,
   };
+}
+
+/**
+ * The area a v-carve works in for `mode` (see ShapePart), as normalized
+ * contours. "Holes only" works in the same area as "both" and picks its cuts
+ * from there.
+ */
+export async function carveRegion(
+  closed: CamPoint[][],
+  mode: ShapePart = 'both',
+): Promise<CamPoint[][]> {
+  return mode === 'contours'
+    ? filledOutlines(closed)
+    : normalizedRegion(closed);
+}
+
+/** The holes in the shape (inside an outline, but not in the shape). */
+export async function holeAreas(closed: CamPoint[][]): Promise<CamPoint[][]> {
+  return subtractRegions(
+    await filledOutlines(closed),
+    await normalizedRegion(closed),
+  );
+}
+
+/** The part of region `a` outside region `b`. */
+export async function subtractRegions(
+  a: CamPoint[][],
+  b: CamPoint[][],
+): Promise<CamPoint[][]> {
+  const pa = await makePaths(a);
+  const pb = await makePaths(b);
+  const result = toPoints(
+    await clipperBooleanOperation(pa, pb, 'difference', 'non-zero', DECIMALS),
+  );
+  pa.delete();
+  pb.delete();
+  return result;
+}
+
+/**
+ * For "holes only": whether a point on a cut `offset` away from the shape's
+ * nearest edge came from a hole, i.e. it is further than that from the outer
+ * outlines. Where cuts from a hole meet cuts from an outline, that's halfway.
+ */
+export async function holeSide(closed: CamPoint[][]) {
+  const outlines = await filledOutlines(closed);
+  return (offset: number) => (p: CamPoint) =>
+    distanceToBoundary(p, outlines) > Math.abs(offset) + HOLE_SIDE_TOLERANCE;
+}
+
+/** Inside any outer outline (a path not nested in any other), holes ignored. */
+export function filledOutlines(closed: CamPoint[][]): Promise<CamPoint[][]> {
+  const outers = closed.filter(
+    (contour, i) =>
+      !closed.some((other, j) => j !== i && pointInPolygon(contour[0], other)),
+  );
+  return unionAll(outers);
+}
+
+/** Union of filled outlines, whatever their winding. */
+async function unionAll(contours: CamPoint[][]): Promise<CamPoint[][]> {
+  // Same winding for all, so overlapping outlines merge under non-zero.
+  const oriented = contours.map((c) =>
+    signedArea(c) < 0 ? [...c].reverse() : c,
+  );
+  const paths = await makePaths(oriented);
+  const empty = await makePaths([]);
+  const result = toPoints(
+    await clipperBooleanOperation(paths, empty, 'union', 'non-zero', DECIMALS),
+  );
+  paths.delete();
+  empty.delete();
+  return result;
+}
+
+function signedArea(points: CamPoint[]): number {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+  return area / 2;
 }
 
 /**

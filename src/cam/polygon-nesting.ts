@@ -86,3 +86,32 @@ function contains(outer: Box, inner: Box) {
     outer.maxY >= inner.maxY
   );
 }
+
+/** Distance from `point` to the nearest edge of any of the contours. */
+export function distanceToBoundary(point: CamPoint, boundary: CamPoint[][]) {
+  let min = Infinity;
+  for (const contour of boundary) {
+    for (let i = 0; i < contour.length; i++) {
+      const a = contour[i];
+      const b = contour[(i + 1) % contour.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lengthSq = dx * dx + dy * dy;
+      const t =
+        lengthSq > 0
+          ? Math.max(
+              0,
+              Math.min(
+                1,
+                ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq,
+              ),
+            )
+          : 0;
+      min = Math.min(
+        min,
+        Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t)),
+      );
+    }
+  }
+  return min;
+}

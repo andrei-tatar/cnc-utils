@@ -60,6 +60,7 @@ type VCarveSource = {
   startDepth: number;
   maxDepth: number;
   beyondCone: boolean;
+  mode: 'both' | 'holes' | 'contours';
 };
 
 const EDITOR_WIDTH_STORAGE_KEY = 'ui.editorWidth';
@@ -301,6 +302,7 @@ export class AppComponent implements OnInit, OnDestroy {
       startDepth: vcarve.startDepth,
       maxDepth: vcarve.maxDepth,
       beyondCone: AppComponent.clearedFirst(vcarve.id, operations, tools),
+      mode: vcarve.mode ?? 'both',
     };
   }
 
@@ -523,6 +525,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             sharpCorners: op.sharpCorners ?? true,
                             sharpCornerAngle: op.sharpCornerAngle ?? 150,
                             beyondCone,
+                            mode: op.mode ?? 'both',
                           })
                           .pipe(
                             map((r) => toolGcode.concat(GCodeBuilder.clone(r))),
@@ -546,6 +549,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             startDepth: source.startDepth,
                             maxDepth: source.maxDepth,
                             beyondCone: source.beyondCone,
+                            mode: source.mode,
                           })
                           .pipe(
                             map((r) => toolGcode.concat(GCodeBuilder.clone(r))),

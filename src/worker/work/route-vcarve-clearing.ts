@@ -2,7 +2,10 @@ import { CamShape } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import {
   insetContours,
-  normalizedRegion,
+  carveRegion,
+  holeAreas,
+  subtractRegions,
+  ShapePart,
   vCarveGeometry,
 } from '../../cam/vcarve-geometry';
 import { routePocketHole } from './route-pocket-hole';
@@ -41,6 +44,8 @@ export async function routeVCarveClearing(
     maxDepth: number;
     /** The v-carve will go below its cone, so clear that deep too. */
     beyondCone?: boolean;
+    /** The v-carve's mode: clear the same part of the shape. */
+    mode?: ShapePart;
   },
 ): Promise<GCodeBuilder> {
   const sourceShapeId = input?.[0]?.sourceShapeId;
@@ -66,7 +71,15 @@ export async function routeVCarveClearing(
   if (!closed.length || maxDepth <= 0) {
     return builder;
   }
-  const region = await normalizedRegion(closed);
+  const region = await carveRegion(closed, options.mode);
+  // "Around the holes only" cuts no V-walls along the outer outlines, so the
+  // clearing goes right up to them: the filled outlines, kept clear of the
+  // walls the V-bit cuts from the holes.
+  const holes = options.mode === 'holes' ? await holeAreas(closed) : null;
+  const outlines = holes ? await carveRegion(closed, 'contours') : null;
+  if (holes && !holes.length) {
+    return builder;
+  }
 
   let previous = 0;
   while (previous < maxDepth - 1e-6) {
@@ -74,17 +87,21 @@ export async function routeVCarveClearing(
     const wallInset =
       tipRadius + depth * tan + Math.max(0, options.leaveStock) + CLEARANCE;
 
+    const area =
+      holes && outlines
+        ? await subtractRegions(
+            outlines,
+            await insetContours(holes, -wallInset),
+          )
+        : await insetContours(region, wallInset);
+
     // Deeper levels only shrink, so once the end mill no longer fits, no
     // deeper level can need it either.
-    const reachable = await insetContours(
-      region,
-      wallInset + options.toolSize / 2,
-    );
+    const reachable = await insetContours(area, options.toolSize / 2);
     if (!reachable.length) {
       break;
     }
 
-    const area = await insetContours(region, wallInset);
     const level = await routePocketHole(
       [
         {

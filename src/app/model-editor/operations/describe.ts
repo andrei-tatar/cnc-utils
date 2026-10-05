@@ -30,7 +30,7 @@ export function describeOperation(
       what = `flat ${total(0, operation.depthPerStep, operation.steps)}`;
       break;
     case 'v-carve':
-      what = `v-carve ≤${mm(operation.maxDepth ?? 0)}`;
+      what = `v-carve${partLabel(operation.mode)} ≤${mm(operation.maxDepth ?? 0)}`;
       break;
     case 'v-carve-clear':
       what = 'v-carve clearing';
@@ -49,4 +49,9 @@ export function describeOperation(
   return [what, shape && shapeLabel(shape, shapes), tool && toolLabel(tool)]
     .filter(Boolean)
     .join(' · ');
+}
+
+/** " holes" / " outlines" for an operation limited to part of its shape. */
+function partLabel(mode: 'both' | 'holes' | 'contours' | undefined) {
+  return mode === 'holes' ? ' holes' : mode === 'contours' ? ' outlines' : '';
 }
