@@ -10,8 +10,10 @@ import {
 
 /** Arrow length on screen, in pixels. */
 const ARROW_PX = 10;
-/** Arrows are spaced at least this far apart on screen, in pixels. */
-const MIN_SPACING_PX = 70;
+/** Arrows along one path are at least this far apart on screen, in pixels. */
+const MIN_SPACING_PX = 160;
+/** Paths shorter than this on screen get no arrow at all, in pixels. */
+const MIN_PATH_PX = 40;
 /** Finest subdivision level: up to 2^(MAX_LEVEL+1)-1 arrows per path. */
 const MAX_LEVEL = 9;
 /** Don't subdivide below this spacing, in model units (mm). */
@@ -38,6 +40,9 @@ export class DirectionArrows {
   private readonly maxLevel: number;
   private readonly positions: Vector3[] = [];
   private readonly rotations: Quaternion[] = [];
+  /** Subdivision level of each instance (0 = the path's midpoint). */
+  private readonly levels: number[] = [];
+  private scale = 1;
 
   constructor(points: Vector3[], material: Material) {
     const cumulative = [0];
@@ -60,7 +65,7 @@ export class DirectionArrows {
     for (let level = 0; level <= this.maxLevel; level++) {
       const parts = 2 ** (level + 1);
       for (let j = 1; j < parts; j += 2) {
-        this.addArrowAt((j * this.length) / parts, points, cumulative);
+        this.addArrowAt((j * this.length) / parts, points, cumulative, level);
       }
     }
 
@@ -78,6 +83,7 @@ export class DirectionArrows {
   update(pixelsPerUnit: number) {
     const count = this.visibleCount(this.length * pixelsPerUnit);
     const size = ARROW_PX / pixelsPerUnit;
+    this.scale = size;
     const scale = new Vector3(size, size, size);
     const matrix = new Matrix4();
 
@@ -87,6 +93,35 @@ export class DirectionArrows {
     }
 
     this.mesh.count = count;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** The arrows currently laid out, with their subdivision level. */
+  *visibleArrows(): Generator<{
+    index: number;
+    level: number;
+    position: Vector3;
+  }> {
+    for (let index = 0; index < this.mesh.count; index++) {
+      yield {
+        index,
+        level: this.levels[index],
+        position: this.positions[index],
+      };
+    }
+  }
+
+  /** Show or hide one arrow (used to thin out arrows across paths). */
+  setArrowVisible(index: number, visible: boolean) {
+    const scale = visible ? this.scale : 0;
+    this.mesh.setMatrixAt(
+      index,
+      new Matrix4().compose(
+        this.positions[index],
+        this.rotations[index],
+        new Vector3(scale, scale, scale),
+      ),
+    );
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -105,7 +140,7 @@ export class DirectionArrows {
   }
 
   private visibleCount(lengthPx: number) {
-    if (this.maxLevel < 0 || lengthPx < ARROW_PX * 2) {
+    if (this.maxLevel < 0 || lengthPx < MIN_PATH_PX) {
       return 0;
     }
     // Level k spaces arrows T / 2^k apart.
@@ -116,7 +151,12 @@ export class DirectionArrows {
     return Math.min(this.positions.length, 2 ** (level + 1) - 1);
   }
 
-  private addArrowAt(s: number, points: Vector3[], cumulative: number[]) {
+  private addArrowAt(
+    s: number,
+    points: Vector3[],
+    cumulative: number[],
+    level: number,
+  ) {
     // Last vertex at or before arc length `s`, skipping zero-length segments.
     let lo = 0;
     let hi = cumulative.length - 1;
@@ -132,6 +172,7 @@ export class DirectionArrows {
       return;
     }
 
+    this.levels.push(level);
     this.positions.push(a.clone().lerp(b, (s - cumulative[lo]) / segment));
     this.rotations.push(
       new Quaternion().setFromUnitVectors(UP, b.clone().sub(a).normalize()),

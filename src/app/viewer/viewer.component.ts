@@ -251,6 +251,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   private arrows = new Set<DirectionArrows>();
   private arrowsDirty = false;
+  /** Arrows shown by the last thinning pass, to keep them stable. */
+  private shownArrows = new WeakMap<DirectionArrows, Set<number>>();
   controls!: OrbitControls;
 
   @Input()
@@ -328,24 +330,14 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const labels = new GridLabels(this.labelsLayer.nativeElement);
     this.trackCursor(renderer.domElement);
 
-    // Direction arrows keep a constant on-screen size, so re-lay them out
-    // whenever the scale (zoom or viewport height) changes.
-    let laidOutAt = 0;
+    let arrowsKey = '';
     let viewKey = '';
     let fittedBox = '';
     renderer.setAnimationLoop(() => {
       const pixelsPerUnit =
         (renderer.domElement.clientHeight * this.camera.zoom) / frustumSize;
-      if (
-        pixelsPerUnit > 0 &&
-        (pixelsPerUnit !== laidOutAt || this.arrowsDirty)
-      ) {
-        this.arrows.forEach((arrows) => arrows.update(pixelsPerUnit));
-        laidOutAt = pixelsPerUnit;
-        this.arrowsDirty = false;
-      }
 
-      // Grid, labels and axis size only change when the view does.
+      // Grid, labels, axes and arrows only change when the view does.
       const { clientWidth: width, clientHeight: height } = renderer.domElement;
       const key = [
         ...this.camera.position.toArray(),
@@ -354,6 +346,16 @@ export class ViewerComponent implements OnInit, OnDestroy {
         width,
         height,
       ].join();
+
+      // Arrows keep a constant on-screen size and are thinned out on screen,
+      // so re-lay them out when the view, the paths or the highlight change.
+      if (pixelsPerUnit > 0 && (key !== arrowsKey || this.arrowsDirty)) {
+        arrowsKey = key;
+        this.arrowsDirty = false;
+        this.arrows.forEach((arrows) => arrows.update(pixelsPerUnit));
+        this.thinArrows(width, height);
+      }
+
       if (pixelsPerUnit > 0 && key !== viewKey) {
         viewKey = key;
         const bounds = visiblePlaneBounds(this.camera, this.controls.target);
@@ -529,6 +531,81 @@ export class ViewerComponent implements OnInit, OnDestroy {
       .subscribe();
   }
 
+  /**
+   * Thin arrows across all visible paths so parallel passes (pockets,
+   * v-carves) don't bury the view: a new arrow needs SPACING_PX of free
+   * screen around it. Every path's midpoint gets a chance before any
+   * second arrow. Arrows already on screen only give way once something is
+   * closer than KEEP_PX, so moving the view doesn't make them flicker.
+   * Distances (unlike a fixed grid) don't change when panning or rotating.
+   */
+  private thinArrows(width: number, height: number) {
+    const SPACING_PX = 62;
+    const KEEP_PX = 40;
+
+    const shownBefore = this.shownArrows;
+    this.shownArrows = new WeakMap();
+
+    type Candidate = {
+      arrows: DirectionArrows;
+      index: number;
+      level: number;
+      x: number;
+      y: number;
+    };
+    const kept: Candidate[] = [];
+    const fresh: Candidate[] = [];
+    const screen = new Vector3();
+    this.arrows.forEach((arrows) => {
+      if (!arrows.mesh.visible) return;
+      const before = shownBefore.get(arrows);
+      for (const { index, level, position } of arrows.visibleArrows()) {
+        screen.copy(position).project(this.camera);
+        const candidate = {
+          arrows,
+          index,
+          level,
+          x: ((screen.x + 1) / 2) * width,
+          y: ((1 - screen.y) / 2) * height,
+        };
+        (before?.has(index) ? kept : fresh).push(candidate);
+      }
+    });
+    kept.sort((a, b) => a.level - b.level);
+    fresh.sort((a, b) => a.level - b.level);
+
+    // Spatial hash of accepted arrows for quick "anything within r?" checks.
+    const buckets = new Map<string, Candidate[]>();
+    const bucketKey = (x: number, y: number) =>
+      `${Math.floor(x / SPACING_PX)},${Math.floor(y / SPACING_PX)}`;
+    const crowded = (c: Candidate, radius: number) => {
+      const bx = Math.floor(c.x / SPACING_PX);
+      const by = Math.floor(c.y / SPACING_PX);
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++)
+          for (const o of buckets.get(`${bx + dx},${by + dy}`) ?? [])
+            if (Math.hypot(o.x - c.x, o.y - c.y) < radius) return true;
+      return false;
+    };
+    const place = (c: Candidate, radius: number) => {
+      const show = !crowded(c, radius);
+      if (show) {
+        const key = bucketKey(c.x, c.y);
+        buckets.set(key, [...(buckets.get(key) ?? []), c]);
+        let shown = this.shownArrows.get(c.arrows);
+        if (!shown) {
+          shown = new Set();
+          this.shownArrows.set(c.arrows, shown);
+        }
+        shown.add(c.index);
+      }
+      c.arrows.setArrowVisible(c.index, show);
+    };
+
+    kept.forEach((c) => place(c, KEEP_PX));
+    fresh.forEach((c) => place(c, SPACING_PX));
+  }
+
   /** Find the deepest cut and update the colour scale and legend. */
   private updateDeepest(paths: CamPath[]) {
     let deepest = 0;
@@ -700,6 +777,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 });
                 // Unhighlighted paths are fully transparent; hide their arrows too.
                 arrows.mesh.visible = highlight;
+                this.arrowsDirty = true;
               }),
             );
 
