@@ -24,7 +24,7 @@ export function describeOperation(
       what = `pocket ${total(operation.startDepth, operation.depth, operation.steps)}`;
       break;
     case 'profile':
-      what = `profile ${operation.side ?? ''} ${total(operation.startDepth, operation.depth, operation.steps)}`;
+      what = `profile${partLabel(operation.mode)} ${operation.side ?? ''} ${total(operation.startDepth, operation.depth, operation.steps)}`;
       break;
     case 'flat':
       what = `flat ${total(0, operation.depthPerStep, operation.steps)}`;

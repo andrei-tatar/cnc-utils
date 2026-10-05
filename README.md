@@ -38,7 +38,7 @@ End mills and V-bits (angle and tip diameter). Feed rate, plunge rate and spindl
 
 | Operation | Tool | |
 | --- | --- | --- |
-| profile | any | cut along the outline — outside, inside or on the line; climb or conventional; optional holding tabs |
+| profile | any | cut along the outline — outside, inside or on the line; climb or conventional; optional holding tabs. Profile the outlines and holes, only the holes, or the outlines with holes ignored |
 | pocket | any | clear the inside of a shape in depth steps |
 | flat | any | surface an area with parallel passes along X or Y |
 | v-carve | V-bit | carve with a V-bit; the depth follows the shape's width, with sharp corners, a max depth and optional flat-bottom clearing. Carve the outlines minus their holes, only the cuts around the holes (the same cuts, growing out from each hole and stopping halfway to the outer outline — e.g. a groove around letters cut out of a sign), or the outlines with holes ignored |

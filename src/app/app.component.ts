@@ -502,6 +502,7 @@ export class AppComponent implements OnInit, OnDestroy {
                             tabCount: op.tabCount,
                             tabWidth: op.tabWidth,
                             tabHeight: op.tabHeight,
+                            mode: op.mode ?? 'both',
                           })
                           .pipe(
                             map((r) => toolGcode.concat(GCodeBuilder.clone(r))),

@@ -2,6 +2,8 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 
 export interface ModelType {
   type?: 'profile';
+  /** Which part of the shape to profile (see ShapePart). */
+  mode?: 'both' | 'holes' | 'contours';
   startDepth: number;
   depth: number;
   steps: number;
@@ -21,6 +23,20 @@ const hideUnlessTabs = (field: FormlyFieldConfig) =>
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
+    {
+      key: 'mode',
+      type: 'enum',
+      defaultValue: 'both',
+      props: {
+        label: 'profile',
+        required: true,
+        options: [
+          { value: 'both', label: 'outlines and holes' },
+          { value: 'holes', label: 'holes only' },
+          { value: 'contours', label: 'outlines only, holes ignored' },
+        ],
+      },
+    },
     {
       key: 'side',
       type: 'enum',
