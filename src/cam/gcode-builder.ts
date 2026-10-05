@@ -68,6 +68,16 @@ export class GCodeBuilder {
     return this;
   }
 
+  /**
+   * The tool for what follows. When the program is built, a tool change
+   * (retract, then `T<n> M6`) is emitted wherever the tool differs from the
+   * previous one, and for the first tool so it's loaded before cutting.
+   */
+  useTool(toolNumber: number, label: string) {
+    this._instructions.push({ type: 'tool', toolNumber, label });
+    return this;
+  }
+
   pause() {
     this._instructions.push({ type: 'pause' });
     return this;
@@ -92,7 +102,8 @@ export class GCodeBuilder {
       z: number | null = null,
       feedRate: number | null = null,
       carveFeedRate = options.carveFeedRate,
-      plungeFeedRate = options.plungeFeedRate;
+      plungeFeedRate = options.plungeFeedRate,
+      currentTool: number | null = null;
 
     for (const instruction of this._instructions) {
       switch (instruction.type) {
@@ -139,6 +150,18 @@ export class GCodeBuilder {
 
         case 'pause':
           gcode.push('M00');
+          break;
+
+        case 'tool':
+          // Also at the start, so the right tool is loaded before cutting.
+          if (instruction.toolNumber !== currentTool) {
+            move('G0', { z: options.safetyHeight });
+            gcode.push(
+              `; tool change: T${instruction.toolNumber} ${instruction.label}`,
+            );
+            gcode.push(`T${instruction.toolNumber} M6`);
+          }
+          currentTool = instruction.toolNumber;
           break;
       }
     }
@@ -203,4 +226,5 @@ type PathInstruction =
   | { type: 'plunge-feedrate'; feedRate: number }
   | { type: 'model'; model: string }
   | { type: 'stop-program' }
-  | { type: 'pause' };
+  | { type: 'pause' }
+  | { type: 'tool'; toolNumber: number; label: string };

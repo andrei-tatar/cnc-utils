@@ -28,6 +28,11 @@ export function gcodeToPaths(gcode: string): CamPath[] {
 
     const [instruction, ...coords] = line.split(' ');
 
+    // Tool select / change ("T2 M6"): nothing to draw.
+    if (/^T\d+$/.test(instruction)) {
+      continue;
+    }
+
     let type: CamPath['type'];
     switch (instruction) {
       case 'G0':
@@ -41,6 +46,9 @@ export function gcodeToPaths(gcode: string): CamPath[] {
         continue;
       case 'M00':
         // pause; nothing to show
+        continue;
+      case 'M6':
+        // tool change on its own line; nothing to show
         continue;
 
       default:

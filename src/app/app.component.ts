@@ -37,7 +37,15 @@ import worker from '../worker';
 import { GCodeBuilder } from '../cam/gcode-builder';
 import { gcodeToPaths } from '../cam/gcode-viewer';
 import { getModelMetadata, loadModelFromMetadata } from './store';
+import { toolLabel } from './model-editor/tools';
 import { deepEqual, readFile } from '../util';
+
+/** How an operation's tool appears in the G-code. */
+type ToolInfo = {
+  /** Position in the tools list, from 1 (T1, T2, …). */
+  number: number;
+  label: string;
+};
 
 type VCarveSource = {
   shapeId: string;
@@ -315,12 +323,21 @@ export class AppComponent implements OnInit, OnDestroy {
               );
               const effectiveShapeId = source ? source.shapeId : shapeId;
 
+              // Tools are numbered by their position in the tools list.
+              const toolInfo: ToolInfo | null = tool
+                ? {
+                    number: tools.indexOf(tool) + 1,
+                    label: toolLabel(tool),
+                  }
+                : null;
+
               const existing = ctx.find((e) => e.id === id);
               if (existing) {
                 existing.operationParameters$.next(operationParameters);
                 existing.shapeId$.next(effectiveShapeId);
                 existing.toolParameters$.next(toolParameters);
                 existing.source$.next(source);
+                existing.toolInfo$.next(toolInfo);
                 return existing;
               }
 
@@ -330,6 +347,7 @@ export class AppComponent implements OnInit, OnDestroy {
               const shapeId$ = new BehaviorSubject(effectiveShapeId);
               const toolParameters$ = new BehaviorSubject(toolParameters);
               const source$ = new BehaviorSubject(source);
+              const toolInfo$ = new BehaviorSubject(toolInfo);
 
               const shape$ = combineLatest([
                 shapeId$.pipe(distinctUntilChanged()),
@@ -345,7 +363,7 @@ export class AppComponent implements OnInit, OnDestroy {
                 ),
               );
 
-              const result$ = combineLatest([
+              const routed$ = combineLatest([
                 shape$,
                 operationParameters$.pipe(
                   distinctUntilChanged(
@@ -490,6 +508,26 @@ export class AppComponent implements OnInit, OnDestroy {
 
                   return of(new GCodeBuilder());
                 }),
+              );
+
+              // Tag the routed G-code with its tool afterwards, so renumbering
+              // tools (reordering the list) doesn't re-run the routing.
+              const result$ = combineLatest([
+                routed$,
+                toolInfo$.pipe(
+                  distinctUntilChanged(
+                    (a, b) => a === b,
+                    (s) => JSON.stringify(s),
+                  ),
+                ),
+              ]).pipe(
+                map(([builder, info]) =>
+                  info
+                    ? new GCodeBuilder()
+                        .useTool(info.number, info.label)
+                        .concat(builder)
+                    : builder,
+                ),
                 share({
                   connector: () => new ReplaySubject(1),
                   resetOnRefCountZero: () => timer(0),
@@ -498,6 +536,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
               return {
                 id,
+                toolInfo$,
                 operationParameters$,
                 toolParameters$,
                 result$,
@@ -513,6 +552,7 @@ export class AppComponent implements OnInit, OnDestroy {
           toolParameters$: BehaviorSubject<ToolParameters | null>;
           shapeId$: BehaviorSubject<string>;
           source$: BehaviorSubject<VCarveSource | null>;
+          toolInfo$: BehaviorSubject<ToolInfo | null>;
           result$: Observable<GCodeBuilder>;
         }>,
       ),
