@@ -59,7 +59,7 @@ type VCarveSource = {
   vAngle: number;
   tipDiameter: number;
   startDepth: number;
-  maxDepth: number;
+  maxDepth: number | null;
   beyondCone: boolean;
   mode: 'both' | 'holes' | 'contours';
 };
@@ -301,7 +301,7 @@ export class AppComponent implements OnInit, OnDestroy {
       vAngle: tool.vAngle,
       tipDiameter: tool.tipDiameter,
       startDepth: vcarve.startDepth,
-      maxDepth: vcarve.maxDepth,
+      maxDepth: vcarve.unlimitedDepth ? null : vcarve.maxDepth,
       beyondCone: AppComponent.clearedFirst(vcarve.id, operations, tools),
       mode: vcarve.mode ?? 'both',
     };
@@ -530,9 +530,11 @@ export class AppComponent implements OnInit, OnDestroy {
                             vAngle,
                             tipDiameter,
                             startDepth: op.startDepth,
-                            maxDepth: op.maxDepth,
+                            maxDepth: op.unlimitedDepth ? null : op.maxDepth,
                             stepover: op.stepover,
-                            clearFlatBottom: op.clearFlatBottom,
+                            // Without a max depth there's no flat bottom.
+                            clearFlatBottom:
+                              !op.unlimitedDepth && op.clearFlatBottom,
                             sharpCorners: op.sharpCorners ?? true,
                             sharpCornerAngle: op.sharpCornerAngle ?? 150,
                             beyondCone,

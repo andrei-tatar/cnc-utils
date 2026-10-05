@@ -30,7 +30,9 @@ export function describeOperation(
       what = `flat ${total(0, operation.depthPerStep, operation.steps)}`;
       break;
     case 'v-carve':
-      what = `v-carve${partLabel(operation.mode)} ≤${mm(operation.maxDepth ?? 0)}`;
+      what = `v-carve${partLabel(operation.mode)} ${
+        operation.unlimitedDepth ? 'full V' : `≤${mm(operation.maxDepth ?? 0)}`
+      }`;
       break;
     case 'v-carve-clear':
       what = 'v-carve clearing';

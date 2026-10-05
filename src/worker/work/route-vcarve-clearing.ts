@@ -42,7 +42,8 @@ export async function routeVCarveClearing(
     vAngle: number;
     tipDiameter: number;
     startDepth: number;
-    maxDepth: number;
+    /** Null: no limit (clear down to the deepest point of the V). */
+    maxDepth: number | null;
     /** The v-carve will go below its cone, so clear that deep too. */
     beyondCone?: boolean;
     /** The v-carve's mode: clear the same part of the shape. */

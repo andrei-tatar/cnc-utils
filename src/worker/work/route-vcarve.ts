@@ -35,7 +35,8 @@ export async function routeVCarve(
     vAngle: number;
     tipDiameter: number;
     startDepth: number;
-    maxDepth: number;
+    /** Null: no limit, a pointed V everywhere. */
+    maxDepth: number | null;
     stepover: number;
     clearFlatBottom: boolean;
     sharpCorners: boolean;
