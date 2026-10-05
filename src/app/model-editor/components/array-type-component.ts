@@ -161,6 +161,28 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
       overflow: hidden;
     }
 
+    .issue-chip {
+      font-size: 0.7rem;
+      font-weight: 600;
+      line-height: 1;
+      padding: 3px 7px;
+      border-radius: 999px;
+      white-space: nowrap;
+      color: var(--bs-danger-text-emphasis);
+      background: var(--bs-danger-bg-subtle);
+      border: 1px solid var(--bs-danger-border-subtle);
+    }
+
+    // Doubled class: wins over .item--expanded so an open item stays red.
+    .item.item--invalid {
+      border-color: var(--bs-danger-border-subtle);
+      box-shadow: inset 3px 0 0 var(--bs-danger);
+
+      > .item_header {
+        background: color-mix(in srgb, var(--bs-danger) 6%, transparent);
+      }
+    }
+
     .item--expanded {
       border-color: color-mix(in srgb, var(--accent) 55%, var(--editor-border));
       box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
@@ -289,6 +311,18 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
         }
         <span class="list_title">{{ props.label }}</span>
         <span class="list_count">{{ field.fieldGroup?.length ?? 0 }}</span>
+        @if (invalidCount; as count) {
+          <span
+            class="issue-chip"
+            [title]="
+              count +
+              ' ' +
+              (count === 1 ? itemLabel : props.label) +
+              ' need attention'
+            "
+            >⚠ {{ count }} to fix</span
+          >
+        }
         <span class="list_spacer"></span>
         <button
           class="btn btn-sm add-button"
@@ -316,9 +350,11 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
         (cdkDropListDropped)="drop($event)"
       >
         @for (field of field.fieldGroup; track $index) {
+          @let problems = issues(field);
           <div
             class="item"
             [class.item--expanded]="field.model.expanded"
+            [class.item--invalid]="problems.length"
             cdkDrag
           >
             <div class="item_header" (click)="toggleExpanded($index)">
@@ -349,6 +385,15 @@ const COLLAPSED_STORAGE_KEY = 'ui.collapsedSections';
               >
               @if (itemType(field.model); as type) {
                 <span class="item_type">{{ type }}</span>
+              }
+              @if (problems.length) {
+                <span
+                  class="issue-chip"
+                  role="img"
+                  [attr.aria-label]="'Needs attention: ' + problems.join(', ')"
+                  [title]="'Needs attention: ' + problems.join(', ')"
+                  >⚠ {{ problems.length }}</span
+                >
               }
               @if (field.props?.['removable'] !== false) {
                 <button
@@ -395,6 +440,37 @@ export class ArrayTypeComponent extends FieldArrayType implements OnInit {
 
   get isValid() {
     return this.field.fieldGroup?.every((v) => v.formControl?.valid);
+  }
+
+  get invalidCount(): number {
+    return (this.field.fieldGroup ?? []).filter((f) => f.formControl?.invalid)
+      .length;
+  }
+
+  /**
+   * Labels of the visible fields in an item that need fixing. A nested list
+   * with problems is reported by its own label ("transforms").
+   */
+  issues(item: FormlyFieldConfig): string[] {
+    const found: string[] = [];
+    const walk = (field: FormlyFieldConfig) => {
+      if (field.hide) {
+        return;
+      }
+      if (field !== item && field.type === 'repeat') {
+        if (field.formControl?.invalid) {
+          found.push(String(field.props?.label ?? field.key));
+        }
+        return;
+      }
+      if (field.fieldGroup?.length) {
+        field.fieldGroup.forEach(walk);
+      } else if (field.formControl?.invalid && field.props?.label) {
+        found.push(field.props.label);
+      }
+    };
+    walk(item);
+    return found;
   }
 
   ngOnInit() {

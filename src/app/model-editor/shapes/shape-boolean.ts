@@ -1,5 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
-import { shapeLabel } from './describe';
+import { allShapes, shapeLabel } from './describe';
+import { AbstractControl } from '@angular/forms';
 import { ModelType as ShapeModelType } from '../shapes';
 
 export interface ModelType {
@@ -12,6 +13,16 @@ export interface ModelType {
 
 const selectShapeCommonField = {
   type: 'enum',
+  validators: {
+    shapeExists: {
+      expression: (control: AbstractControl, field: FormlyFieldConfig) =>
+        !control.value ||
+        allShapes(field).some(
+          (s) => s.id === control.value && s.id !== field.model?.id,
+        ),
+      message: 'This shape was deleted — pick another one',
+    },
+  },
   expressions: {
     'props.options': (field: FormlyFieldConfig) => {
       const shapes: ShapeModelType['shapes'] =

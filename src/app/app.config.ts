@@ -13,7 +13,7 @@ import {
   ReactiveFormsModule,
   ValidationErrors,
 } from '@angular/forms';
-import { FormlyModule } from '@ngx-formly/core';
+import { FormlyFieldConfig, FormlyModule } from '@ngx-formly/core';
 import { FormlyBootstrapModule } from '@ngx-formly/bootstrap';
 import { ArrayTypeComponent } from './model-editor/components/array-type-component';
 import { FileTypeComponent } from './model-editor/components/file-type-component';
@@ -58,7 +58,23 @@ export const appConfig: ApplicationConfig = {
         ],
         validationMessages: [
           { name: 'whole-number', message: 'Must be a whole number' },
+          { name: 'required', message: 'Required' },
+          {
+            name: 'min',
+            message: (_: unknown, field: FormlyFieldConfig) =>
+              `Must be at least ${field.props?.min}`,
+          },
+          {
+            name: 'max',
+            message: (_: unknown, field: FormlyFieldConfig) =>
+              `Must be at most ${field.props?.max}`,
+          },
         ],
+        extras: {
+          // Show problems right away (not only after a field is touched), so
+          // e.g. an operation whose tool was deleted is flagged on load.
+          showError: (field) => !!field.formControl?.invalid,
+        },
       }),
     ),
     importProvidersFrom(FormlyBootstrapModule),

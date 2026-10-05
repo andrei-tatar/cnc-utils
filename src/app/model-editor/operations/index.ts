@@ -1,3 +1,4 @@
+import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { allShapes, shapeLabel } from '../shapes/describe';
 import { allTools, toolLabel } from '../tools';
@@ -101,6 +102,14 @@ export const field: FormlyFieldConfig = {
           label: 'tool',
           required: true,
         },
+        validators: {
+          toolExists: {
+            expression: (control: AbstractControl, field: FormlyFieldConfig) =>
+              !control.value ||
+              allTools(field).some((t) => t.id === control.value),
+            message: 'This tool was deleted — pick another one',
+          },
+        },
         expressions: {
           'props.options': (field: FormlyFieldConfig) =>
             allTools(field).map((tool) => ({
@@ -115,6 +124,14 @@ export const field: FormlyFieldConfig = {
         props: {
           label: 'shape',
           required: true,
+        },
+        validators: {
+          shapeExists: {
+            expression: (control: AbstractControl, field: FormlyFieldConfig) =>
+              !control.value ||
+              allShapes(field).some((s) => s.id === control.value),
+            message: 'This shape was deleted — pick another one',
+          },
         },
         expressions: {
           'props.options': (field: FormlyFieldConfig) => {
@@ -132,6 +149,24 @@ export const field: FormlyFieldConfig = {
         props: {
           label: 'type',
           required: true,
+        },
+        validators: {
+          bitType: {
+            expression: (
+              control: AbstractControl,
+              field: FormlyFieldConfig,
+            ) => {
+              const required = requiredBitType[control.value];
+              const tool = allTools(field).find(
+                (t) => t.id === field.model?.toolId,
+              );
+              return (
+                !required || !tool || (tool.bitType ?? 'end-mill') === required
+              );
+            },
+            message: (_: unknown, field: FormlyFieldConfig) =>
+              `${field.formControl?.value} needs a ${requiredBitType[field.formControl?.value]} tool`,
+          },
         },
         expressions: {
           'props.options': (field: FormlyFieldConfig) => {

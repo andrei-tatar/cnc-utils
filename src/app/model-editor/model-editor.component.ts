@@ -7,7 +7,12 @@ import {
   OnInit,
   Output,
 } from '@angular/core';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import {
+  AbstractControl,
+  FormArray,
+  FormGroup,
+  ReactiveFormsModule,
+} from '@angular/forms';
 import { FormlyFieldConfig, FormlyModule } from '@ngx-formly/core';
 import { debounceTime, Subject, takeUntil } from 'rxjs';
 import { ModelType, ModelFieldConfig } from './model';
@@ -44,6 +49,10 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.form.valueChanges
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => revalidate(this.form));
+
+    this.form.valueChanges
       .pipe(debounceTime(100), takeUntil(this.destroy$))
       .subscribe((v) => this.modelChange.next(v as ModelType));
   }
@@ -51,4 +60,16 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.destroy$.next(1);
   }
+}
+
+/**
+ * Re-run every validator, bottom-up, without emitting events. Validators that
+ * look at other parts of the model (does this operation's tool still exist?)
+ * don't re-run on their own when only that other part changes.
+ */
+function revalidate(control: AbstractControl) {
+  if (control instanceof FormGroup || control instanceof FormArray) {
+    Object.values(control.controls).forEach(revalidate);
+  }
+  control.updateValueAndValidity({ onlySelf: true, emitEvent: false });
 }
