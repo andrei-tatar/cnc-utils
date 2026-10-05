@@ -12,7 +12,7 @@ import { CamShape, CamPoint } from '../../cam/types';
 import { getDistance, pointsEqual } from '../../util';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { getCentroid } from './utils';
-import { enterCut } from '../../cam/ramp';
+import { enterCut, rampWarning } from '../../cam/ramp';
 
 const PRECISION = 0.01;
 const MITER_LIMIT = 2;
@@ -46,6 +46,8 @@ export async function routePocketHole(
   const groups = await groupShapes(input);
   const sorted = sortPaths(groups, start);
 
+  // How much path each ramp had (see enterCut).
+  const reaches: Array<number | null> = [];
   for (const shape of sorted) {
     const outlines = await getShapeOutlines(shape, { ...options, start });
 
@@ -88,13 +90,15 @@ export async function routePocketHole(
 
           if (builder.isAtSafetyHeight) {
             // Ramp along this loop, from the level above.
-            enterCut(
-              builder,
-              outlinePoints,
-              true,
-              -(depth - options.depthPerStep),
-              -depth,
-              options.rampAngle ?? null,
+            reaches.push(
+              enterCut(
+                builder,
+                outlinePoints,
+                true,
+                -(depth - options.depthPerStep),
+                -depth,
+                options.rampAngle ?? null,
+              ),
             );
           } else {
             builder.carveTo(pt.x, pt.y);
@@ -114,6 +118,11 @@ export async function routePocketHole(
   }
 
   sorted.forEach((s) => s.delete());
+
+  const warning = rampWarning(reaches, options.toolSize);
+  if (warning) {
+    builder.warn(warning);
+  }
 
   return builder;
 }

@@ -17,6 +17,7 @@ import { generateId } from '../../../util';
 import { NgbCollapseModule, NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { rootModel } from '../shapes/describe';
 import { ConfirmDialogComponent } from './confirm-dialog.component';
+import { ItemWarnings } from '../../item-warnings';
 import {
   readCollapsedSections,
   writeCollapsedSections,
@@ -219,6 +220,28 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
       color: var(--bs-danger-text-emphasis);
       background: var(--bs-danger-bg-subtle);
       border: 1px solid var(--bs-danger-border-subtle);
+    }
+
+    .warning-chip {
+      font-size: 0.7rem;
+      font-weight: 600;
+      line-height: 1;
+      padding: 3px 7px;
+      border-radius: 999px;
+      white-space: nowrap;
+      color: var(--bs-warning-text-emphasis);
+      background: var(--bs-warning-bg-subtle);
+      border: 1px solid var(--bs-warning-border-subtle);
+    }
+
+    .item_warning {
+      font-size: 0.8rem;
+      margin: 0 0 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      color: var(--bs-warning-text-emphasis);
+      background: var(--bs-warning-bg-subtle);
+      border: 1px solid var(--bs-warning-border-subtle);
     }
 
     // Doubled class: wins over .item--expanded so an open item stays red.
@@ -453,6 +476,7 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
       >
         @for (field of field.fieldGroup; track $index) {
           @let problems = issues(field);
+          @let notes = itemWarnings(field.model);
           <div
             class="item"
             [class.item--expanded]="field.model.expanded"
@@ -496,6 +520,20 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
                   [attr.aria-label]="'Needs attention: ' + problems.join(', ')"
                   [title]="'Needs attention: ' + problems.join(', ')"
                   >⚠ {{ problems.length }}</span
+                >
+              }
+              @if (notes.length && !problems.length) {
+                <span
+                  class="warning-chip"
+                  role="img"
+                  [attr.aria-label]="'Warning: ' + notes.join('; ')"
+                  [title]="
+                    notes.join(
+                      '
+'
+                    )
+                  "
+                  >⚠</span
                 >
               }
               @if (toggle; as t) {
@@ -559,6 +597,9 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
             </div>
 
             <div class="item_body" [class.visible]="field.model.expanded">
+              @for (note of notes; track note) {
+                <div class="item_warning" role="note">⚠ {{ note }}</div>
+              }
               <formly-field [field]="field"></formly-field>
             </div>
           </div>
@@ -576,7 +617,13 @@ export class ArrayTypeComponent
   implements OnInit, AfterViewInit, OnDestroy
 {
   private modals = inject(NgbModal);
+  private warnings = inject(ItemWarnings);
   collapsed = false;
+
+  /** Warnings from generating the G-code for an item (see ItemWarnings). */
+  itemWarnings(model: any): string[] {
+    return (model?.id && this.warnings.byId()[model.id]) || [];
+  }
 
   @ViewChild('header', { static: true })
   private header!: ElementRef<HTMLElement>;

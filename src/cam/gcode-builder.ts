@@ -92,6 +92,26 @@ export class GCodeBuilder {
     return this;
   }
 
+  /** Note a problem for the editor to show; not part of the G-code. */
+  warn(message: string) {
+    this._instructions.push({ type: 'warning', message });
+    return this;
+  }
+
+  /** The warnings, by the operation they were recorded under. */
+  warningsByOperation(): Record<string, string[]> {
+    const result: Record<string, string[]> = {};
+    let operation = '';
+    for (const instruction of this._instructions) {
+      if (instruction.type === 'source-operation') {
+        operation = instruction.id;
+      } else if (instruction.type === 'warning' && operation) {
+        (result[operation] ??= []).push(instruction.message);
+      }
+    }
+    return result;
+  }
+
   concat(other: GCodeBuilder): GCodeBuilder {
     const result = new GCodeBuilder();
     result._instructions = this._instructions.concat(other._instructions);
@@ -208,6 +228,9 @@ export class GCodeBuilder {
           gcode.push('M00');
           break;
 
+        case 'warning':
+          break;
+
         case 'tool':
           // Also at the start, so the right tool is loaded before cutting.
           if (emitToolChanges && instruction.toolNumber !== currentTool) {
@@ -298,6 +321,7 @@ type PathInstruction =
   | { type: 'model'; model: string }
   | { type: 'stop-program' }
   | { type: 'pause' }
+  | { type: 'warning'; message: string }
   | {
       type: 'tool';
       toolNumber: number;

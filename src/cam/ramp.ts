@@ -54,7 +54,10 @@ export function rampMoves(
 /**
  * Get the bit to Z `to` at the start of `points` (from safe height): travel
  * there, then plunge, or ramp from `from` when `rampAngle` is set (see
- * rampMoves for `maxLength`).
+ * rampMoves for `maxLength`). Returns how far a ramp takes the tool from
+ * where it would have plunged: the stretch it goes along, or a loop's
+ * diameter when it goes round and round (0: no room, it plunged); null when
+ * there was no ramp to make.
  */
 export function enterCut(
   builder: GCodeBuilder,
@@ -64,7 +67,7 @@ export function enterCut(
   to: number,
   rampAngle: number | null,
   maxLength = Infinity,
-) {
+): number | null {
   const ramp = rampAngle
     ? rampMoves(points, close, from, to, rampAngle, maxLength)
     : [];
@@ -78,6 +81,47 @@ export function enterCut(
       builder.carveTo(move.x, move.y, move.z);
     }
   }
+  if (!rampAngle || !(from - to > EPS)) {
+    return null;
+  }
+  if (!ramp.length) {
+    return 0;
+  }
+  const needed = (from - to) / Math.tan((rampAngle * Math.PI) / 180);
+  const length = pathLength(points, close);
+  if (!close) {
+    // Back and forth up to half the ramp's length out (see zigZagRamp).
+    return Math.min(length, needed / 2);
+  }
+  // Along the end of the loop, or back and forth on its last `maxLength`;
+  // round a small loop, it's the loop's size that counts.
+  const along = needed <= maxLength ? needed : maxLength;
+  return Math.min(along, length / Math.PI);
+}
+
+/**
+ * A warning for ramps that take the tool less than its radius from where it
+ * would have plunged (`reaches` from enterCut), so they hardly help; null
+ * when they all had room.
+ */
+export function rampWarning(
+  reaches: Array<number | null>,
+  toolSize: number,
+): string | null {
+  const ramps = reaches.filter((r): r is number => r !== null);
+  const short = ramps.filter((r) => r < toolSize / 2 - EPS);
+  if (!short.length) {
+    return null;
+  }
+  const plunged = short.filter((r) => r === 0).length;
+  const shuffled = short.length - plunged;
+  const parts = [
+    shuffled &&
+      `${shuffled} of ${ramps.length} ramps have less than ${toolSize / 2} mm (the tool's radius) to move along, so they're close to plunging`,
+    plunged &&
+      `${plunged} of ${ramps.length} ramps have no room at all and plunge`,
+  ].filter(Boolean);
+  return `${parts.join('; ')}.`;
 }
 
 function pathLength(points: CamPoint[], close: boolean) {
