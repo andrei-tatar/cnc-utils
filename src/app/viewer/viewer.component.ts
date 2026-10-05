@@ -41,6 +41,7 @@ import {
   BehaviorSubject,
   debounceTime,
   distinctUntilChanged,
+  fromEvent,
   map,
   merge,
   Observable,
@@ -56,6 +57,7 @@ import {
 } from 'rxjs';
 
 import { AdaptiveGrid } from './helpers/adaptive-grid';
+import { loadView, saveView } from './helpers/saved-view';
 import { DEPTH_GRADIENT_CSS, depthColor } from './helpers/depth-colors';
 import {
   formatMm,
@@ -323,6 +325,35 @@ export class ViewerComponent implements OnInit, OnDestroy {
     // Zoom towards what's under the cursor, not the middle of the screen.
     this.controls.zoomToCursor = true;
     this.controls.addEventListener('start', () => (this.autoFit = false));
+
+    // Restore the view from the last visit, and remember it as it changes
+    // (orbiting, panning, zooming, fit, top view and the view cube all go
+    // through the controls).
+    const saved = loadView();
+    if (saved) {
+      this.camera.position.fromArray(saved.position);
+      this.controls.target.fromArray(saved.target);
+      this.camera.zoom = saved.zoom;
+      this.camera.updateProjectionMatrix();
+      this.controls.update();
+      this.autoFit = saved.autoFit;
+    }
+    const save = () =>
+      saveView({
+        position: this.camera.position.toArray(),
+        target: this.controls.target.toArray(),
+        zoom: this.camera.zoom,
+        autoFit: this.autoFit,
+      });
+    let saveTimer: ReturnType<typeof setTimeout> | undefined;
+    this.controls.addEventListener('change', () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(save, 300);
+    });
+    // Don't lose a change made just before leaving or reloading.
+    fromEvent(window, 'pagehide')
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(save);
 
     const grid = new AdaptiveGrid();
     scene.add(grid);
