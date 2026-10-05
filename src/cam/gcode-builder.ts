@@ -32,8 +32,8 @@ export class GCodeBuilder {
     return this;
   }
 
-  carveTo(x: number, y: number) {
-    this._instructions.push({ type: 'carve', to: { x, y } });
+  carveTo(x: number, y: number, z?: number) {
+    this._instructions.push({ type: 'carve', to: { x, y }, z });
     return this;
   }
 
@@ -104,7 +104,7 @@ export class GCodeBuilder {
           break;
 
         case 'carve':
-          move('G1', instruction.to, carveFeedRate);
+          move('G1', { ...instruction.to, z: instruction.z }, carveFeedRate);
           break;
 
         case 'source-shape':
@@ -186,7 +186,7 @@ type PathInstruction =
   | { type: 'plunge'; depth: number }
   | { type: 'travel'; to: CamPoint }
   | { type: 'safety-height' }
-  | { type: 'carve'; to: CamPoint }
+  | { type: 'carve'; to: CamPoint; z?: number }
   | { type: 'source-shape'; id: string }
   | { type: 'carve-feedrate'; feedRate: number }
   | { type: 'plunge-feedrate'; feedRate: number }
