@@ -17,14 +17,18 @@ Deployment is automated by GitHub Actions (`.github/workflows/firebase-hosting-*
 
 ## Architecture
 
-The whole app is a set of RxJS observable pipelines wired together in `src/app/app.component.ts`. There is no NgRx/state-management library — the reactive graph *is* the state.
+The whole app is a set of RxJS observable pipelines. There is no NgRx/state-management library — the reactive graph *is* the state. Where things live:
+
+- `src/app/services/` — `ModelStore` (the `model$` source of truth, localStorage persistence, loading a `.nc` file), `CamService` (wires model → shapes → G-code → toolpaths, plus preview highlight/hidden shapes and the G-code download), `WorkTracker` (`working$` / `isWorking$`).
+- `src/app/pipeline/` — framework-free pipeline functions: `shapes.ts` (`generateShapesFromModel`, transform chaining), `shape-svg.ts` (`createSvgFromShape`), `gcode.ts` (`generateGcodeFromOperations`), `operation-inputs.ts` (resolves an operation against its tool/overrides/v-carve source), `route-operation.ts` (the per-type worker call), `vcarve-source.ts`, `geometry-settings.ts`, `preview.ts`, and shared operators (`shareLatest`, `distinctJson`, `distinctItems`) in `operators.ts`.
+- `src/app/app.component.ts` is layout only; `toolbar/` and `editor-divider/` (resizable split, width persisted) are presentational components. File download / `.nc` parsing helpers are in `src/app/project-file.ts`.
 
 ### The data flow
 
 ```
-model$ (ModelType)  ──►  shapes$ (CamShape[])  ──►  gcode$ (string)  ──►  drawPaths$
+model$ (ModelType)  ──►  shapes$ (CamShape[])  ──►  gcode$ (string)  ──►  paths$
    ▲                          │                          │
- form edits                drawShapes$              download / model metadata
+ form edits                 (viewer)                download / model metadata
 ```
 
 1. **`model$`** is the single source of truth: a `BehaviorSubject<ModelType>` persisted to `localStorage` under key `model`. `ModelType = { shapes, tools, operations }`; each operation references a tool (`toolId`) and a shape (`shapeId`). Older projects nested operations inside tools — `migrateModel()` in `model-editor/model.ts` upgrades them and must be applied to every model that's loaded (localStorage and `.nc` metadata).
@@ -50,9 +54,9 @@ The editor UI is **entirely generated from ngx-formly field configs** — there 
 
 - `shapes/`, `transforms/`, `operations/`, `tools/` each have an `index.ts` that aggregates its members into both a discriminated-union `ModelType` and a Formly `field` config.
 - Each individual shape/transform/operation file (e.g. `shape-circle.ts`, `transform-rotate.ts`, `operation-flat.ts`) exports a `ModelType` interface (with a `type` discriminator) and a `Definition` (`{ type, label, fieldGroup }`). The field group uses `expressions.hide` keyed on `model.type` so only the selected variant's fields show.
-- **To add a new shape/transform/operation:** create the file with its `ModelType` + `Definition`, then register it in the relevant `index.ts` (add to the union and the `[...]` array). For shapes, also add a case to `createSvgFromShape` in `app.component.ts` (unless it's handled like `boolean`); for operations, add a case to the `switch (op.type)` in `generateGcodeFromOperations` and, typically, a matching work function in `src/worker/work/` (see `operation-profile.ts` + `route-profile.ts` for a recent end-to-end example). Operations can depend on other operations: `v-carve-clear` borrows its shape, V-bit and depths from the referenced v-carve (`vCarveSource()` in `app.component.ts`), so it regenerates whenever that v-carve changes. Depth is normally capped at the V-bit's cone height (`vCarveGeometry`); when a clearing for the v-carve comes earlier in the list (`AppComponent.clearedFirst`), both go to the full max depth (`beyondCone`) — the shank then only moves through cleared space; shared V-groove geometry lives in `src/cam/vcarve-geometry.ts`.
+- **To add a new shape/transform/operation:** create the file with its `ModelType` + `Definition`, then register it in the relevant `index.ts` (add to the union and the `[...]` array). For shapes, also add a case to `createSvgFromShape` in `pipeline/shape-svg.ts` (unless it's handled like `boolean`); for operations, add a case to the `switch (op.type)` in `pipeline/route-operation.ts` and, typically, a matching work function in `src/worker/work/` (see `operation-profile.ts` + `route-profile.ts` for a recent end-to-end example). Operations can depend on other operations: `v-carve-clear` borrows its shape, V-bit and depths from the referenced v-carve (`vCarveSource()` in `pipeline/vcarve-source.ts`), so it regenerates whenever that v-carve changes. Depth is normally capped at the V-bit's cone height (`vCarveGeometry`); when a clearing for the v-carve comes earlier in the list (`clearedFirst` in `pipeline/vcarve-source.ts`), both go to the full max depth (`beyondCone`) — the shank then only moves through cleared space; shared V-groove geometry lives in `src/cam/vcarve-geometry.ts`.
 - Custom Formly types (`repeat`, `file`, `hidden`) and the `group` wrapper (a boxed, optionally collapsible keyless field group) live in `model-editor/components/` and are registered in `src/app/app.config.ts`, along with a `whole-number` validator.
-- Feeds & speeds (feed rate, plunge rate, ramp, ramp angle, spindle speed) are set per tool and can be overridden per operation (`tools/feeds-and-speeds.ts`). `generateGcodeFromOperations` strips the overrides from the operation parameters and merges them into the tool (`withOverrides`): ramp settings feed routing, while feeds and spindle speed only tag the G-code, so changing them doesn't re-route.
+- Feeds & speeds (feed rate, plunge rate, ramp, ramp angle, spindle speed) are set per tool and can be overridden per operation (`tools/feeds-and-speeds.ts`). `operationInputs` (`pipeline/operation-inputs.ts`) strips the overrides from the operation parameters and merges them into the tool (`withOverrides`): ramp settings feed routing, while feeds and spindle speed only tag the G-code, so changing them doesn't re-route.
 
 `src/app/model-editor/model.ts` derives the parameter types (`ShapeParameters`, `OperationParameters`, etc.) by `Omit`ing the bookkeeping fields (`id`, `expanded`, `name`, `transforms`, …) via the `OmitUnion` helper in `src/util.ts`.
 
@@ -65,7 +69,7 @@ The editor UI is **entirely generated from ngx-formly field configs** — there 
 
 ### Viewer (`src/app/viewer/viewer.component.ts`)
 
-Three.js renderer that draws `CamShape[]` (shape outlines) and `CamPath[]` (toolpaths, travel vs. carve colored differently), with a grid helper. Pure presentation — it consumes the observables from `AppComponent`.
+Three.js renderer that draws `CamShape[]` (shape outlines) and `CamPath[]` (toolpaths, travel vs. carve colored differently), with a grid helper. Pure presentation — it consumes the observables from `CamService`.
 
 ## Conventions & gotchas
 
@@ -73,5 +77,5 @@ Three.js renderer that draws `CamShape[]` (shape outlines) and `CamPath[]` (tool
 - Node 24.15+ (or 26+) is required (Angular 22): `.nvmrc` pins 24 for local work (`nvm use`); CI builds with Node 26.
 - The worker parses SVG with `@xmldom/xmldom`, which lacks `querySelectorAll`; `svg-import.ts` adds a tag-name-only version that three's `SVGLoader` needs.
 - IDs are generated with `generateId()` (random base64url) in `src/util.ts`; equality of params is checked with `deepEqual` / `JSON.stringify` in `distinctUntilChanged` to avoid redundant worker work.
-- When touching the reactive graph in `app.component.ts`, respect the `scan`-based memoization (mutate existing entries, create only for new ids) or you'll cause every operation to recompute on every keystroke.
+- When touching the reactive graph in `src/app/pipeline/`, respect the `scan`-based memoization (mutate existing entries, create only for new ids) or you'll cause every operation to recompute on every keystroke.
 - The worker contract is structural: a function exported from `src/worker/work/` is automatically callable as `worker.<name>()` with full types. Keep signatures serializable (structured-clone-able).

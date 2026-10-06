@@ -1,72 +1,25 @@
-<div class="layout" [class.resizing]="resizing">
+<div class="layout" [class.resizing]="resizing()">
   <aside class="editor" [style.width.px]="editorWidth()">
-    <header class="toolbar">
-      <span class="toolbar_title">CNC Utils</span>
-      @if (isWorking$ | async) {
-        <span class="working" role="status">
-          <span
-            class="spinner-border spinner-border-sm"
-            aria-hidden="true"
-          ></span>
-          Working…
-        </span>
-      }
-      <span class="toolbar_spacer"></span>
-      <button
-        class="btn btn-sm btn-outline-secondary toolbar_button"
-        type="button"
-        title="Load a project from a previously downloaded .nc file"
-        (click)="upload$.next(1)"
-      >
-        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M1.5 4V12.5h13V5.5H7.5L6 4z" />
-        </svg>
-        Load
-      </button>
-      <button
-        class="btn btn-sm btn-primary toolbar_button"
-        type="button"
-        title="Download the G-code (the project is embedded in it)"
-        [disabled]="isWorking$ | async"
-        (click)="download$.next(1)"
-      >
-        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
-        </svg>
-        G-code
-      </button>
-    </header>
+    <app-toolbar
+      [working]="(isWorking$ | async) ?? false"
+      (load)="store.open()"
+      (download)="cam.download()"
+    />
 
     <div class="editor_content">
       <app-model-editor
-        [model]="model$.value"
-        (modelChange)="model$.next($event)"
+        [model]="store.value"
+        (modelChange)="store.set($event)"
       />
     </div>
   </aside>
 
-  <div
-    class="divider"
-    role="separator"
-    aria-orientation="vertical"
-    aria-label="Resize editor"
-    tabindex="0"
-    [attr.aria-valuenow]="editorWidth()"
-    title="Drag to resize · double-click to reset"
-    (pointerdown)="startResize($event)"
-    (pointermove)="resize($event)"
-    (pointerup)="endResize($event)"
-    (pointercancel)="endResize($event)"
-    (lostpointercapture)="endResize($event)"
-    (dblclick)="setEditorWidth(DEFAULT_EDITOR_WIDTH)"
-    (keydown.arrowleft)="setEditorWidth(editorWidth() - 20)"
-    (keydown.arrowright)="setEditorWidth(editorWidth() + 20)"
-  ></div>
+  <app-editor-divider [(width)]="editorWidth" [(resizing)]="resizing" />
 
   <app-viewer
-    [shapes]="drawShapes$"
-    [paths]="drawPaths$"
-    [highlight]="(highlight$ | async) ?? NO_HIGHLIGHT"
-    [hiddenShapes]="(hiddenShapes$ | async) ?? []"
+    [shapes]="cam.shapes$"
+    [paths]="cam.paths$"
+    [highlight]="(cam.highlight$ | async) ?? NO_HIGHLIGHT"
+    [hiddenShapes]="(cam.hiddenShapes$ | async) ?? []"
   />
 </div>
