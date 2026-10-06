@@ -18,6 +18,7 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { getCentroid } from './utils';
+import { orderPoints } from '../../cam/travel-order';
 import { enterCut } from '../../cam/ramp';
 import { rasterLines, rasterPaths, staysInside } from '../../cam/raster';
 
@@ -48,6 +49,8 @@ export async function routePocketHole(
     rampAngle?: number | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
+    /** Pocket the separate areas in the order that keeps travel short. */
+    optimizeTravel?: boolean;
   },
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
@@ -57,7 +60,8 @@ export async function routePocketHole(
   builder.sourceShapeId(input?.[0]?.sourceShapeId);
 
   const groups = await groupShapes(input);
-  const sorted = sortPaths(groups, start);
+  const sorted =
+    options.optimizeTravel === false ? groups : sortPaths(groups, start);
 
   if (options.strategy === 'raster') {
     for (const shape of sorted) {
@@ -414,21 +418,10 @@ function sortPaths(input: PathsD[], start: CamPoint = { x: 0, y: 0 }) {
     }),
   );
 
-  const sortedShapes: PathsD[] = [];
-  const toSort = [...input];
-
-  while (toSort.length) {
-    const closestPathIndex = findClosestPointMapIndex(start, toSort, (i) =>
-      centers.get(i)!,
-    );
-
-    const closestPath = toSort[closestPathIndex];
-    sortedShapes.push(closestPath);
-    toSort.splice(closestPathIndex, 1);
-    start = centers.get(closestPath)!;
-  }
-
-  return sortedShapes;
+  return orderPoints(
+    input.map((paths) => ({ ...centers.get(paths)!, paths })),
+    start,
+  ).map(({ paths }) => paths);
 }
 
 function getPoints(path: PathD): CamPoint[] {

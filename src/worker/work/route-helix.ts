@@ -6,7 +6,7 @@ import {
 } from '../../cam/geometry';
 import { containingContours } from '../../cam/polygon-nesting';
 import { CamPoint, CamShape } from '../../cam/types';
-import { nearestFirst } from './route-drill';
+import { orderPoints } from '../../cam/travel-order';
 import { centerOf } from './shape-transforms';
 
 export type HelixOptions = {
@@ -28,6 +28,8 @@ export type HelixOptions = {
   /** Ring spacing, as a fraction of the tool diameter. */
   toolEngagement: number;
   geometry?: GeometrySettings;
+  /** Bore in the order that keeps travel short (default on). */
+  optimizeTravel?: boolean;
 };
 
 /** How far (mm) a round hole's points may be off a circle, plus 1 %. */
@@ -93,13 +95,16 @@ export async function routeHelix(
   const stepover =
     options.toolSize * Math.min(1, Math.max(0.05, options.toolEngagement));
 
-  const bores = boreHoles(input);
-  const centers = nearestFirst(
-    bores.map((b) => b.center),
-    { x: 0, y: 0 },
-  );
-  for (const center of centers) {
-    const bore = bores.find((b) => b.center === center)!;
+  const holes = boreHoles(input);
+  const bores =
+    options.optimizeTravel === false
+      ? holes
+      : orderPoints(
+          holes.map((bore) => ({ ...bore.center, bore })),
+          { x: 0, y: 0 },
+        ).map(({ bore }) => bore);
+  for (const bore of bores) {
+    const center = bore.center;
     const outer = bore.radius - toolRadius - Math.max(0, options.leaveStock);
     if (outer < -1e-9) {
       continue; // smaller than the tool

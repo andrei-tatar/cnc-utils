@@ -10,6 +10,7 @@ import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
 import { alongLoop, arcTo, enterCut, Resume, startingAt } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
+import { insideFirst, TravelStop, travelOrder } from '../../cam/travel-order';
 
 const EPS = 1e-6;
 
@@ -38,6 +39,8 @@ export async function routeProfile(
     rampAngle?: number | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
+    /** Cut the paths in the order that keeps travel short (default on). */
+    optimizeTravel?: boolean;
   },
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
@@ -113,7 +116,21 @@ export async function routeProfile(
       ),
     );
 
-  for (const polygon of polygons) {
+  const ordered =
+    options.optimizeTravel === false
+      ? polygons
+      : travelOrdered(polygons, {
+          ...options,
+          // Tabs are placed from a loop's first point: keep it.
+          tabs:
+            options.tabsEnabled &&
+            options.tabCount > 0 &&
+            options.tabHeight > 0,
+          // Open paths from loops keep their direction.
+          reversible: options.mode !== 'holes',
+        });
+
+  for (const polygon of ordered) {
     let points = polygon.points;
     // When ramping, each pass carries on from where the one before ended,
     // without lifting: round a loop, or back along an open path.
@@ -164,6 +181,53 @@ export async function routeProfile(
   }
 
   return builder;
+}
+
+/**
+ * The paths in the order that keeps the travel between them short, those
+ * inside a loop before it (so a part stays held until it's cut free). Loops
+ * start at their point nearest the tool, unless that would move their tabs;
+ * open paths may be cut either way round when `reversible`.
+ */
+function travelOrdered(
+  polygons: CamPolygon[],
+  options: {
+    tabs: boolean;
+    reversible: boolean;
+    steps: number;
+    rampAngle?: number | null;
+  },
+): CamPolygon[] {
+  const after = insideFirst(polygons);
+  // Ramped passes along an open path go back and forth: after an even
+  // number of them the tool is back at the start.
+  const endsWhereStarted = !!options.rampAngle && options.steps % 2 === 0;
+  const stops = polygons.map(({ points, close }, i): TravelStop => {
+    if (close) {
+      return { starts: options.tabs ? [points[0]] : points, after: after[i] };
+    }
+    const first = points[0];
+    const last = points[points.length - 1];
+    const starts = options.reversible ? [first, last] : [first];
+    return {
+      starts,
+      end: (start) =>
+        endsWhereStarted ? starts[start] : (starts[1 - start] ?? last),
+      after: after[i],
+    };
+  });
+  return travelOrder(stops, { x: 0, y: 0 }).map(({ index, start }) => {
+    const { points, close } = polygons[index];
+    if (!start) {
+      return polygons[index];
+    }
+    return {
+      close,
+      points: close
+        ? [...points.slice(start), ...points.slice(0, start)]
+        : [...points].reverse(),
+    };
+  });
 }
 
 /**

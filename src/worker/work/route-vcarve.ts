@@ -17,6 +17,7 @@ import {
   pointInPolygon,
 } from '../../cam/polygon-nesting';
 import { enterCut } from '../../cam/ramp';
+import { travelOrder } from '../../cam/travel-order';
 
 /**
  * Gets the bit down to `to` at the start of `path` (from safe height):
@@ -67,9 +68,12 @@ export async function routeVCarve(
     plug?: InlayPlug | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
+    /** Carve separate parts in the order that keeps travel short. */
+    optimizeTravel?: boolean;
   },
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
+  const optimizeTravel = options.optimizeTravel !== false;
   if (options.plug) {
     // An inlay plug: carve around the (mirrored) design instead.
     input = await inlayPlugShape(input, options.plug);
@@ -125,15 +129,21 @@ export async function routeVCarve(
       ? []
       : input
           .flatMap((s) => s.polygons)
-          .filter((p) => !p.close && p.points.length > 1);
+          .filter((p) => !p.close && p.points.length > 1)
+          .map((p) => p.points);
+  const openPaths = optimizeTravel
+    ? travelOrder(
+        openPolylines.map((points) => {
+          const ends = [points[0], points[points.length - 1]];
+          return { starts: ends, end: (start: number) => ends[1 - start] };
+        }),
+        position,
+      ).map(({ index, start }) =>
+        start ? [...openPolylines[index]].reverse() : openPolylines[index],
+      )
+    : openPolylines;
 
-  for (const polyline of openPolylines) {
-    const points =
-      getDistance(position, polyline.points[0]) <=
-      getDistance(position, polyline.points[polyline.points.length - 1])
-        ? polyline.points
-        : [...polyline.points].reverse();
-
+  for (const points of openPaths) {
     cutPath(builder, points, top, depthAt(maxInset), enter);
     position = points[points.length - 1];
   }
@@ -194,7 +204,9 @@ export async function routeVCarve(
   // Depth-first over the inset tree: each island is carved all the way down
   // before moving on, which keeps travel short and lets every island get its
   // own collapse pass.
-  const stack: Component[] = orderComponents(firstLevel, position)
+  const stack: Component[] = (
+    optimizeTravel ? orderComponents(firstLevel, position) : firstLevel
+  )
     .map((contours) => ({ contours, inset: firstInset, fromInset: tipRadius }))
     .reverse();
 

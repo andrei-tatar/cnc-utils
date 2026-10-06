@@ -55,6 +55,8 @@ export async function routeVCarveClearing(
     plug?: InlayPlug | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
+    /** Clear separate areas in the order that keeps travel short. */
+    optimizeTravel?: boolean;
   },
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
@@ -132,6 +134,7 @@ export async function routeVCarveClearing(
         depthPerStep: depth - previous,
         steps: 1,
         rampAngle: options.rampAngle,
+        optimizeTravel: options.optimizeTravel,
       },
     );
     builder = builder.concat(level);

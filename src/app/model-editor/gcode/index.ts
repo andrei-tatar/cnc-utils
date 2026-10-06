@@ -162,6 +162,16 @@ export const field: FormlyFieldConfig = {
       },
     },
     {
+      key: 'optimizeTravel',
+      type: 'boolean',
+      defaultValue: d.optimizeTravel,
+      props: {
+        label: 'shorten travel between cuts',
+        description:
+          "cut each operation's shapes nearest first (holes before the outline around them) instead of in the order they come",
+      },
+    },
+    {
       key: 'curveTolerance',
       type: 'number',
       defaultValue: d.curveTolerance,

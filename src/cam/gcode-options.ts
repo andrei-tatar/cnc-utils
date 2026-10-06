@@ -31,6 +31,12 @@ export type GcodeOptions = {
   /** Write cuts that follow a circle as arcs (G2 / G3) instead of many lines. */
   arcs: boolean;
   /**
+   * Within each operation, cut the shapes in the order (and from the
+   * points) that keeps the travel between them short, instead of as they
+   * come. Feeds routing, not the writing out.
+   */
+  optimizeTravel: boolean;
+  /**
    * Max distance (mm) between a curve (circle, arc, SVG, text) and the
    * polygon that stands in for it.
    */
@@ -59,6 +65,7 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   returnHome: false,
   decimals: 2,
   arcs: true,
+  optimizeTravel: true,
   curveTolerance: 0.01,
   geometryDecimals: 2,
   rapidRate: 3000,

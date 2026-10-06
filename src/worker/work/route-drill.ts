@@ -2,7 +2,7 @@ import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { containingContours } from '../../cam/polygon-nesting';
 import { CamPoint, CamShape } from '../../cam/types';
-import { getDistance } from '../../util';
+import { orderPoints } from '../../cam/travel-order';
 import { centerOf } from './shape-transforms';
 
 /** How far above the last peck's depth the bit comes back down quickly. */
@@ -30,12 +30,18 @@ export type DrillOptions = {
   /** Write canned cycles (G81/G82/G83/G73) instead of plain moves. */
   cycles: boolean;
   geometry?: GeometrySettings;
+  /** Drill in the order that keeps travel short (default on). */
+  optimizeTravel?: boolean;
 };
 
-/** The places to drill, nearest-first from the origin. */
+/**
+ * The places to drill, from the origin in the order that keeps travel short
+ * (or in the shape's order).
+ */
 export function drillPositions(
   input: CamShape[],
   drillAt: DrillOptions['drillAt'],
+  optimizeTravel = true,
 ): CamPoint[] {
   const polygons = input.flatMap((s) => s.polygons);
   const points = polygons
@@ -50,23 +56,7 @@ export function drillPositions(
       }
     });
   }
-  return nearestFirst(points, { x: 0, y: 0 });
-}
-
-/** Greedy nearest-neighbour order, to keep travel short. */
-export function nearestFirst(points: CamPoint[], start: CamPoint) {
-  const left = [...points];
-  const ordered: CamPoint[] = [];
-  let at = start;
-  while (left.length) {
-    let best = 0;
-    for (let i = 1; i < left.length; i++) {
-      if (getDistance(at, left[i]) < getDistance(at, left[best])) best = i;
-    }
-    at = left.splice(best, 1)[0];
-    ordered.push(at);
-  }
-  return ordered;
+  return optimizeTravel ? orderPoints(points, { x: 0, y: 0 }) : points;
 }
 
 export async function routeDrill(
@@ -87,7 +77,11 @@ export async function routeDrill(
   }
 
   builder.goToSafeHeight();
-  for (const hole of drillPositions(input, options.drillAt)) {
+  for (const hole of drillPositions(
+    input,
+    options.drillAt,
+    options.optimizeTravel,
+  )) {
     if (options.cycles) {
       builder.drillCycle({
         x: hole.x,

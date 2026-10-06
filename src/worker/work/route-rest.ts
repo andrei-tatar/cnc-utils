@@ -25,6 +25,8 @@ export type RestOptions = {
   steps: number;
   rampAngle?: number | null;
   geometry?: GeometrySettings;
+  /** Pocket separate areas in the order that keeps travel short. */
+  optimizeTravel?: boolean;
 };
 
 /**
@@ -80,5 +82,6 @@ export async function routeRest(
     strategy: 'offset',
     rampAngle: options.rampAngle,
     geometry: options.geometry,
+    optimizeTravel: options.optimizeTravel,
   });
 }

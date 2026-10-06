@@ -1,8 +1,8 @@
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { enterCut } from '../../cam/ramp';
-import { CamShape } from '../../cam/types';
-import { getDistance } from '../../util';
+import { travelOrder } from '../../cam/travel-order';
+import { CamPoint, CamShape } from '../../cam/types';
 import { inflate, orientContours, shapeRegion } from './regions';
 
 export type ChamferOptions = {
@@ -24,6 +24,8 @@ export type ChamferOptions = {
   direction: 'climb' | 'conventional';
   rampAngle?: number | null;
   geometry?: GeometrySettings;
+  /** Cut the loops in the order that keeps travel short (default on). */
+  optimizeTravel?: boolean;
 };
 
 /**
@@ -69,11 +71,13 @@ export async function routeChamfer(
     const path = await inflate(region, outward * offset);
     // `path` is the material grown (part) or the opening shrunk (hole).
     const loops = orientContours(path, materialOnRight === (outward === 1));
-    for (const loop of nearestLoopsFirst(loops, at)) {
+    const ordered =
+      options.optimizeTravel === false ? loops : loopsInTravelOrder(loops, at);
+    for (const loop of ordered) {
       builder.goToSafeHeight();
       const points = enterCut(
         builder,
-        startNearest(loop, at),
+        loop,
         true,
         0,
         -depth,
@@ -91,38 +95,13 @@ export async function routeChamfer(
   return builder;
 }
 
-function nearestLoopsFirst(
-  loops: { x: number; y: number }[][],
-  start: { x: number; y: number },
-) {
-  const left = [...loops];
-  const ordered = [];
-  let at = start;
-  while (left.length) {
-    let best = 0;
-    let bestDistance = Infinity;
-    left.forEach((loop, i) => {
-      const d = Math.min(...loop.map((p) => getDistance(at, p)));
-      if (d < bestDistance) {
-        bestDistance = d;
-        best = i;
-      }
-    });
-    const loop = left.splice(best, 1)[0];
-    ordered.push(loop);
-    at = loop[0];
-  }
-  return ordered;
-}
-
-/** The loop, starting at its point nearest `p`. */
-function startNearest<T extends { x: number; y: number }>(
-  loop: T[],
-  p: T | { x: number; y: number },
-) {
-  let best = 0;
-  loop.forEach((q, i) => {
-    if (getDistance(p, q) < getDistance(p, loop[best])) best = i;
-  });
-  return [...loop.slice(best), ...loop.slice(0, best)];
+/** The loops in the order that keeps travel short, each from its best start. */
+function loopsInTravelOrder(loops: CamPoint[][], from: CamPoint) {
+  return travelOrder(
+    loops.map((starts) => ({ starts })),
+    from,
+  ).map(({ index, start }) => [
+    ...loops[index].slice(start),
+    ...loops[index].slice(0, start),
+  ]);
 }

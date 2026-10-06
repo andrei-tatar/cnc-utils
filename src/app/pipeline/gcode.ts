@@ -46,6 +46,11 @@ export function generateGcodeFromOperations(
   working$: Observable<never>,
 ): Observable<Program> {
   const geometry$ = geometrySettings(model$);
+  const optimizeTravel$ = model$.pipe(
+    map(({ gcode }) => resolveGcodeOptions(gcode).optimizeTravel),
+    distinctUntilChanged(),
+    shareLatest(),
+  );
   return model$.pipe(
     scan(
       (ctx, model) =>
@@ -61,6 +66,7 @@ export function generateGcodeFromOperations(
             inputs,
             shapes,
             geometry$,
+            optimizeTravel$,
             working$,
           );
         }),
@@ -94,6 +100,7 @@ function createOperationEntry(
   inputs: OperationInputs,
   shapes: ShapeResults,
   geometry$: Observable<GeometrySettings>,
+  optimizeTravel$: Observable<boolean>,
   working$: Observable<never>,
 ): OperationEntry {
   const inputs$ = new BehaviorSubject(inputs);
@@ -116,6 +123,7 @@ function createOperationEntry(
     rest: input('rest').pipe(distinctJson()),
     beyondCone: input('beyondCone').pipe(distinctUntilChanged()),
     geometry: geometry$,
+    optimizeTravel: optimizeTravel$,
   }).pipe(switchMap((routing) => routeOperation(id, routing, working$)));
 
   // Tag the routed G-code with its tool afterwards, so renumbering tools

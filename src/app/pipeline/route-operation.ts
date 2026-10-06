@@ -17,6 +17,8 @@ export type RoutingInputs = {
   rest: RestSource | null;
   beyondCone: boolean;
   geometry: GeometrySettings;
+  /** Order each operation's cuts to keep the travel between them short. */
+  optimizeTravel: boolean;
 };
 
 /**
@@ -49,6 +51,7 @@ function route({
   rest,
   beyondCone,
   geometry,
+  optimizeTravel,
 }: RoutingInputs): Observable<GCodeBuilder> | null {
   // No (or a deleted) tool or shape: nothing to cut. Routing functions
   // expect at least one shape.
@@ -62,6 +65,7 @@ function route({
     case 'pocket':
       return worker.routePocketHole(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         toolEngagement: op.toolEngagement,
         leaveStock: op.leaveStock,
@@ -92,6 +96,7 @@ function route({
     case 'profile':
       return worker.routeProfile(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         side: op.side,
         direction: op.direction,
@@ -114,6 +119,7 @@ function route({
       }
       return worker.routeVCarve(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         vAngle,
         tipDiameter,
@@ -135,6 +141,7 @@ function route({
       }
       return worker.routeVCarveClearing(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         toolEngagement: op.toolEngagement,
         depthPerStep: op.depthPerStep,
@@ -156,6 +163,7 @@ function route({
       }
       return worker.routeVCarve(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         vAngle,
         tipDiameter,
@@ -174,6 +182,7 @@ function route({
     case 'drill':
       return worker.routeDrill(shape, {
         geometry,
+        optimizeTravel,
         drillAt: op.drillAt ?? 'centers',
         startDepth: op.startDepth,
         depth: op.depth,
@@ -194,6 +203,7 @@ function route({
       }
       return worker.routeHelix(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         startDepth: op.startDepth,
         depth: op.depth,
@@ -210,6 +220,7 @@ function route({
       }
       return worker.routeChamfer(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         vAngle,
         tipDiameter,
@@ -227,6 +238,7 @@ function route({
       }
       return worker.routeRest(shape, {
         geometry,
+        optimizeTravel,
         toolSize: diameter,
         previousToolSize: rest.previousToolSize,
         toolEngagement: op.toolEngagement,
