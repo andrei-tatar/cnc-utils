@@ -47,23 +47,57 @@ export class AppComponent {
 
   /** Opens a template, asking first unless the current project is empty. */
   async openTemplate(template: Template) {
-    const { variables, shapes, tools, operations } = this.store.value;
-    if ([variables, shapes, tools, operations].some((list) => list?.length)) {
-      const ref = this.modals.open(ConfirmDialogComponent, {
-        size: 'sm',
-        centered: true,
-        ariaLabelledBy: 'confirm-title',
-      });
-      Object.assign(ref.componentInstance, {
-        title: `Open “${template.name}”?`,
-        message:
-          'It replaces the current project. To keep that, download its G-code first: the project is embedded in it.',
-        confirmLabel: 'Replace project',
-      });
-      const confirmed = await ref.result.catch(() => false);
-      if (!confirmed) return;
+    if (
+      !(await this.confirmReplace(
+        `Open “${template.name}”?`,
+        'It replaces the current project.',
+        'Replace project',
+      ))
+    ) {
+      return;
     }
     await this.store.openTemplate(template);
     this.viewer().refit();
+  }
+
+  /** Starts an empty project, asking first unless the current one is empty. */
+  async clearProject() {
+    if (
+      !(await this.confirmReplace(
+        'Clear the project?',
+        'Everything in the current project is removed, G-code settings included (the tool library is kept).',
+        'Clear project',
+      ))
+    ) {
+      return;
+    }
+    this.store.clear();
+    this.viewer().refit();
+  }
+
+  /**
+   * Whether the current project may be replaced: yes when it's empty,
+   * otherwise when the user confirms.
+   */
+  private async confirmReplace(
+    title: string,
+    message: string,
+    confirmLabel: string,
+  ): Promise<boolean> {
+    const { variables, shapes, tools, operations } = this.store.value;
+    if (![variables, shapes, tools, operations].some((list) => list?.length)) {
+      return true;
+    }
+    const ref = this.modals.open(ConfirmDialogComponent, {
+      size: 'sm',
+      centered: true,
+      ariaLabelledBy: 'confirm-title',
+    });
+    Object.assign(ref.componentInstance, {
+      title,
+      message: `${message} To keep it, download its G-code first: the project is embedded in it.`,
+      confirmLabel,
+    });
+    return ref.result.catch(() => false);
   }
 }

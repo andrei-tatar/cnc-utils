@@ -2,6 +2,7 @@
   <aside class="editor" [style.width.px]="editorWidth()">
     <app-toolbar
       [working]="(isWorking$ | async) ?? false"
+      (clear)="clearProject()"
       (load)="store.open()"
       (openTemplate)="openTemplate($event)"
       (download)="cam.download()"

@@ -72,6 +72,11 @@ export class ModelStore {
     this.open$.next();
   }
 
+  /** Replaces the project with an empty one (as on a first visit). */
+  clear() {
+    this.model$.next(migrateModel({}));
+  }
+
   /** Replaces the project with a template one. */
   async openTemplate(template: Template) {
     this.model$.next(migrateModel(await loadTemplate(template)));
