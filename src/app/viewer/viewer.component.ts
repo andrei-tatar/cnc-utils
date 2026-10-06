@@ -256,6 +256,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   private arrows = new Set<DirectionArrows>();
   private arrowsDirty = false;
+  private arrowsTimer: ReturnType<typeof setTimeout> | undefined;
   /** Arrows shown by the last thinning pass, to keep them stable. */
   private shownArrows = new WeakMap<DirectionArrows, Set<number>>();
   controls!: OrbitControls;
@@ -707,6 +708,19 @@ export class ViewerComponent implements OnInit, OnDestroy {
     fresh.forEach((c) => place(c, SPACING_PX));
   }
 
+  /**
+   * Lay out arrows once paths stop arriving: thinning works across all
+   * paths, so doing it for each of thousands of new paths would redo it
+   * thousands of times.
+   */
+  private layoutArrowsSoon() {
+    clearTimeout(this.arrowsTimer);
+    this.arrowsTimer = setTimeout(() => {
+      this.arrowsDirty = true;
+      this.requestRender();
+    }, 50);
+  }
+
   /** Find the deepest cut and update the colour scale and legend. */
   private updateDeepest(paths: CamPath[]) {
     let deepest = 0;
@@ -812,6 +826,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    clearTimeout(this.arrowsTimer);
     this.destroy$.next(1);
   }
 
@@ -846,8 +861,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             const arrows = new DirectionArrows(points, o.arrowMaterial);
             o.scene.add(arrows.mesh);
             this.arrows.add(arrows);
-            this.arrowsDirty = true;
-            this.requestRender();
+            this.layoutArrowsSoon();
 
             if (o.colorByDepth) {
               // Recolour whenever the job's deepest cut changes.
@@ -874,14 +888,19 @@ export class ViewerComponent implements OnInit, OnDestroy {
               this.requestRender();
             });
 
+            let isNew = true;
             clean.add(
               o.highlight$.subscribe((highlight) => {
                 sceneItems.forEach((item) => {
                   item.material = highlight ? o.materialHighlight : o.material;
                 });
                 // Unhighlighted paths are fully transparent; hide their arrows too.
+                // A new path's arrows are laid out with the rest that arrive.
+                if (arrows.mesh.visible !== highlight && !isNew) {
+                  this.arrowsDirty = true;
+                }
                 arrows.mesh.visible = highlight;
-                this.arrowsDirty = true;
+                isNew = false;
                 this.requestRender();
               }),
             );
