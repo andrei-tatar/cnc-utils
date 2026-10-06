@@ -44,6 +44,7 @@ import { GCodeBuilder } from '../cam/gcode-builder';
 import { gcodeToPaths } from '../cam/gcode-viewer';
 import { getModelMetadata, loadModelFromMetadata } from './store';
 import { toolLabel } from './model-editor/tools';
+import { withOverrides } from './model-editor/tools/feeds-and-speeds';
 import { resolveGcodeOptions } from '../cam/gcode-options';
 import { GeometrySettings } from '../cam/geometry';
 import { deepEqual, readFile } from '../util';
@@ -352,9 +353,24 @@ export class AppComponent implements OnInit, OnDestroy {
               shapeId,
               toolId,
               disabled,
+              feedRate,
+              plungeFeedRate,
+              spindleSpeed,
+              rampMode,
+              rampAngle,
               ...operationParameters
             }) => {
-              const tool = tools.find((t) => t.id === toolId);
+              // The operation's own feeds and speeds win over its tool's.
+              const found = tools.find((t) => t.id === toolId);
+              const tool =
+                found &&
+                withOverrides(found, {
+                  feedRate,
+                  plungeFeedRate,
+                  spindleSpeed,
+                  rampMode,
+                  rampAngle,
+                });
               // Spindle speed and feed rates only affect the G-code text,
               // not the routing.
               const toolParameters: ToolParameters | null = tool
@@ -384,7 +400,7 @@ export class AppComponent implements OnInit, OnDestroy {
               // Tools are numbered by their position in the tools list.
               const toolInfo: ToolInfo | null = tool
                 ? {
-                    number: tools.indexOf(tool) + 1,
+                    number: tools.indexOf(found!) + 1,
                     label: toolLabel(tool),
                     spindleSpeed: tool.spindleSpeed || undefined,
                     feedRate: tool.feedRate || undefined,

@@ -8,6 +8,7 @@ import {
 import { ModelType as GcodeModelType, field as gcodeField } from './gcode';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { OmitUnion } from '../../util';
+import { ToolOverrides } from './tools/feeds-and-speeds';
 
 export type ModelType = ShapesModelType &
   ToolsModelType &
@@ -24,7 +25,13 @@ export type TransformParameters = OmitUnion<TransformType, 'id' | 'expanded'>;
 export type OperationType = OperationsModelType['operations'][number];
 export type OperationParameters = OmitUnion<
   OperationType,
-  'id' | 'expanded' | 'name' | 'shapeId' | 'toolId' | 'disabled'
+  | 'id'
+  | 'expanded'
+  | 'name'
+  | 'shapeId'
+  | 'toolId'
+  | 'disabled'
+  | keyof ToolOverrides
 >;
 /** What a tool contributes to toolpath routing (not to G-code text). */
 export type ToolParameters = OmitUnion<

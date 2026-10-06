@@ -3,6 +3,10 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 import { allShapes, shapeLabel } from '../shapes/describe';
 import { allTools, toolLabel } from '../tools';
 import { allOperations, describeOperation } from './describe';
+import {
+  operationFeedsAndSpeeds,
+  ToolOverrides,
+} from '../tools/feeds-and-speeds';
 
 import {
   Definition as PocketDefinition,
@@ -58,13 +62,14 @@ export type ModelType = {
       disabled?: boolean;
       toolId: string;
       shapeId: string;
-    } & (
-      | PocketModelType
-      | FlatModelType
-      | ProfileModelType
-      | VCarveModelType
-      | VCarveClearModelType
-    )
+    } & ToolOverrides &
+      (
+        | PocketModelType
+        | FlatModelType
+        | ProfileModelType
+        | VCarveModelType
+        | VCarveClearModelType
+      )
   >;
 };
 
@@ -220,6 +225,12 @@ export const field: FormlyFieldConfig = {
         },
       },
       ...operations.map((t) => t.fieldGroup),
+      // Only these ramp into their cuts.
+      operationFeedsAndSpeeds([
+        PocketDefinition.type,
+        ProfileDefinition.type,
+        VCarveClearDefinition.type,
+      ]),
     ],
   },
 };

@@ -15,6 +15,7 @@ import {
 } from '@angular/forms';
 import { FormlyFieldConfig, FormlyModule } from '@ngx-formly/core';
 import { FormlyBootstrapModule } from '@ngx-formly/bootstrap';
+import { GroupWrapperComponent } from './model-editor/components/group-wrapper-component';
 import { ArrayTypeComponent } from './model-editor/components/array-type-component';
 import { FileTypeComponent } from './model-editor/components/file-type-component';
 import { HiddenTypeComponent } from './model-editor/components/hidden-type-component';
@@ -55,6 +56,7 @@ export const appConfig: ApplicationConfig = {
             wrappers: ['form-field'],
           },
         ],
+        wrappers: [{ name: 'group', component: GroupWrapperComponent }],
         validators: [
           { name: 'whole-number', validation: WholeNumberValidator },
         ],

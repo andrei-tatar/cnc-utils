@@ -1,5 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { rootModel } from '../shapes/describe';
+import { toolFeedsAndSpeeds } from './feeds-and-speeds';
 
 export type BitType = 'end-mill' | 'v-bit';
 
@@ -142,61 +143,7 @@ export const field: FormlyFieldConfig = {
         },
         expressions: { hide: hideUnlessVBit },
       },
-      {
-        key: 'feedRate',
-        type: 'number',
-        props: {
-          label: 'feed rate',
-          placeholder: 'G-code default',
-          description: 'mm/min; empty uses the G-code section’s feed rate',
-          min: 0,
-        },
-      },
-      {
-        key: 'plungeFeedRate',
-        type: 'number',
-        props: {
-          label: 'plunge fr',
-          placeholder: 'G-code default',
-          description: 'mm/min; empty uses the G-code section’s plunge rate',
-          min: 0,
-        },
-      },
-      {
-        key: 'ramp',
-        type: 'boolean',
-        defaultValue: false,
-        props: {
-          label: 'ramp in instead of plunging',
-        },
-      },
-      {
-        key: 'rampAngle',
-        type: 'number',
-        defaultValue: 3,
-        props: {
-          min: 0.5,
-          max: 45,
-          label: 'ramp angle',
-          description:
-            '° below horizontal; pockets and clearings go round each loop down to the next depth, profiles along the end of the loop (clear of tabs)',
-          required: true,
-        },
-        expressions: {
-          hide: (field: FormlyFieldConfig) => !field.model?.ramp,
-        },
-      },
-      {
-        key: 'spindleSpeed',
-        type: 'number',
-        props: {
-          label: 'spindle speed',
-          placeholder: 'G-code default',
-          description:
-            'RPM, used after changing to this tool (with spindle control on)',
-          min: 0,
-        },
-      },
+      toolFeedsAndSpeeds,
     ],
   },
 };
