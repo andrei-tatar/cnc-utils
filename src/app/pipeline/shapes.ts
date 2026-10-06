@@ -27,6 +27,7 @@ import {
   TransformParameters,
 } from '../model-editor/model';
 import { createSvgFromShape } from './shape-svg';
+import { pointPattern } from './point-pattern';
 import { geometrySettings } from './geometry-settings';
 import { distinctJson, shareLatest } from './operators';
 
@@ -188,6 +189,24 @@ function resolveShape(
 
     case 'text':
       return worker.importText(t, shapeId, geometry);
+
+    case 'trace':
+      return worker.traceBitmap(
+        {
+          image: t.image,
+          threshold: t.traceThreshold,
+          invert: t.traceInvert,
+          width: t.traceWidth,
+          minArea: t.traceMinArea,
+          smoothing: t.traceSmoothing,
+        },
+        shapeId,
+        geometry,
+      );
+
+    case 'points':
+      // Quick enough to make here.
+      return of(pointPattern(t, shapeId, geometry));
 
     default:
       return worker.importSvg(createSvgFromShape(t), shapeId, geometry);

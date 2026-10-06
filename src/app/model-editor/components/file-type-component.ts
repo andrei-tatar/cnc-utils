@@ -9,8 +9,9 @@ import { FieldType } from '@ngx-formly/bootstrap/form-field';
 import { readFile } from '../../../util';
 
 /**
- * Picks a text file (an SVG) and stores its content in the field. The file's
- * name goes to the sibling `props.fileNameKey` control, when there is one.
+ * Picks a file and stores its content in the field: as text (an SVG), or as
+ * a data URL with `props.readAs: 'dataUrl'` (an image). The file's name
+ * goes to the sibling `props.fileNameKey` control, when there is one.
  * Accepts a click (file dialog) or a dropped file.
  */
 @Component({
@@ -170,7 +171,10 @@ export class FileTypeComponent extends FieldType {
     }
 
     this.error = null;
-    const content = await file.text();
+    const content =
+      this.props['readAs'] === 'dataUrl'
+        ? await readAsDataUrl(file)
+        : await file.text();
     this.formControl.setValue(content);
     this.formControl.markAsDirty();
 
@@ -180,6 +184,15 @@ export class FileTypeComponent extends FieldType {
     }
     this.changes.markForCheck();
   }
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 /** Same rules as the input's `accept` attribute (extensions or MIME types). */

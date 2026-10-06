@@ -39,6 +39,26 @@ export function describeShape(
       return `line ${shape['width']}`;
     case 'path-data':
       return 'path';
+    case 'slot':
+      return `slot ${shape['slotLength']}×${shape['slotWidth']}`;
+    case 'points': {
+      const hole =
+        shape['holeDiameter'] > 0 ? ` Ø${shape['holeDiameter']}` : '';
+      switch (shape['pointsMode']) {
+        case 'grid':
+          return `${shape['gridCountX']}×${shape['gridCountY']} grid${hole}`;
+        case 'circle':
+          return `${shape['circleCount']} on Ø${shape['circleDiameter']}${hole}`;
+        default:
+          return `points${hole}`;
+      }
+    }
+    case 'polyline':
+      return shape['polylineClosed'] ? 'polygon' : 'lines';
+    case 'box-panel':
+      return `box panel ${shape['boxWidth']}×${shape['boxHeight']}`;
+    case 'trace':
+      return shape['fileName'] ? `trace ${shape['fileName']}` : 'image trace';
     case 'svg':
       return shape['fileName'] ? `svg ${shape['fileName']}` : 'svg';
     case 'text': {

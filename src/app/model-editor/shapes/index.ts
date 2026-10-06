@@ -37,6 +37,26 @@ import {
   Definition as TextDefinition,
   ModelType as TextModelType,
 } from './shape-text';
+import {
+  Definition as PointsDefinition,
+  ModelType as PointsModelType,
+} from './shape-points';
+import {
+  Definition as SlotDefinition,
+  ModelType as SlotModelType,
+} from './shape-slot';
+import {
+  Definition as PolylineDefinition,
+  ModelType as PolylineModelType,
+} from './shape-polyline';
+import {
+  Definition as BoxPanelDefinition,
+  ModelType as BoxPanelModelType,
+} from './shape-box-panel';
+import {
+  Definition as TraceDefinition,
+  ModelType as TraceModelType,
+} from './shape-trace';
 
 type CommonShape = {
   id: string;
@@ -54,7 +74,12 @@ type ShapeType =
   | PathDataModelType
   | BooleanModelType
   | CopyModelType
-  | TextModelType;
+  | TextModelType
+  | PointsModelType
+  | SlotModelType
+  | PolylineModelType
+  | BoxPanelModelType
+  | TraceModelType;
 
 export type ModelType = {
   shapes: Array<ShapeType & CommonShape>;
@@ -63,12 +88,17 @@ export type ModelType = {
 const shapes = [
   CircleDefinition,
   RectangleDefinition,
-  SvgDefinition,
+  SlotDefinition,
+  PointsDefinition,
   LineDefinition,
+  PolylineDefinition,
   PathDataDefinition,
+  SvgDefinition,
+  TraceDefinition,
+  TextDefinition,
+  BoxPanelDefinition,
   BooleanDefinition,
   CopyDefinition,
-  TextDefinition,
 ];
 
 export const field: FormlyFieldConfig = {
