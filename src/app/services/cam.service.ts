@@ -1,5 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import {
+  combineLatest,
   concatMap,
   map,
   Observable,
@@ -14,7 +15,11 @@ import {
   generateGcodeFromOperations,
   Program,
   programPaths,
+  programTime,
 } from '../pipeline/gcode';
+import { resolveStock, StockOptions, stockOffset } from '../../cam/stock';
+import { distinctJson } from '../pipeline/operators';
+import { describeOperation } from '../model-editor/operations/describe';
 import {
   hiddenShapeIds,
   highlightFromModel,
@@ -66,6 +71,37 @@ export class CamService {
     this.store.model$,
   );
 
+  /** The stock, and where the G-code's zero is in design coordinates. */
+  readonly stock$: Observable<StockView> = this.store.changes$.pipe(
+    map((model) => {
+      const stock = resolveStock(model.stock);
+      const offset = stockOffset(stock);
+      return {
+        stock,
+        zero: { x: -offset.x, y: -offset.y, z: -offset.z },
+      };
+    }),
+    distinctJson(),
+  );
+
+  /** Roughly how long the job takes, in all and per operation. */
+  readonly time$: Observable<TimeSummary> = combineLatest([
+    this.program$.pipe(map(programTime)),
+    this.store.changes$,
+  ]).pipe(
+    map(([time, model]) => ({
+      total: time.total,
+      operations: (model.operations ?? [])
+        .filter((o) => (time.byOperation.get(o.id) ?? 0) > 0)
+        .map((o) => ({
+          name:
+            o.name ||
+            describeOperation(o, model.shapes, model.tools, model.operations),
+          seconds: time.byOperation.get(o.id)!,
+        })),
+    })),
+  );
+
   private download$ = new Subject<void>();
 
   constructor() {
@@ -87,3 +123,15 @@ export class CamService {
     this.download$.next();
   }
 }
+
+/** The stock as the preview shows it. */
+export type StockView = {
+  stock: StockOptions;
+  /** Where X0 Y0 Z0 of the G-code is, in design coordinates. */
+  zero: { x: number; y: number; z: number };
+};
+
+export type TimeSummary = {
+  total: number;
+  operations: { name: string; seconds: number }[];
+};

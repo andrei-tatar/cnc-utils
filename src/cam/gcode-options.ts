@@ -37,6 +37,13 @@ export type GcodeOptions = {
   curveTolerance: number;
   /** Decimal places for geometry (Clipper offsets and booleans). */
   geometryDecimals: number;
+  /** Rapid (G0) speed, mm/min: only for estimating how long a job takes. */
+  rapidRate: number;
+  /**
+   * Added to every coordinate written (not to the preview): moves the
+   * G-code's zero onto the stock. Set from the stock settings.
+   */
+  offset?: { x: number; y: number; z: number };
 };
 
 export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
@@ -54,6 +61,7 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   arcs: true,
   curveTolerance: 0.01,
   geometryDecimals: 2,
+  rapidRate: 3000,
 };
 
 /** Complete options from a (possibly partial or older) stored value. */

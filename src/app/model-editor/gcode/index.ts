@@ -140,6 +140,18 @@ export const field: FormlyFieldConfig = {
       validators: { validation: ['whole-number'] },
     },
     {
+      key: 'rapidRate',
+      type: 'number',
+      defaultValue: d.rapidRate,
+      props: {
+        label: 'rapid speed',
+        description:
+          'mm/min your machine moves at with G0; only for the time estimate',
+        min: 1,
+        required: true,
+      },
+    },
+    {
       key: 'arcs',
       type: 'boolean',
       defaultValue: d.arcs,

@@ -11,6 +11,9 @@ import {
 import {
   ArrowHelper,
   BufferGeometry,
+  BoxGeometry,
+  EdgesGeometry,
+  PlaneGeometry,
   LineSegments,
   Shape,
   LineBasicMaterial,
@@ -67,6 +70,7 @@ import {
 import { DirectionArrows } from './helpers/direction-arrows';
 import { nestContours } from '../../cam/polygon-nesting';
 import { CamPath, CamShape, Highlight } from '../../cam/types';
+import { StockView, TimeSummary } from '../services/cam.service';
 
 /** Half the size of the cross marking a single point, in mm. */
 const POINT_MARK_SIZE = 1;
@@ -105,6 +109,10 @@ const POINT_MARK_SIZE = 1;
     </div>
     <div class="hud">
       <span #cursorReadout class="hud_cursor"></span>
+      @if (timeText) {
+        <span class="hud_time" [title]="timeDetails">≈ {{ timeText }}</span>
+      }
+      <span #stockWarning class="hud_warning"></span>
       <span #gridReadout class="hud_grid"></span>
       <span #depthLegend class="hud_depth" hidden>
         <span>depth 0</span>
@@ -196,6 +204,10 @@ const POINT_MARK_SIZE = 1;
       }
     }
 
+    .hud_warning {
+      color: #ff8a80;
+    }
+
     .hud_depth {
       display: inline-flex;
       align-items: center;
@@ -280,6 +292,32 @@ export class ViewerComponent implements OnInit, OnDestroy {
   set highlight(value: Highlight) {
     this.highlight$.next(value);
   }
+
+  /** The stock (drawn as a box) and the G-code's zero (the axes). */
+  @Input()
+  set stock(value: StockView | null) {
+    this.stock$.next(value);
+  }
+  private stock$ = new BehaviorSubject<StockView | null>(null);
+
+  @ViewChild('stockWarning', { static: true })
+  private stockWarning!: ElementRef<HTMLElement>;
+
+  /** How long the job takes, for the HUD. */
+  @Input()
+  set time(value: TimeSummary | null) {
+    this.timeText = value && value.total > 0 ? formatDuration(value.total) : '';
+    this.timeDetails = value
+      ? [
+          'Estimated machining time (no acceleration):',
+          ...value.operations.map(
+            (o) => `${formatDuration(o.seconds)}  ${o.name}`,
+          ),
+        ].join('\n')
+      : '';
+  }
+  timeText = '';
+  timeDetails = '';
 
   /** Shapes toggled off in the editor: not drawn (toolpaths unaffected). */
   @Input()
@@ -374,6 +412,42 @@ export class ViewerComponent implements OnInit, OnDestroy {
       new ArrowHelper(new Vector3(0, 0, 1), origin, 0.6, 'blue', 0.2, 0.08),
     ];
     axes.forEach((axis) => scene.add(axis));
+
+    // The stock, as a box from its top (Z0 of the design) down, and the
+    // G-code's zero, where the axes are drawn.
+    const stockBox = new Group();
+    this.content.add(stockBox);
+    const stockEdges = new LineBasicMaterial({
+      color: '#c9a227',
+      transparent: true,
+      opacity: 0.7,
+    });
+    const stockTop = new MeshBasicMaterial({
+      color: '#c9a227',
+      transparent: true,
+      opacity: 0.06,
+      depthWrite: false,
+    });
+    this.stock$.pipe(takeUntil(this.destroy$)).subscribe((view) => {
+      stockBox.children.forEach((child) => {
+        (child as Mesh).geometry.dispose();
+      });
+      stockBox.clear();
+      const zero = view?.stock.enabled ? view.zero : { x: 0, y: 0, z: 0 };
+      axes.forEach((axis) => axis.position.set(zero.x, zero.y, zero.z));
+      if (view?.stock.enabled) {
+        const { width, height, thickness, x, y } = view.stock;
+        const box = new BoxGeometry(width, height, thickness);
+        box.translate(x + width / 2, y + height / 2, -thickness / 2);
+        const edges = new LineSegments(new EdgesGeometry(box), stockEdges);
+        box.dispose();
+        const top = new PlaneGeometry(width, height);
+        top.translate(x + width / 2, y + height / 2, 0);
+        stockBox.add(edges, new Mesh(top, stockTop));
+      }
+      this.checkStock();
+      this.requestRender();
+    });
 
     const labels = new GridLabels(this.labelsLayer.nativeElement);
     this.trackCursor(renderer.domElement);
@@ -743,6 +817,15 @@ export class ViewerComponent implements OnInit, OnDestroy {
     }
     this.depthLegend.nativeElement.hidden = deepest >= 0;
     this.deepestReadout.nativeElement.textContent = `${formatMm(deepest)} mm`;
+    this.checkStock();
+  }
+
+  /** Warn when the toolpaths cut deeper than the stock is thick. */
+  private checkStock() {
+    const stock = this.stock$.value?.stock;
+    const below = stock?.enabled ? -this.deepest$.value - stock.thickness : 0;
+    this.stockWarning.nativeElement.textContent =
+      below > 1e-6 ? `⚠ cuts ${formatMm(below)} mm into the spoilboard` : '';
   }
 
   /** Frame all shapes and toolpaths, keeping the current viewing angle. */
@@ -1083,4 +1166,12 @@ function groupPaths(paths: CamPath[]): Map<string, CamPath[]> {
 
 function sameItems<T>(a: T[], b: T[]) {
   return a.length === b.length && a.every((item, i) => item === b[i]);
+}
+
+/** Seconds as "45 s", "12 min" or "1 h 05 min". */
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
 }

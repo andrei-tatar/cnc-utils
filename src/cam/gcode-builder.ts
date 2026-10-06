@@ -273,11 +273,54 @@ export class GCodeBuilder {
   }
 
   /**
+   * Roughly how long the program takes: each move's length at its feed
+   * (rapids at `rapidRate`), plus dwells and spindle waits. Acceleration
+   * isn't counted, so short, jerky moves take longer than this.
+   */
+  estimateTime(options: Partial<GcodeOptions> = {}): JobTime {
+    const o = resolveGcodeOptions(options);
+    const byOperation = new Map<string, number>();
+    let total = 0;
+    let operation = '';
+    let feed = o.carveFeedRate;
+    let last: CamPoint3 | null = null;
+    const add = (seconds: number) => {
+      total += seconds;
+      byOperation.set(operation, (byOperation.get(operation) ?? 0) + seconds);
+    };
+    this.walk(o, {
+      line: (text) => {
+        const wait = /^G4 P([\d.]+)/.exec(text);
+        if (wait) add(+wait[1]);
+      },
+      source: (kind, id) => {
+        if (kind === 'operation') operation = id;
+      },
+      move: (code, changed, at) => {
+        if (changed.feed !== undefined) feed = changed.feed;
+        if (last) {
+          const length = Math.hypot(
+            at.x - last.x,
+            at.y - last.y,
+            at.z - last.z,
+          );
+          const rate = code === 'G0' ? o.rapidRate : feed;
+          if (rate > 0) add((length / rate) * 60);
+        }
+        last = at;
+      },
+    });
+    return { total, byOperation };
+  }
+
+  /**
    * Walks the instructions as G-code, handing each line or move to `out`.
    * With `arcs`, runs of cuts along a circle become G2/G3 arcs.
    */
   private walk(options: Partial<GcodeOptions>, out: GcodeSink, arcs = false) {
     const o = resolveGcodeOptions(options);
+    // Design coordinates to the G-code's (its zero on the stock, if set).
+    const off = o.offset ?? { x: 0, y: 0, z: 0 };
     const places = Math.max(0, Math.min(6, Math.round(o.decimals)));
     const factor = 10 ** places;
     const round = (v: number) => Math.round(v * factor) / factor;
@@ -385,7 +428,7 @@ export class GCodeBuilder {
             const previous = pendingCuts[pendingCuts.length - 1];
             pendingCuts.push({
               ...instruction.to,
-              z: instruction.z ?? previous?.z ?? z,
+              z: instruction.z ?? previous?.z ?? z - off.z,
             });
           } else {
             flushCuts();
@@ -427,7 +470,8 @@ export class GCodeBuilder {
           stopSpindle();
           if (o.returnHome) {
             move('G0', { z: o.safetyHeight });
-            move('G0', { x: 0, y: 0 });
+            // The G-code's own zero.
+            move('G0', { x: 0, y: 0 }, undefined, true);
           }
           gcode.push('M30');
           break;
@@ -503,14 +547,14 @@ export class GCodeBuilder {
           ? 'G73'
           : 'G83';
       if (out.cycle) {
-        if (z !== top) {
+        if (z !== round(top + off.z)) {
           move('G0', { z: top });
         }
         const words = [
-          `X${round(cycle.x)}`,
-          `Y${round(cycle.y)}`,
-          `Z${round(cycle.depth)}`,
-          `R${round(cycle.retract)}`,
+          `X${round(cycle.x + off.x)}`,
+          `Y${round(cycle.y + off.y)}`,
+          `Z${round(cycle.depth + off.z)}`,
+          `R${round(cycle.retract + off.z)}`,
         ];
         if (cycle.peck) words.push(`Q${round(cycle.peck)}`);
         if (code === 'G82') words.push(`P${round(cycle.dwell)}`);
@@ -520,9 +564,9 @@ export class GCodeBuilder {
         }
         out.cycle(`${cycleActive ? '' : 'G98 '}${code} ${words.join(' ')}`);
         cycleActive = true;
-        x = round(cycle.x);
-        y = round(cycle.y);
-        z = top;
+        x = round(cycle.x + off.x);
+        y = round(cycle.y + off.y);
+        z = round(top + off.z);
         return;
       }
       // The moves the controller makes: pecks out to R (G83) or lifting a
@@ -552,7 +596,7 @@ export class GCodeBuilder {
       if (!pendingCuts.length) return;
       const cuts = pendingCuts;
       pendingCuts = [];
-      const at = { x: x!, y: y!, z: z! };
+      const at = { x: x! - off.x, y: y! - off.y, z: z! - off.z };
       for (const m of fitArcs([at, ...cuts], arcTolerance)) {
         const end = m.to as CamPoint3;
         const done =
@@ -574,12 +618,12 @@ export class GCodeBuilder {
      * level), so one G2/G3 with a Z can stand for it.
      */
     function helical(points: CamPoint3[], center: CamPoint, end: CamPoint3) {
-      const startZ = z!;
+      const startZ = z! - off.z;
       if (points.every((p) => Math.abs(p.z - startZ) <= arcTolerance.points)) {
         return Math.abs(end.z - startZ) <= arcTolerance.points;
       }
-      const startX = x!;
-      const startY = y!;
+      const startX = x! - off.x;
+      const startY = y! - off.y;
       let previous = Math.atan2(startY - center.y, startX - center.x);
       let swept = 0;
       const angles = points.map((p) => {
@@ -609,8 +653,8 @@ export class GCodeBuilder {
     function arcMove(clockwise: boolean, to: CamPoint3, center: CamPoint) {
       const sx = x!;
       const sy = y!;
-      const ex = round(to.x);
-      const ey = round(to.y);
+      const ex = round(to.x + off.x);
+      const ey = round(to.y + off.y);
       const dx = ex - sx;
       const dy = ey - sy;
       const length = Math.hypot(dx, dy);
@@ -619,7 +663,9 @@ export class GCodeBuilder {
       const ny = dx / length;
       const mx = (sx + ex) / 2;
       const my = (sy + ey) / 2;
-      const t = (center.x - mx) * nx + (center.y - my) * ny;
+      const cx = center.x + off.x;
+      const cy = center.y + off.y;
+      const t = (cx - mx) * nx + (cy - my) * ny;
       const i = roundCenter(mx + nx * t - sx);
       const j = roundCenter(my + ny * t - sy);
       const startRadius = Math.hypot(i, j);
@@ -627,7 +673,7 @@ export class GCodeBuilder {
       if (Math.abs(startRadius - endRadius) > 0.002) return false;
 
       const changed: MoveChange = { x: ex, y: ey };
-      const ez = round(to.z);
+      const ez = round(to.z + off.z);
       if (ez !== z) {
         z = changed.z = ez;
       }
@@ -642,31 +688,36 @@ export class GCodeBuilder {
       return true;
     }
 
+    /**
+     * A move to `to`, in design coordinates (or, `raw`, the G-code's own).
+     */
     function move(
       code: 'G0' | 'G1',
       to: { x?: number; y?: number; z?: number },
       feed?: number,
+      raw = false,
     ) {
       // Held-back cuts come first (nothing to do while writing them).
       flushCuts();
       const changed: MoveChange = {};
+      const shift = raw ? { x: 0, y: 0, z: 0 } : off;
 
       if (typeof to.x === 'number') {
-        const newX = round(to.x);
+        const newX = round(to.x + shift.x);
         if (newX !== x) {
           x = changed.x = newX;
         }
       }
 
       if (typeof to.y === 'number') {
-        const newY = round(to.y);
+        const newY = round(to.y + shift.y);
         if (newY !== y) {
           y = changed.y = newY;
         }
       }
 
       if (typeof to.z === 'number') {
-        const newZ = round(to.z);
+        const newZ = round(to.z + shift.z);
         if (newZ !== z) {
           z = changed.z = newZ;
         }
@@ -688,6 +739,13 @@ export class GCodeBuilder {
     }
   }
 }
+
+/** How long a program takes, in seconds: all of it, and per operation. */
+export type JobTime = {
+  total: number;
+  /** By operation id ('' for moves belonging to none). */
+  byOperation: Map<string, number>;
+};
 
 /** One hole, drilled by the controller's canned cycle. */
 export type DrillCycle = {

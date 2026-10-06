@@ -6,6 +6,8 @@ import {
   field as operationsField,
 } from './operations';
 import { ModelType as GcodeModelType, field as gcodeField } from './gcode';
+import { ModelType as StockModelType, field as stockField } from './stock';
+import { resolveStock } from '../../cam/stock';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { OmitUnion } from '../../util';
 import { ToolOverrides } from './tools/feeds-and-speeds';
@@ -13,6 +15,7 @@ import { ToolOverrides } from './tools/feeds-and-speeds';
 export type ModelType = ShapesModelType &
   ToolsModelType &
   OperationsModelType &
+  StockModelType &
   GcodeModelType;
 
 export type ShapeType = ModelType['shapes'][number];
@@ -45,6 +48,7 @@ export const ModelFieldConfig: FormlyFieldConfig[] = [
   shapesField,
   toolsField,
   operationsField,
+  stockField,
   gcodeField,
 ];
 
@@ -75,6 +79,8 @@ export function migrateModel(stored: any): ModelType {
     ],
     // Projects from before G-code options existed get the defaults.
     gcode: resolveGcodeOptions(stored?.gcode),
+    // Projects from before stock settings have none set.
+    stock: resolveStock(stored?.stock),
   };
 }
 

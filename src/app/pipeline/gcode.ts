@@ -8,7 +8,8 @@ import {
   scan,
   switchMap,
 } from 'rxjs';
-import { GCodeBuilder } from '../../cam/gcode-builder';
+import { GCodeBuilder, JobTime } from '../../cam/gcode-builder';
+import { resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
 import { CamPath } from '../../cam/types';
@@ -77,7 +78,11 @@ export function generateGcodeFromOperations(
       combineLatest({
         builders: builders$,
         options: model$.pipe(
-          map((model) => resolveGcodeOptions(model.gcode)),
+          map((model) => ({
+            ...resolveGcodeOptions(model.gcode),
+            // The G-code's zero, on the stock.
+            offset: stockOffset(resolveStock(model.stock)),
+          })),
           distinctJson(),
         ),
       }),
@@ -150,9 +155,23 @@ export function buildProgram(program: Program, modelMetadata?: string): string {
   return wholeProgram(program, modelMetadata).build(program.options);
 }
 
-/** The program's moves as paths for the preview, without writing G-code. */
+/**
+ * The program's moves as paths for the preview, without writing G-code (in
+ * design coordinates, like the shapes).
+ */
 export function programPaths(program: Program): CamPath[] {
-  return wholeProgram(program).toPaths(program.options);
+  return wholeProgram(program).toPaths({
+    ...program.options,
+    offset: undefined,
+  });
+}
+
+/** How long the program takes to run (see `GCodeBuilder.estimateTime`). */
+export function programTime(program: Program): JobTime {
+  return wholeProgram(program).estimateTime({
+    ...program.options,
+    offset: undefined,
+  });
 }
 
 function wholeProgram(
