@@ -3,6 +3,7 @@ import {
   Component,
   ElementRef,
   inject,
+  Injector,
   OnDestroy,
   OnInit,
   ViewChild,
@@ -22,6 +23,21 @@ import {
   writeCollapsedSections,
 } from './collapsed-sections';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
+
+/**
+ * A button in a list's header (`props.headerActions`), e.g. the tool
+ * library. `run` gets the list's items and a way to add one.
+ */
+export type HeaderAction = {
+  label: string;
+  title: string;
+  run(context: {
+    injector: Injector;
+    items: any[];
+    /** Add an item (a new id is given to it). */
+    add(item: object): Promise<void>;
+  }): void;
+};
 
 @Component({
   imports: [FormlyModule, NgbCollapseModule, DragDropModule],
@@ -412,6 +428,22 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
           >
         }
         <span class="list_spacer"></span>
+        @for (action of headerActions; track action.label) {
+          <button
+            class="btn btn-sm add-button"
+            type="button"
+            (click)="$event.stopPropagation(); runAction(action)"
+            [title]="action.title"
+            [attr.aria-label]="action.title"
+          >
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3 2.5h3v11H3zM7 2.5h3v11H7zM11 3.2l2.6-.7 2.4 10.6-2.6.7z"
+              />
+            </svg>
+            <span class="button-label">{{ action.label }}</span>
+          </button>
+        }
         <button
           class="btn btn-sm add-button"
           type="button"
@@ -576,6 +608,7 @@ export class ArrayTypeComponent
   implements OnInit, AfterViewInit, OnDestroy
 {
   private modals = inject(NgbModal);
+  private injector = inject(Injector);
   collapsed = false;
 
   @ViewChild('header', { static: true })
@@ -584,6 +617,22 @@ export class ArrayTypeComponent
 
   get itemLabel(): string {
     return this.props['itemLabel'] ?? 'item';
+  }
+
+  get headerActions(): HeaderAction[] {
+    return this.props['headerActions'] ?? [];
+  }
+
+  runAction(action: HeaderAction) {
+    action.run({
+      injector: this.injector,
+      items: this.model ?? [],
+      add: async (item) => {
+        this.collapsed = this.collapsible ? false : this.collapsed;
+        const id = await generateId();
+        this.add(undefined, { ...item, id, expanded: false });
+      },
+    });
   }
 
   get collapsible() {
