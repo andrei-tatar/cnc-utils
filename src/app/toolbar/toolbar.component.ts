@@ -11,7 +11,7 @@ import {
   NgbDropdownMenu,
   NgbDropdownToggle,
 } from '@ng-bootstrap/ng-bootstrap';
-import { listSamples, Sample } from '../samples';
+import { listTemplates, Template } from '../templates';
 
 @Component({
   selector: 'app-toolbar',
@@ -29,7 +29,7 @@ import { listSamples, Sample } from '../samples';
         </span>
       }
       <span class="toolbar_spacer"></span>
-      @if (samples().length) {
+      @if (templates().length) {
         <div
           ngbDropdown
           placement="bottom-start bottom-end"
@@ -39,24 +39,24 @@ import { listSamples, Sample } from '../samples';
             ngbDropdownToggle
             class="btn btn-sm btn-outline-secondary toolbar_button"
             type="button"
-            title="Open an example project (replaces the current one)"
+            title="Start from a template (replaces the current project)"
           >
-            Samples
+            Templates
           </button>
-          <div ngbDropdownMenu class="samples">
-            <h6 class="dropdown-header samples_header">
+          <div ngbDropdownMenu class="templates">
+            <h6 class="dropdown-header templates_header">
               Opens in place of the current project
             </h6>
-            @for (sample of samples(); track sample.file) {
+            @for (template of templates(); track template.file) {
               <button
                 ngbDropdownItem
                 type="button"
-                (click)="openSample.emit(sample)"
+                (click)="openTemplate.emit(template)"
               >
-                <span class="samples_name">{{ sample.name }}</span>
-                @if (sample.description) {
-                  <span class="samples_description">{{
-                    sample.description
+                <span class="templates_name">{{ template.name }}</span>
+                @if (template.description) {
+                  <span class="templates_description">{{
+                    template.description
                   }}</span>
                 }
               </button>
@@ -114,32 +114,32 @@ import { listSamples, Sample } from '../samples';
       gap: 5px;
     }
 
-    .samples {
+    .templates {
       width: min(360px, calc(100vw - 24px));
       padding: 4px 0;
     }
 
-    .samples_header {
+    .templates_header {
       font-size: 0.7rem;
       text-transform: uppercase;
       letter-spacing: 0.04em;
       padding: 6px 14px 8px;
     }
 
-    .samples .dropdown-item {
+    .templates .dropdown-item {
       display: block;
       white-space: normal;
       padding: 10px 14px;
       border-top: 1px solid var(--bs-border-color-translucent);
     }
 
-    .samples_name {
+    .templates_name {
       display: block;
       font-size: 0.875rem;
       font-weight: 600;
     }
 
-    .samples_description {
+    .templates_description {
       display: block;
       margin-top: 3px;
       font-size: 0.8rem;
@@ -147,7 +147,7 @@ import { listSamples, Sample } from '../samples';
       color: var(--bs-secondary-color);
     }
 
-    .samples .dropdown-item:active .samples_description {
+    .templates .dropdown-item:active .templates_description {
       color: inherit;
     }
 
@@ -172,15 +172,15 @@ import { listSamples, Sample } from '../samples';
   changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class ToolbarComponent {
-  /** The sample projects (`samples/index.json`); fetched once. */
-  readonly samples = signal<Sample[]>([]);
+  /** The template projects (`templates/index.json`); fetched once. */
+  readonly templates = signal<Template[]>([]);
   /** A computation is running: shows the spinner, blocks the download. */
   readonly working = input(false);
   readonly load = output();
-  readonly openSample = output<Sample>();
+  readonly openTemplate = output<Template>();
   readonly download = output();
 
   constructor() {
-    listSamples().then((samples) => this.samples.set(samples));
+    listTemplates().then((templates) => this.templates.set(templates));
   }
 }

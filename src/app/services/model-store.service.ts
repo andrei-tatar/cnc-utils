@@ -13,7 +13,7 @@ import {
 } from 'rxjs';
 import { migrateModel, ModelType } from '../model-editor/model';
 import { readModelFromNcFile } from '../project-file';
-import { loadSample, Sample } from '../samples';
+import { loadTemplate, Template } from '../templates';
 import { deepEqual } from '../../util';
 import { loadModel, saveModel } from './model-persistence';
 /** Saving waits for a pause in editing (and happens when leaving). */
@@ -72,9 +72,9 @@ export class ModelStore {
     this.open$.next();
   }
 
-  /** Replaces the project with a sample one. */
-  async openSample(sample: Sample) {
-    this.model$.next(migrateModel(await loadSample(sample)));
+  /** Replaces the project with a template one. */
+  async openTemplate(template: Template) {
+    this.model$.next(migrateModel(await loadTemplate(template)));
   }
 }
 

@@ -36,8 +36,8 @@
               },
               {
                 "glob": "{*.nc,index.json}",
-                "input": "samples",
-                "output": "samples"
+                "input": "templates",
+                "output": "templates"
               }
             ],
             "styles": ["src/styles.scss"],
@@ -99,8 +99,8 @@
               },
               {
                 "glob": "{*.nc,index.json}",
-                "input": "samples",
-                "output": "samples"
+                "input": "templates",
+                "output": "templates"
               }
             ],
             "styles": ["src/styles.scss"],

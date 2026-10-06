@@ -3,7 +3,7 @@
     <app-toolbar
       [working]="(isWorking$ | async) ?? false"
       (load)="store.open()"
-      (openSample)="openSample($event)"
+      (openTemplate)="openTemplate($event)"
       (download)="cam.download()"
     />
 

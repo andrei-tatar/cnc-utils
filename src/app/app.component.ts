@@ -17,7 +17,7 @@ import { ModelStore } from './services/model-store.service';
 import { CamService } from './services/cam.service';
 import { WorkTracker } from './services/work-tracker.service';
 import { ConfirmDialogComponent } from './model-editor/components/confirm-dialog.component';
-import { Sample } from './samples';
+import { Template } from './templates';
 
 @Component({
   selector: 'app-root',
@@ -45,8 +45,8 @@ export class AppComponent {
   private readonly modals = inject(NgbModal);
   private readonly viewer = viewChild.required(ViewerComponent);
 
-  /** Opens a sample, asking first unless the current project is empty. */
-  async openSample(sample: Sample) {
+  /** Opens a template, asking first unless the current project is empty. */
+  async openTemplate(template: Template) {
     const { variables, shapes, tools, operations } = this.store.value;
     if ([variables, shapes, tools, operations].some((list) => list?.length)) {
       const ref = this.modals.open(ConfirmDialogComponent, {
@@ -55,7 +55,7 @@ export class AppComponent {
         ariaLabelledBy: 'confirm-title',
       });
       Object.assign(ref.componentInstance, {
-        title: `Open “${sample.name}”?`,
+        title: `Open “${template.name}”?`,
         message:
           'It replaces the current project. To keep that, download its G-code first: the project is embedded in it.',
         confirmLabel: 'Replace project',
@@ -63,7 +63,7 @@ export class AppComponent {
       const confirmed = await ref.result.catch(() => false);
       if (!confirmed) return;
     }
-    await this.store.openSample(sample);
+    await this.store.openTemplate(template);
     this.viewer().refit();
   }
 }

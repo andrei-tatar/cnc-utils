@@ -1,23 +1,23 @@
-import { listSamples, loadSample, Sample } from '.';
+import { listTemplates, loadTemplate, Template } from '.';
 
-// Needs samples/index.json: `npm test` writes it first (or `npm run samples`).
-describe('samples', () => {
-  let samples: Sample[];
+// Needs templates/index.json: `npm test` writes it first (or `npm run templates`).
+describe('templates', () => {
+  let templates: Template[];
 
   beforeAll(async () => {
-    samples = await listSamples();
+    templates = await listTemplates();
   });
 
   it('are listed', () => {
-    expect(samples.length).toBeGreaterThan(0);
+    expect(templates.length).toBeGreaterThan(0);
   });
 
   it('each hold a project with unique ids', async () => {
-    for (const sample of samples) {
-      const model: any = await loadSample(sample);
+    for (const template of templates) {
+      const model: any = await loadTemplate(template);
       for (const key of ['variables', 'shapes', 'tools', 'operations']) {
         expect(Array.isArray(model[key]))
-          .withContext(`${sample.file} ${key}`)
+          .withContext(`${template.file} ${key}`)
           .toBeTrue();
       }
       const ids = [
@@ -27,17 +27,17 @@ describe('samples', () => {
         ...model.tools,
         ...model.operations,
       ].map((item: any) => item.id);
-      expect(new Set(ids).size).withContext(sample.file).toBe(ids.length);
+      expect(new Set(ids).size).withContext(template.file).toBe(ids.length);
     }
   });
 
   it('each only refer to tools, shapes and operations they have', async () => {
-    for (const sample of samples) {
-      const model: any = await loadSample(sample);
+    for (const template of templates) {
+      const model: any = await loadTemplate(template);
       const has = (list: any[], id: string) =>
         list.some((item) => item.id === id);
       for (const op of model.operations) {
-        const where = `${sample.file} ${op.id}`;
+        const where = `${template.file} ${op.id}`;
         expect(has(model.tools, op.toolId))
           .withContext(`${where} tool`)
           .toBeTrue();
