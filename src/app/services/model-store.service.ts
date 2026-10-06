@@ -9,7 +9,6 @@ import {
   Subject,
   switchMap,
 } from 'rxjs';
-import { deepEqual } from '../../util';
 import { migrateModel, ModelType } from '../model-editor/model';
 import { readModelFromNcFile } from '../project-file';
 
@@ -26,9 +25,16 @@ export class ModelStore {
    * The model as it changes. The editor emits a new object on every edit,
    * so changes are compared by value; one subscription is shared by all the
    * pipelines.
+   *
+   * Compared as a snapshot taken when it was emitted: Formly edits the
+   * model it was given (this one) in place, so by the next edit the
+   * previous object already matches it.
    */
   readonly changes$: Observable<ModelType> = this.model$.pipe(
-    distinctUntilChanged((a, b) => deepEqual(a, b)),
+    distinctUntilChanged(
+      (a, b) => a === b,
+      (model) => JSON.stringify(model),
+    ),
     shareReplay({ bufferSize: 1, refCount: false }),
   );
 
