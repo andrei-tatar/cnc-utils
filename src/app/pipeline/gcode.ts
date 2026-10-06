@@ -8,14 +8,12 @@ import {
   of,
   scan,
   switchMap,
-  withLatestFrom,
 } from 'rxjs';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
 import { CamShape } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
-import { getModelMetadata } from '../store';
 import { geometrySettings } from './geometry-settings';
 import { OperationInputs, operationInputs } from './operation-inputs';
 import { distinctItems, distinctJson, shareLatest } from './operators';
@@ -28,9 +26,14 @@ type OperationEntry = {
   result$: Observable<GCodeBuilder>;
 };
 
+/** The routed operations, in order, and how to write them out. */
+export type Program = {
+  builders: GCodeBuilder[];
+  options: GcodeOptions;
+};
+
 /**
- * Routes the model's operations, in order, into the G-code program (with
- * the model embedded in it).
+ * Routes the model's operations, in order, into the program.
  *
  * Each operation keeps its pipeline across model emissions (its inputs are
  * pushed into it), so it is only re-routed when something it depends on
@@ -40,7 +43,7 @@ export function generateGcodeFromOperations(
   model$: Observable<ModelType>,
   shapes$: Observable<CamShape[]>,
   working$: Observable<never>,
-): Observable<string> {
+): Observable<Program> {
   const geometry$ = geometrySettings(model$);
   return model$.pipe(
     scan(
@@ -71,17 +74,13 @@ export function generateGcodeFromOperations(
     // G-code options only affect how the program is written out: rebuild
     // the text when they change, without re-running any routing.
     (builders$) =>
-      combineLatest([
-        builders$,
-        model$.pipe(
+      combineLatest({
+        builders: builders$,
+        options: model$.pipe(
           map((model) => resolveGcodeOptions(model.gcode)),
           distinctJson(),
         ),
-      ]),
-    withLatestFrom(model$),
-    switchMap(([[builders, gcodeOptions], model]) =>
-      buildProgram(builders, gcodeOptions, model),
-    ),
+      }),
   );
 }
 
@@ -144,20 +143,23 @@ function createOperationEntry(
   return { id, inputs$, result$ };
 }
 
-/** The whole program: the model metadata, then each operation's G-code. */
-async function buildProgram(
-  builders: GCodeBuilder[],
-  gcodeOptions: GcodeOptions,
-  model: ModelType,
-): Promise<string> {
-  const compressed = await getModelMetadata(model);
-
-  const meta = new GCodeBuilder().addModelMetadata(compressed);
+/**
+ * The program's G-code: the embedded project (when given, as from
+ * `getModelMetadata`), then each operation's G-code.
+ */
+export function buildProgram(
+  { builders, options }: Program,
+  modelMetadata?: string,
+): string {
+  const meta = new GCodeBuilder();
+  if (modelMetadata !== undefined) {
+    meta.addModelMetadata(modelMetadata);
+  }
   const result = [meta, ...builders].reduce((a, b) => a.concat(b));
   // The final retract belongs to no operation.
   return result
     .sourceOperationId('')
     .goToSafeHeight()
     .stopProgram()
-    .build(gcodeOptions);
+    .build(options);
 }

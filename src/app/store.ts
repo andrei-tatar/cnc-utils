@@ -9,7 +9,20 @@ export async function getModelMetadata(model: ModelType) {
   writer.write(byteArray);
   writer.close();
   const arrayBuffer = await new Response(cs.readable).arrayBuffer();
-  return btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  return toBase64(new Uint8Array(arrayBuffer));
+}
+
+/**
+ * In chunks: spreading a large array into `String.fromCharCode` overflows
+ * the stack (from roughly 100 KB, e.g. a project with a big imported SVG).
+ */
+function toBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
 }
 
 export async function loadModelFromMetadata(
