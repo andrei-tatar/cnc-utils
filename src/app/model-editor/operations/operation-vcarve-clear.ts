@@ -18,6 +18,9 @@ export interface ModelType {
   leaveStock: number;
 }
 
+/** What a clearing can clear for: a v-carve, or an inlay plug. */
+const CLEARS = ['v-carve', 'inlay-plug'];
+
 const hideUnlessClearing = (field: FormlyFieldConfig) =>
   field.model?.type !== Definition.type;
 
@@ -35,7 +38,7 @@ const field: FormlyFieldConfig = {
           expression: (control: AbstractControl, field: FormlyFieldConfig) =>
             !control.value ||
             allOperations(field).some(
-              (o) => o.id === control.value && o.type === 'v-carve',
+              (o) => o.id === control.value && CLEARS.includes(o.type),
             ),
           message: 'This v-carve was deleted or changed type — pick another',
         },
@@ -46,7 +49,7 @@ const field: FormlyFieldConfig = {
           const shapes = allShapes(field);
           const tools = allTools(field);
           return operations
-            .filter((o) => o.type === 'v-carve')
+            .filter((o) => CLEARS.includes(o.type))
             .map((o) => ({
               value: o.id,
               label: o.name || describeOperation(o, shapes, tools, operations),

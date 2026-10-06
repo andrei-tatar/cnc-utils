@@ -6,7 +6,15 @@ import {
 } from '../model-editor/model';
 import { toolLabel } from '../model-editor/tools';
 import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
-import { clearedFirst, VCarveSource, vCarveSource } from './vcarve-source';
+import {
+  clearedFirst,
+  PlugSource,
+  plugSource,
+  RestSource,
+  restSource,
+  VCarveSource,
+  vCarveSource,
+} from './vcarve-source';
 
 /** How an operation's tool appears in the G-code. */
 export type ToolInfo = {
@@ -22,11 +30,16 @@ export type ToolInfo = {
 /** An operation resolved against the rest of the model. */
 export type OperationInputs = {
   operationParameters: OperationParameters;
-  /** The shape it cuts (a v-carve clearing's is its v-carve's). */
+  /**
+   * The shape it cuts (a v-carve clearing's is its v-carve's, an inlay
+   * plug's its pocket's, rest machining's its pocket's).
+   */
   shapeId: string;
   /** Its tool's routing parameters, with the operation's overrides. */
   toolParameters: ToolParameters | null;
   source: VCarveSource | null;
+  plug: PlugSource | null;
+  rest: RestSource | null;
   beyondCone: boolean;
   toolInfo: ToolInfo | null;
   enabled: boolean;
@@ -77,6 +90,12 @@ export function operationInputs(
   // V-carve clearing borrows its shape, bit and depths from the v-carve it
   // clears for, so it follows any change made there.
   const source = vCarveSource(operationParameters, operations, tools);
+  const plug = plugSource(
+    { ...operationParameters, toolId },
+    operations,
+    tools,
+  );
+  const rest = restSource(operationParameters, operations, tools);
 
   // Tools are numbered by their position in the tools list.
   const toolInfo: ToolInfo | null = tool
@@ -91,11 +110,14 @@ export function operationInputs(
 
   return {
     operationParameters,
-    shapeId: source ? source.shapeId : shapeId,
+    shapeId: (source ?? plug ?? rest)?.shapeId ?? shapeId,
     toolParameters,
     source,
+    plug,
+    rest,
     beyondCone:
-      operationParameters.type === 'v-carve' &&
+      (operationParameters.type === 'v-carve' ||
+        operationParameters.type === 'inlay-plug') &&
       clearedFirst(id, operations, tools),
     toolInfo,
     enabled: !disabled,

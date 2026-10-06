@@ -8,3 +8,7 @@ export * from './route-vcarve-clearing';
 export * from './flat-outline';
 export * from './boolean-operation';
 export * from './trace-bitmap';
+export * from './route-drill';
+export * from './route-helix';
+export * from './route-chamfer';
+export * from './route-rest';

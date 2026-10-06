@@ -168,6 +168,31 @@ export class GCodeBuilder {
     return this;
   }
 
+  /** A rapid move straight up or down to `z` (above the work, or into a
+   * hole already drilled). */
+  rapidZ(z: number) {
+    this._instructions.push({ type: 'rapid-z', z });
+    this._isAtSafetyHeight = false;
+    return this;
+  }
+
+  /** Wait `seconds` (G4), e.g. at the bottom of a hole. */
+  dwell(seconds: number) {
+    this._instructions.push({ type: 'dwell', seconds });
+    return this;
+  }
+
+  /**
+   * One hole as a canned drilling cycle (G81/G82/G83/G73), for controllers
+   * that have them; starts and ends at safe height. The preview shows it as
+   * the moves the controller makes.
+   */
+  drillCycle(cycle: DrillCycle) {
+    this._instructions.push({ type: 'drill-cycle', ...cycle });
+    this._isAtSafetyHeight = true;
+    return this;
+  }
+
   /** All of `builders`, one after another, in one copy. */
   static concatAll(builders: GCodeBuilder[]): GCodeBuilder {
     const result = new GCodeBuilder();
@@ -192,6 +217,7 @@ export class GCodeBuilder {
       options,
       {
         line: (text) => gcode.push(text),
+        cycle: (text) => gcode.push(text),
         move: (code, changed) => {
           const coords: string[] = [];
           if (changed.x !== undefined) coords.push(`X${changed.x}`);
@@ -324,7 +350,13 @@ export class GCodeBuilder {
       }
     };
 
+    let cycleActive = false;
     for (const instruction of this._instructions) {
+      // Canned cycles stay modal until cancelled.
+      if (cycleActive && instruction.type !== 'drill-cycle') {
+        cycleActive = false;
+        out.line('G80');
+      }
       switch (instruction.type) {
         case 'safety-height':
           flushCuts();
@@ -404,6 +436,20 @@ export class GCodeBuilder {
           gcode.push('M00');
           break;
 
+        case 'rapid-z':
+          flushCuts();
+          move('G0', { z: instruction.z });
+          break;
+
+        case 'dwell':
+          gcode.push(`G4 P${round(instruction.seconds)}`);
+          break;
+
+        case 'drill-cycle':
+          startSpindle();
+          drill(instruction);
+          break;
+
         case 'tool':
           // Also at the start, so the right tool is loaded before cutting.
           if (emitToolChanges && instruction.toolNumber !== currentTool) {
@@ -438,6 +484,68 @@ export class GCodeBuilder {
     }
 
     flushCuts();
+    if (cycleActive) {
+      out.line('G80');
+    }
+
+    /**
+     * A hole as a canned cycle: one line of G-code, or (for the preview) the
+     * moves it makes. Returns to safe height (G98), where it started.
+     */
+    function drill(cycle: DrillCycle) {
+      flushCuts();
+      const top = o.safetyHeight;
+      const code = !cycle.peck
+        ? cycle.dwell > 0
+          ? 'G82'
+          : 'G81'
+        : cycle.chipBreak
+          ? 'G73'
+          : 'G83';
+      if (out.cycle) {
+        if (z !== top) {
+          move('G0', { z: top });
+        }
+        const words = [
+          `X${round(cycle.x)}`,
+          `Y${round(cycle.y)}`,
+          `Z${round(cycle.depth)}`,
+          `R${round(cycle.retract)}`,
+        ];
+        if (cycle.peck) words.push(`Q${round(cycle.peck)}`);
+        if (code === 'G82') words.push(`P${round(cycle.dwell)}`);
+        if (plungeFeedRate !== feedRate) {
+          feedRate = plungeFeedRate;
+          words.push(`F${plungeFeedRate}`);
+        }
+        out.cycle(`${cycleActive ? '' : 'G98 '}${code} ${words.join(' ')}`);
+        cycleActive = true;
+        x = round(cycle.x);
+        y = round(cycle.y);
+        z = top;
+        return;
+      }
+      // The moves the controller makes: pecks out to R (G83) or lifting a
+      // little (G73), and the dwell at the bottom (G82).
+      move('G0', { z: top });
+      move('G0', { x: cycle.x, y: cycle.y });
+      move('G0', { z: cycle.retract });
+      let reached = cycle.retract; // pecks count from R
+      const peck = cycle.peck > 0 ? cycle.peck : Infinity;
+      while (reached > cycle.depth + 1e-9) {
+        const next = Math.max(cycle.depth, reached - peck);
+        move('G1', { z: next }, plungeFeedRate);
+        reached = next;
+        if (reached > cycle.depth + 1e-9) {
+          move('G0', { z: cycle.chipBreak ? reached + 0.5 : cycle.retract });
+          if (!cycle.chipBreak) move('G0', { z: reached });
+        }
+      }
+      if (!cycle.peck && cycle.dwell > 0) {
+        out.line(`G4 P${round(cycle.dwell)}`);
+      }
+      move('G0', { z: top });
+    }
 
     /** Write the held-back cuts, as arcs where they follow a circle. */
     function flushCuts() {
@@ -581,6 +689,22 @@ export class GCodeBuilder {
   }
 }
 
+/** One hole, drilled by the controller's canned cycle. */
+export type DrillCycle = {
+  x: number;
+  y: number;
+  /** Z at the bottom of the hole. */
+  depth: number;
+  /** Z to rapid down to before drilling, and between pecks (R). */
+  retract: number;
+  /** Depth of each peck (Q), or 0 to drill in one go. */
+  peck: number;
+  /** Pecks only lift a little to break the chip (G73), not out (G83). */
+  chipBreak: boolean;
+  /** Seconds to wait at the bottom (G82; not with pecks). */
+  dwell: number;
+};
+
 /** A builder as `GCodeBuilder.pack` sends it between threads. */
 export type PackedGCode = {
   packedGCode: true;
@@ -625,6 +749,11 @@ type GcodeSink = {
   ): void;
   /** What the following moves belong to (an empty operation id clears it). */
   source?(kind: 'shape' | 'operation', id: string): void;
+  /**
+   * A canned cycle as one line. Without it, cycles are handed to `move` as
+   * the moves they make (for the preview).
+   */
+  cycle?(text: string): void;
 };
 
 type PathInstruction =
@@ -639,6 +768,9 @@ type PathInstruction =
   | { type: 'model'; model: string }
   | { type: 'stop-program' }
   | { type: 'pause' }
+  | { type: 'rapid-z'; z: number }
+  | { type: 'dwell'; seconds: number }
+  | ({ type: 'drill-cycle' } & DrillCycle)
   | {
       type: 'tool';
       toolNumber: number;

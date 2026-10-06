@@ -37,15 +37,28 @@ export function describeOperation(
     case 'v-carve-clear':
       what = 'v-carve clearing';
       break;
+    case 'drill':
+      what = `drill ${total(operation.startDepth, operation.depth, 1)}${
+        operation.peck > 0 ? ` peck ${mm(operation.peck)}` : ''
+      }`;
+      break;
+    case 'helix':
+      what = `helical bore ${total(operation.startDepth, operation.depth, 1)}`;
+      break;
+    case 'chamfer':
+      what = `chamfer ${mm(operation.chamferWidth ?? 0)}`;
+      break;
+    case 'inlay-plug':
+      what = 'inlay plug';
+      break;
+    case 'rest':
+      what = 'rest machining';
+      break;
     default:
       what = operation?.type ?? 'operation';
   }
 
-  // Clearing works on the shape of the v-carve it clears for.
-  const shapeId =
-    operation?.type === 'v-carve-clear'
-      ? operations.find((o) => o.id === operation.vcarveOperationId)?.shapeId
-      : operation?.shapeId;
+  const shapeId = borrowedShapeId(operation, operations);
   const shape = shapes.find((s) => s.id === shapeId);
   const tool = tools.find((t) => t.id === operation?.toolId);
   return [what, shape && shapeLabel(shape, shapes), tool && toolLabel(tool)]
@@ -56,4 +69,27 @@ export function describeOperation(
 /** " holes" / " outlines" for an operation limited to part of its shape. */
 function partLabel(mode: 'both' | 'holes' | 'contours' | undefined) {
   return mode === 'holes' ? ' holes' : mode === 'contours' ? ' outlines' : '';
+}
+
+/**
+ * The shape an operation cuts: its own, or (clearing, inlay plugs, rest
+ * machining) that of the operation it belongs to.
+ */
+export function borrowedShapeId(
+  operation: any,
+  operations: any[],
+  depth = 0,
+): string | undefined {
+  const from =
+    operation?.type === 'v-carve-clear' || operation?.type === 'inlay-plug'
+      ? operation.vcarveOperationId
+      : operation?.type === 'rest'
+        ? operation.pocketOperationId
+        : null;
+  if (!from) {
+    return operation?.shapeId;
+  }
+  const other = operations.find((o) => o.id === from);
+  // A clearing for an inlay plug borrows twice; never loop.
+  return depth < 3 ? borrowedShapeId(other, operations, depth + 1) : undefined;
 }

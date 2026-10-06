@@ -8,7 +8,7 @@ import {
 import { CamPath, CamPoint3, Highlight } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
 import { distinctItems, distinctJson } from './operators';
-import { vCarveSource } from './vcarve-source';
+import { borrowedShapeId } from '../model-editor/operations/describe';
 
 /** Shapes toggled off in the editor (hidden in the preview only). */
 export function hiddenShapeIds(
@@ -28,16 +28,13 @@ export function highlightFromModel(
   model$: Observable<ModelType>,
 ): Observable<Highlight> {
   return model$.pipe(
-    map(({ shapes, tools, operations }) => {
+    map(({ shapes, operations }) => {
       const expandedOperations = (operations ?? []).filter((o) => o.expanded);
       if (expandedOperations.length) {
-        const shapeIds = expandedOperations.flatMap(
-          ({ id, expanded, name, shapeId, toolId, ...parameters }) => {
-            const source = vCarveSource(parameters, operations, tools);
-            const effective = source ? source.shapeId : shapeId;
-            return effective ? [effective] : [];
-          },
-        );
+        const shapeIds = expandedOperations.flatMap((operation) => {
+          const effective = borrowedShapeId(operation, operations);
+          return effective ? [effective] : [];
+        });
         return {
           shapes: [...new Set(shapeIds)],
           operations: expandedOperations.map((o) => o.id),

@@ -4,7 +4,8 @@ import { GeometrySettings } from '../../cam/geometry';
 import { CamShape } from '../../cam/types';
 import worker from '../../worker';
 import { OperationParameters, ToolParameters } from '../model-editor/model';
-import { VCarveSource } from './vcarve-source';
+import { PlugSource, RestSource, VCarveSource } from './vcarve-source';
+import { pointLength } from '../model-editor/operations/operation-drill';
 
 /** Everything that decides an operation's toolpath. */
 export type RoutingInputs = {
@@ -12,6 +13,8 @@ export type RoutingInputs = {
   op: OperationParameters;
   tool: ToolParameters | null;
   source: VCarveSource | null;
+  plug: PlugSource | null;
+  rest: RestSource | null;
   beyondCone: boolean;
   geometry: GeometrySettings;
 };
@@ -42,6 +45,8 @@ function route({
   op,
   tool,
   source,
+  plug,
+  rest,
   beyondCone,
   geometry,
 }: RoutingInputs): Observable<GCodeBuilder> | null {
@@ -125,7 +130,7 @@ function route({
       });
 
     case 'v-carve-clear':
-      if (!source || bitType === 'v-bit') {
+      if (!source || bitType === 'v-bit' || bitType === 'drill') {
         return null;
       }
       return worker.routeVCarveClearing(shape, {
@@ -141,6 +146,94 @@ function route({
         maxDepth: source.maxDepth,
         beyondCone: source.beyondCone,
         mode: source.mode,
+        plug: source.plug,
+        rampAngle,
+      });
+
+    case 'inlay-plug':
+      if (!plug || bitType !== 'v-bit') {
+        return null;
+      }
+      return worker.routeVCarve(shape, {
+        geometry,
+        toolSize: diameter,
+        vAngle,
+        tipDiameter,
+        startDepth: 0,
+        maxDepth: plug.maxDepth,
+        stepover: plug.stepover,
+        clearFlatBottom: true,
+        sharpCorners: plug.sharpCorners,
+        sharpCornerAngle: plug.sharpCornerAngle,
+        beyondCone,
+        mode: 'both',
+        plug: plug.plug,
+        rampAngle,
+      });
+
+    case 'drill':
+      return worker.routeDrill(shape, {
+        geometry,
+        drillAt: op.drillAt ?? 'centers',
+        startDepth: op.startDepth,
+        depth: op.depth,
+        pointLength:
+          op.fullDiameter && bitType === 'drill'
+            ? pointLength(diameter, tool.pointAngle)
+            : 0,
+        peck: op.peck,
+        chipBreak: !!op.chipBreak,
+        dwell: op.dwell,
+        retractHeight: op.retractHeight,
+        cycles: op.output === 'cycles',
+      });
+
+    case 'helix':
+      if (bitType === 'v-bit' || bitType === 'drill') {
+        return null;
+      }
+      return worker.routeHelix(shape, {
+        geometry,
+        toolSize: diameter,
+        startDepth: op.startDepth,
+        depth: op.depth,
+        pitch: op.pitch,
+        direction: op.direction,
+        leaveStock: op.leaveStock,
+        clearMiddle: op.clearMiddle,
+        toolEngagement: op.toolEngagement,
+      });
+
+    case 'chamfer':
+      if (bitType !== 'v-bit') {
+        return null;
+      }
+      return worker.routeChamfer(shape, {
+        geometry,
+        toolSize: diameter,
+        vAngle,
+        tipDiameter,
+        width: op.chamferWidth,
+        edges: op.chamferEdges,
+        extraDepth: op.extraDepth,
+        passes: op.passes,
+        direction: op.direction,
+        rampAngle,
+      });
+
+    case 'rest':
+      if (!rest || bitType === 'v-bit' || bitType === 'drill') {
+        return null;
+      }
+      return worker.routeRest(shape, {
+        geometry,
+        toolSize: diameter,
+        previousToolSize: rest.previousToolSize,
+        toolEngagement: op.toolEngagement,
+        leaveStock: rest.leaveStock,
+        startDepth: rest.startDepth,
+        depthPerStep: rest.depthPerStep,
+        steps: rest.steps,
         rampAngle,
       });
   }

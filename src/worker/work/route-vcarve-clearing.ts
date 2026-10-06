@@ -1,3 +1,4 @@
+import { InlayPlug, inlayPlugShape } from './inlay-plug';
 import { CamShape } from '../../cam/types';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { GCodeBuilder } from '../../cam/gcode-builder';
@@ -50,11 +51,17 @@ export async function routeVCarveClearing(
     mode?: ShapePart;
     /** Ramp down into each level at this angle (degrees) instead of plunging. */
     rampAngle?: number | null;
+    /** Carve an inlay plug for the shape (see InlayPlug). */
+    plug?: InlayPlug | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
   },
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
+  if (options.plug) {
+    // An inlay plug: carve around the (mirrored) design instead.
+    input = await inlayPlugShape(input, options.plug);
+  }
   const sourceShapeId = input?.[0]?.sourceShapeId;
   let builder = new GCodeBuilder().sourceShapeId(sourceShapeId);
 

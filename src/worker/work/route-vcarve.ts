@@ -1,3 +1,4 @@
+import { InlayPlug, inlayPlugShape } from './inlay-plug';
 import {
   insetContours,
   carveRegion,
@@ -62,11 +63,17 @@ export async function routeVCarve(
     mode?: ShapePart;
     /** Ramp down into each cut at this angle (degrees) instead of plunging. */
     rampAngle?: number | null;
+    /** Carve an inlay plug for the shape (see InlayPlug). */
+    plug?: InlayPlug | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
   },
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
+  if (options.plug) {
+    // An inlay plug: carve around the (mirrored) design instead.
+    input = await inlayPlugShape(input, options.plug);
+  }
   const builder = new GCodeBuilder();
   builder.sourceShapeId(input?.[0]?.sourceShapeId);
 

@@ -1,7 +1,13 @@
 import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { allShapes, shapeLabel } from '../shapes/describe';
-import { allTools, toolLabel } from '../tools';
+import {
+  allTools,
+  BitType,
+  ROUND_CUTTERS,
+  SIDE_CUTTING,
+  toolLabel,
+} from '../tools';
 import { allOperations, describeOperation } from './describe';
 import {
   operationFeedsAndSpeeds,
@@ -33,24 +39,76 @@ import {
   ModelType as VCarveClearModelType,
 } from './operation-vcarve-clear';
 
+import {
+  Definition as DrillDefinition,
+  ModelType as DrillModelType,
+} from './operation-drill';
+
+import {
+  Definition as HelixDefinition,
+  ModelType as HelixModelType,
+} from './operation-helix';
+
+import {
+  Definition as ChamferDefinition,
+  ModelType as ChamferModelType,
+} from './operation-chamfer';
+
+import {
+  Definition as InlayDefinition,
+  ModelType as InlayModelType,
+} from './operation-inlay';
+
+import {
+  Definition as RestDefinition,
+  ModelType as RestModelType,
+} from './operation-rest';
+
 const operations = [
   PocketDefinition,
-  FlatDefinition,
   ProfileDefinition,
+  RestDefinition,
+  FlatDefinition,
+  DrillDefinition,
+  HelixDefinition,
+  ChamferDefinition,
   VCarveDefinition,
   VCarveClearDefinition,
+  InlayDefinition,
 ];
 
-const BIT_NAMES: Record<string, string> = {
-  'v-bit': 'a V-bit',
-  'end-mill': 'an end mill',
+// The bits each operation works with (and how to say so when it doesn't).
+const allowedBits: Record<
+  string,
+  { bits: readonly BitType[]; needs: string } | undefined
+> = {
+  [PocketDefinition.type]: {
+    bits: SIDE_CUTTING,
+    needs: 'a cutter, not a drill',
+  },
+  [ProfileDefinition.type]: {
+    bits: SIDE_CUTTING,
+    needs: 'a cutter, not a drill',
+  },
+  [FlatDefinition.type]: { bits: SIDE_CUTTING, needs: 'a cutter, not a drill' },
+  [RestDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
+  [HelixDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
+  [VCarveDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
+  [InlayDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
+  [ChamferDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
+  [VCarveClearDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
 };
 
-// Operations that only make sense with a particular bit; others work with any.
-const requiredBitType: Partial<Record<string, string>> = {
-  [VCarveDefinition.type]: 'v-bit',
-  [VCarveClearDefinition.type]: 'end-mill',
-};
+function allowsBit(type: string, bit: BitType) {
+  return allowedBits[type]?.bits.includes(bit) ?? true;
+}
+
+// Operations that take their shape from another operation.
+const borrowsShape = new Set<string>([
+  VCarveClearDefinition.type,
+  InlayDefinition.type,
+  RestDefinition.type,
+]);
 
 export type ModelType = {
   operations: Array<
@@ -69,6 +127,11 @@ export type ModelType = {
         | ProfileModelType
         | VCarveModelType
         | VCarveClearModelType
+        | DrillModelType
+        | HelixModelType
+        | ChamferModelType
+        | InlayModelType
+        | RestModelType
       )
   >;
 };
@@ -167,9 +230,10 @@ export const field: FormlyFieldConfig = {
           },
         },
         expressions: {
-          // Clearing uses the shape of the v-carve it clears for.
+          // Clearing, inlay plugs and rest machining use the shape of the
+          // operation they belong to.
           hide: (field: FormlyFieldConfig) =>
-            field.model?.type === VCarveClearDefinition.type,
+            borrowsShape.has(field.model?.type),
           'props.options': (field: FormlyFieldConfig) => {
             const shapes = allShapes(field);
             return shapes.map((shape) => ({
@@ -192,18 +256,17 @@ export const field: FormlyFieldConfig = {
               control: AbstractControl,
               field: FormlyFieldConfig,
             ) => {
-              const required = requiredBitType[control.value];
               const tool = allTools(field).find(
                 (t) => t.id === field.model?.toolId,
               );
               return (
-                !required || !tool || (tool.bitType ?? 'end-mill') === required
+                !tool || allowsBit(control.value, tool.bitType ?? 'end-mill')
               );
             },
             message: (_: unknown, field: FormlyFieldConfig) => {
               const type = field.formControl?.value;
               const label = operations.find((o) => o.type === type)?.label;
-              return `${label ?? type} needs ${BIT_NAMES[requiredBitType[type] ?? ''] ?? 'another'} tool`;
+              return `${label ?? type} needs ${allowedBits[type]?.needs ?? 'another tool'}`;
             },
           },
         },
@@ -216,9 +279,7 @@ export const field: FormlyFieldConfig = {
             return operations
               .filter(
                 (t) =>
-                  !requiredBitType[t.type] ||
-                  requiredBitType[t.type] === bitType ||
-                  t.type === field.model?.type,
+                  allowsBit(t.type, bitType) || t.type === field.model?.type,
               )
               .map((t) => ({ value: t.type, label: t.label }));
           },
@@ -231,6 +292,9 @@ export const field: FormlyFieldConfig = {
         ProfileDefinition.type,
         VCarveDefinition.type,
         VCarveClearDefinition.type,
+        RestDefinition.type,
+        ChamferDefinition.type,
+        InlayDefinition.type,
       ]),
     ],
   },
