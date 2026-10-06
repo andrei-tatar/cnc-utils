@@ -42,6 +42,23 @@ export type HeaderAction = {
   }): void;
 };
 
+/**
+ * A button in each item's header (`props.itemActions`), e.g. exporting a
+ * shape. `icon` is SVG path data on a 16 × 16 grid.
+ */
+export type ItemAction = {
+  title: string;
+  icon: string;
+  run(context: {
+    injector: Injector;
+    /** The list's field. */
+    field: FormlyFieldConfig;
+    item: any;
+    /** What the item's header shows as its name. */
+    name: string;
+  }): void;
+};
+
 @Component({
   imports: [FormlyModule, NgbCollapseModule, DragDropModule],
   styles: `
@@ -375,6 +392,18 @@ export type HeaderAction = {
       }
     }
 
+    .item-action-button {
+      display: inline-flex;
+      align-items: center;
+      --bs-btn-padding-y: 0.25rem;
+      --bs-btn-padding-x: 0.35rem;
+      --bs-btn-color: var(--bs-tertiary-color);
+      --bs-btn-border-color: transparent;
+      --bs-btn-hover-color: var(--accent);
+      --bs-btn-hover-bg: var(--editor-hover-bg);
+      --bs-btn-hover-border-color: transparent;
+    }
+
     .remove-button {
       display: inline-flex;
       align-items: center;
@@ -613,6 +642,24 @@ export type HeaderAction = {
                     >⚠ {{ problems.length }}</span
                   >
                 }
+                @for (action of itemActions; track action.title) {
+                  <button
+                    class="btn btn-sm item-action-button"
+                    type="button"
+                    [title]="action.title"
+                    [attr.aria-label]="
+                      action.title + ': ' + itemName(field.model)
+                    "
+                    (click)="
+                      $event.stopPropagation();
+                      runItemAction(action, field.model)
+                    "
+                  >
+                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                      <path [attr.d]="action.icon" />
+                    </svg>
+                  </button>
+                }
                 @if (toggle; as t) {
                   <button
                     class="btn btn-sm toggle-button"
@@ -717,6 +764,19 @@ export class ArrayTypeComponent
         const id = await generateId();
         this.add(undefined, { ...item, id, expanded: false });
       },
+    });
+  }
+
+  get itemActions(): ItemAction[] {
+    return this.props['itemActions'] ?? [];
+  }
+
+  runItemAction(action: ItemAction, item: any) {
+    action.run({
+      injector: this.injector,
+      field: this.field,
+      item,
+      name: this.itemName(item),
     });
   }
 

@@ -28,6 +28,8 @@ import {
 } from './model-editor/components/number-type-component';
 import { evaluateField } from './model-editor/variables/field';
 import { preloadModel } from './services/model-persistence';
+import { CamService } from './services/cam.service';
+import { ShapeExporter } from './model-editor/shapes/shape-export';
 
 export function WholeNumberValidator(
   _: AbstractControl,
@@ -51,6 +53,7 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     // The saved project is read (asynchronously) before anything uses it.
     provideAppInitializer(preloadModel),
+    { provide: ShapeExporter, useExisting: CamService },
     provideRouter(routes),
     provideAnimationsAsync(),
     importProvidersFrom(ReactiveFormsModule),

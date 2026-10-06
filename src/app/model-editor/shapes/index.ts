@@ -1,4 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import type { ItemAction } from '../components/array-type-component';
+import { ShapeExporter } from './shape-export';
 import { resolvedModelOf } from '../variables/field';
 import { allShapes, describeShape } from './describe';
 import {
@@ -119,6 +121,15 @@ export const field: FormlyFieldConfig = {
       onTitle: 'Hide in the preview',
       offTitle: 'Hidden in the preview — click to show',
     },
+    itemActions: [
+      {
+        title: 'Export as SVG (mm), e.g. for a laser cutter',
+        icon: 'M8 2.5v7.5M4.8 6.8 8 10l3.2-3.2M2.5 11v2.5h11V11',
+        run({ injector, item, name }) {
+          injector.get(ShapeExporter).exportShapeSvg(item.id, name);
+        },
+      } satisfies ItemAction,
+    ],
   },
   fieldArray: {
     fieldGroup: [

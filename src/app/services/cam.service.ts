@@ -2,6 +2,8 @@ import { inject, Injectable } from '@angular/core';
 import {
   combineLatest,
   concatMap,
+  filter,
+  firstValueFrom,
   map,
   Observable,
   ReplaySubject,
@@ -19,6 +21,8 @@ import {
   programTime,
 } from '../pipeline/gcode';
 import { resolveStock, StockOptions, stockOffset } from '../../cam/stock';
+import { resolveGcodeOptions } from '../../cam/gcode-options';
+import { shapesToSvg } from '../../cam/svg-export';
 import { distinctJson } from '../pipeline/operators';
 import { describeOperation } from '../model-editor/operations/describe';
 import {
@@ -31,6 +35,7 @@ import { downloadFile } from '../project-file';
 import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { resolveModel } from '../model-editor/variables/resolve';
+import { ShapeExporter } from '../model-editor/shapes/shape-export';
 import { ModelStore } from './model-store.service';
 import { WorkTracker } from './work-tracker.service';
 
@@ -39,7 +44,7 @@ import { WorkTracker } from './work-tracker.service';
  * the preview shows highlighted or hidden.
  */
 @Injectable({ providedIn: 'root' })
-export class CamService {
+export class CamService implements ShapeExporter {
   private store = inject(ModelStore);
   private workTracker = inject(WorkTracker);
 
@@ -140,6 +145,31 @@ export class CamService {
   /** Downloads the latest G-code (with the project embedded). */
   download() {
     this.download$.next();
+  }
+
+  /**
+   * Downloads one shape (after its transforms) as an SVG in millimetres,
+   * with arcs and Béziers in place of the polygons' short segments, e.g. to
+   * cut it on a laser. Waits for any work in progress, so it's up to date.
+   */
+  async exportShapeSvg(shapeId: string, name: string) {
+    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+    const [shapes, model] = await firstValueFrom(
+      combineLatest([this.shapes.byId(shapeId), this.model$]),
+    );
+    const options = resolveGcodeOptions(model.gcode);
+    // Points as close as the geometry is kept (Clipper rounds it), the curve
+    // between them as close as the polygons follow the original curves.
+    const points = Math.max(0.005, 10 ** -options.geometryDecimals);
+    const svg = shapesToSvg(
+      shapes,
+      { points, chords: points + options.curveTolerance },
+      name,
+    );
+    const fileName = name
+      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+      .replace(/^-+|-+$/g, '');
+    downloadFile(svg, `${fileName || 'shape'}.svg`, 'image/svg+xml');
   }
 }
 

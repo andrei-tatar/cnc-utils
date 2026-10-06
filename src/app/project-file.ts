@@ -4,14 +4,16 @@ import { migrateModel, ModelType } from './model-editor/model';
 import { loadModelFromGcode } from './store';
 
 /** Saves `data` as a file through the browser's download. */
-export function downloadFile(data: string, fileName: string) {
+export function downloadFile(
+  data: string,
+  fileName: string,
+  type = 'octet/stream',
+) {
   const a = document.createElement('a');
   a.setAttribute('style', 'display: none');
   document.body.appendChild(a);
 
-  const url = window.URL.createObjectURL(
-    new Blob([data], { type: 'octet/stream' }),
-  );
+  const url = window.URL.createObjectURL(new Blob([data], { type }));
   a.href = url;
   a.download = fileName;
   a.click();
