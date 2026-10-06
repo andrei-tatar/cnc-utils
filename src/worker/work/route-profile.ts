@@ -21,6 +21,8 @@ export async function routeProfile(
     toolSize: number;
     side: 'outside' | 'inside' | 'on-line';
     direction: 'climb' | 'conventional';
+    /** Keeps the cut this much further from the material (mm). */
+    leaveStock?: number;
     startDepth: number;
     depthPerStep: number;
     steps: number;
@@ -50,19 +52,22 @@ export async function routeProfile(
   if (options.mode === 'contours') {
     // Holes ignored: profile the filled outer outlines (and any open paths).
     const open = input.flatMap((s) => s.polygons).filter((p) => !p.close);
-    const filled = (await filledOutlines(closed)).map(
-      (points): CamPolygon => ({ points, close: true }),
-    );
+    const filled = (await filledOutlines(closed)).map((points): CamPolygon => ({
+      points,
+      close: true,
+    }));
     input = [{ sourceShapeId, polygons: [...filled, ...open] }];
   }
 
   // Offset the outline by half the tool diameter so the cutting edge lands on
-  // the shape boundary. 'on-line' rides the path itself (no compensation).
+  // the shape boundary, plus any stock left on the wall. 'on-line' rides the
+  // path itself (no compensation, no material side to leave stock on).
+  const clearance = options.toolSize / 2 + Math.max(0, options.leaveStock ?? 0);
   const offset =
     options.side === 'outside'
-      ? options.toolSize / 2
+      ? clearance
       : options.side === 'inside'
-        ? -options.toolSize / 2
+        ? -clearance
         : 0;
 
   const offsetInput =

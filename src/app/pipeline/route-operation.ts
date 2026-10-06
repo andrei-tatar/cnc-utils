@@ -90,6 +90,7 @@ function route({
         toolSize: diameter,
         side: op.side,
         direction: op.direction,
+        leaveStock: op.leaveStock ?? 0,
         startDepth: op.startDepth,
         depthPerStep: op.depth,
         steps: op.steps,

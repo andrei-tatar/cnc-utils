@@ -9,6 +9,8 @@ export interface ModelType {
   steps: number;
   side: 'outside' | 'inside' | 'on-line';
   direction: 'climb' | 'conventional';
+  /** Material left on the wall for a finishing pass (mm); not on line. */
+  leaveStock?: number;
   tabsEnabled: boolean;
   tabCount: number;
   tabWidth: number;
@@ -19,6 +21,9 @@ export interface ModelType {
 
 const hideUnlessProfile = (field: FormlyFieldConfig) =>
   field.model?.type !== Definition.type;
+
+const hideUnlessOffset = (field: FormlyFieldConfig) =>
+  field.model?.type !== Definition.type || field.model?.side === 'on-line';
 
 const hideUnlessTabs = (field: FormlyFieldConfig) =>
   field.model?.type !== Definition.type || !field.model?.tabsEnabled;
@@ -52,6 +57,17 @@ const field: FormlyFieldConfig = {
           { value: 'on-line', label: 'on line' },
         ],
       },
+    },
+    {
+      key: 'leaveStock',
+      type: 'number',
+      defaultValue: 0,
+      props: {
+        min: 0,
+        label: 'leave stock',
+        required: true,
+      },
+      expressions: { hide: hideUnlessOffset },
     },
     {
       key: 'direction',
