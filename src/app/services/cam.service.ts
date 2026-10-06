@@ -84,11 +84,17 @@ export class CamService {
     this.store.model$,
   );
 
-  /** The stock, and where the G-code's zero is in design coordinates. */
-  readonly stock$: Observable<StockView> = this.model$.pipe(
-    map((model) => {
+  /**
+   * The stock, and where the G-code's zero is in design coordinates (it can
+   * depend on the toolpaths: see the reference point option).
+   */
+  readonly stock$: Observable<StockView> = combineLatest([
+    this.model$,
+    this.program$,
+  ]).pipe(
+    map(([model, program]) => {
       const stock = resolveStock(model.stock);
-      const offset = stockOffset(stock);
+      const offset = program.options.offset ?? stockOffset(stock);
       return {
         stock,
         zero: { x: -offset.x, y: -offset.y, z: -offset.z },

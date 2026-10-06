@@ -9,7 +9,7 @@ import {
   switchMap,
 } from 'rxjs';
 import { GCodeBuilder, JobTime } from '../../cam/gcode-builder';
-import { resolveStock, stockOffset } from '../../cam/stock';
+import { programOffset, resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
 import { CamPath } from '../../cam/types';
@@ -91,7 +91,18 @@ export function generateGcodeFromOperations(
           })),
           distinctJson(),
         ),
-      }),
+      }).pipe(
+        map(({ builders, options }) => ({
+          builders,
+          options: {
+            ...options,
+            offset: programOffset(
+              builders.map((b) => b.cutBounds()),
+              options,
+            ),
+          },
+        })),
+      ),
   );
 }
 

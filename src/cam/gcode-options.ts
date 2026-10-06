@@ -1,3 +1,20 @@
+/** A corner, the middle of a side, or the middle of a box. */
+export type BoxAnchor =
+  `${'xmin' | 'xmax' | 'xcenter'}-${'ymin' | 'ymax' | 'ycenter'}`;
+
+export type Box = { minX: number; minY: number; maxX: number; maxY: number };
+
+/** Where `anchor` is on `box`. */
+export function anchorPoint(
+  anchor: BoxAnchor,
+  box: Box,
+): { x: number; y: number } {
+  const [ax, ay] = anchor.split('-').map((v) => v.substring(1));
+  const at = (min: number, max: number, type: string) =>
+    type === 'min' ? min : type === 'max' ? max : (min + max) / 2;
+  return { x: at(box.minX, box.maxX, ax), y: at(box.minY, box.maxY, ay) };
+}
+
 /** Project-wide settings for the generated G-code. */
 export type GcodeOptions = {
   /** Height for rapid moves and tool changes, in mm above the stock. */
@@ -46,6 +63,15 @@ export type GcodeOptions = {
   /** Rapid (G0) speed, mm/min: only for estimating how long a job takes. */
   rapidRate: number;
   /**
+   * Move the G-code so this point of the cuts' bounding box (where the
+   * tool's centre goes) lands on `referenceX`, `referenceY`; `none` leaves
+   * it where the design (or the stock's X0 Y0) puts it. Overrides the
+   * stock's X0 Y0.
+   */
+  referencePoint: 'none' | BoxAnchor;
+  referenceX: number;
+  referenceY: number;
+  /**
    * Added to every coordinate written (not to the preview): moves the
    * G-code's zero onto the stock. Set from the stock settings.
    */
@@ -69,6 +95,9 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   curveTolerance: 0.01,
   geometryDecimals: 2,
   rapidRate: 3000,
+  referencePoint: 'none',
+  referenceX: 0,
+  referenceY: 0,
 };
 
 /** Complete options from a (possibly partial or older) stored value. */

@@ -433,7 +433,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
         (child as Mesh).geometry.dispose();
       });
       stockBox.clear();
-      const zero = view?.stock.enabled ? view.zero : { x: 0, y: 0, z: 0 };
+      const zero = view?.zero ?? { x: 0, y: 0, z: 0 };
       axes.forEach((axis) => axis.position.set(zero.x, zero.y, zero.z));
       if (view?.stock.enabled) {
         const { width, height, thickness, x, y } = view.stock;

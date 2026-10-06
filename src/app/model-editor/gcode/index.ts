@@ -11,6 +11,8 @@ export type ModelType = {
 const d = DEFAULT_GCODE_OPTIONS;
 
 const hideUnlessSpindle = (field: FormlyFieldConfig) => !field.model?.spindle;
+const hideUnlessReference = (field: FormlyFieldConfig) =>
+  (field.model?.referencePoint ?? 'none') === 'none';
 
 export const field: FormlyFieldConfig = {
   key: 'gcode',
@@ -150,6 +152,43 @@ export const field: FormlyFieldConfig = {
         min: 1,
         required: true,
       },
+    },
+    {
+      key: 'referencePoint',
+      type: 'enum',
+      defaultValue: d.referencePoint,
+      props: {
+        label: 'move the toolpaths',
+        description:
+          'puts this point of the cuts’ bounding box (tool centre) at the X / Y below; overrides the stock’s X0 Y0',
+        required: true,
+        options: [
+          { value: 'none', label: 'no, keep them where they are' },
+          { value: 'xmin-ymax', label: 'top-left' },
+          { value: 'xcenter-ymax', label: 'top middle' },
+          { value: 'xmax-ymax', label: 'top-right' },
+          { value: 'xmin-ycenter', label: 'left middle' },
+          { value: 'xcenter-ycenter', label: 'centre' },
+          { value: 'xmax-ycenter', label: 'right middle' },
+          { value: 'xmin-ymin', label: 'bottom-left' },
+          { value: 'xcenter-ymin', label: 'bottom middle' },
+          { value: 'xmax-ymin', label: 'bottom-right' },
+        ],
+      },
+    },
+    {
+      key: 'referenceX',
+      type: 'number',
+      defaultValue: d.referenceX,
+      props: { label: 'to X', required: true },
+      expressions: { hide: hideUnlessReference },
+    },
+    {
+      key: 'referenceY',
+      type: 'number',
+      defaultValue: d.referenceY,
+      props: { label: 'to Y', required: true },
+      expressions: { hide: hideUnlessReference },
     },
     {
       key: 'arcs',

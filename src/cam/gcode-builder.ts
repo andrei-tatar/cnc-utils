@@ -1,4 +1,4 @@
-import { GcodeOptions, resolveGcodeOptions } from './gcode-options';
+import { Box, GcodeOptions, resolveGcodeOptions } from './gcode-options';
 import { fitArcs } from './arc-fit';
 import { CamPath, CamPoint, CamPoint3 } from './types';
 
@@ -86,6 +86,43 @@ export class GCodeBuilder {
     builder._instructions = instructions;
     builder._isAtSafetyHeight = packed.isAtSafetyHeight;
     return builder;
+  }
+
+  /**
+   * The XY extent of the cuts (where the tool's centre goes while cutting
+   * or drilling; not travel), or null without any.
+   */
+  cutBounds(): Box | null {
+    let box: Box | null = null;
+    const add = (p: CamPoint | null) => {
+      if (!p) return;
+      box ??= { minX: p.x, minY: p.y, maxX: p.x, maxY: p.y };
+      box.minX = Math.min(box.minX, p.x);
+      box.minY = Math.min(box.minY, p.y);
+      box.maxX = Math.max(box.maxX, p.x);
+      box.maxY = Math.max(box.maxY, p.y);
+    };
+    let at: CamPoint | null = null;
+    for (const i of this._instructions) {
+      switch (i.type) {
+        case 'travel':
+          at = i.to;
+          break;
+        case 'plunge':
+          add(at);
+          break;
+        case 'carve':
+          add(at);
+          add(i.to);
+          at = i.to;
+          break;
+        case 'drill-cycle':
+          at = { x: i.x, y: i.y };
+          add(at);
+          break;
+      }
+    }
+    return box;
   }
 
   get isAtSafetyHeight() {
