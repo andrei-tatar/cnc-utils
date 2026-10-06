@@ -14,6 +14,8 @@ export interface ModelType {
   /** Empty: a single pass along the shape's centre line. */
   stepover?: number | null;
   clearFlatBottom: boolean;
+  /** With a stepover: also cut along the centre line, at full depth. */
+  centerLine?: boolean;
   sharpCorners: boolean;
   sharpCornerAngle: number;
 }
@@ -105,6 +107,20 @@ const field: FormlyFieldConfig = {
       expressions: {
         hide: (field: FormlyFieldConfig) =>
           hideIfUnlimited(field) || singlePass(field),
+      },
+    },
+    {
+      key: 'centerLine',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'finish along the centre line',
+        description:
+          'one more pass where the V is deepest, so a large stepover still reaches full depth',
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          field.model?.type !== Definition.type || singlePass(field),
       },
     },
     {

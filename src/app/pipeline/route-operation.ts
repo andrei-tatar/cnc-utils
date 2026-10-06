@@ -128,6 +128,7 @@ function route({
         stepover: op.stepover && op.stepover > 0 ? op.stepover : null,
         // Without a max depth there's no flat bottom.
         clearFlatBottom: !op.unlimitedDepth && op.clearFlatBottom,
+        centerLine: !!op.centerLine,
         sharpCorners: op.sharpCorners ?? true,
         sharpCornerAngle: op.sharpCornerAngle ?? 150,
         beyondCone,
@@ -171,6 +172,7 @@ function route({
         maxDepth: plug.maxDepth,
         stepover: plug.stepover,
         clearFlatBottom: true,
+        centerLine: plug.centerLine,
         sharpCorners: plug.sharpCorners,
         sharpCornerAngle: plug.sharpCornerAngle,
         beyondCone,

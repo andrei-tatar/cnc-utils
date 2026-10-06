@@ -56,6 +56,11 @@ export async function routeVCarve(
     /** Null: a single pass along the shape's centre line (medial axis). */
     stepover: number | null;
     clearFlatBottom: boolean;
+    /**
+     * With a stepover: finish with a pass along the shape's centre line
+     * (medial axis), so its deepest line is cut however coarse the stepover.
+     */
+    centerLine?: boolean;
     sharpCorners: boolean;
     sharpCornerAngle: number;
     /** The groove's middle is cleared first, so carve below the cone. */
@@ -248,6 +253,10 @@ export async function routeVCarve(
       );
       continue;
     }
+    if (options.centerLine) {
+      // The centre line pass below reaches the deepest point.
+      continue;
+    }
 
     // The island collapses somewhere within this step. Its deepest point (on
     // the medial axis) would otherwise be left as a ridge up to
@@ -272,6 +281,20 @@ export async function routeVCarve(
     }
   }
 
+  if (options.centerLine) {
+    await carveAxis(
+      builder,
+      region,
+      geometry,
+      depthAt,
+      keepAt,
+      enter,
+      top,
+      position,
+      options.sharpCorners ? (options.sharpCornerAngle * Math.PI) / 180 : null,
+    );
+  }
+
   return builder;
 }
 
@@ -293,6 +316,58 @@ async function carveSinglePass(
   top: number,
   position: CamPoint,
   sharpCornerAngle: number,
+) {
+  const { maxInset } = geometry;
+  position = await carveAxis(
+    builder,
+    region,
+    geometry,
+    depthAt,
+    keepAt,
+    enter,
+    top,
+    position,
+    sharpCornerAngle,
+  );
+
+  if (Number.isFinite(maxInset)) {
+    for (const contour of orderByProximity(
+      groupComponents(await insetContours(region, maxInset)).flat(),
+      position,
+    )) {
+      cutContour(
+        builder,
+        contour,
+        maxInset,
+        maxInset,
+        depthAt,
+        null,
+        keepAt(maxInset),
+        enter,
+        // The axis isn't cut where it's this wide: nothing above is cleared.
+        top,
+      );
+      position = contour[0];
+    }
+  }
+  return position;
+}
+
+/**
+ * Cut the medial axis where the shape is no wider than the max depth allows,
+ * each point at the depth for its distance to the edges. Branches into
+ * corners are kept for corners up to `sharpCornerAngle` (null: none).
+ */
+async function carveAxis(
+  builder: GCodeBuilder,
+  region: CamPoint[][],
+  geometry: { tipRadius: number; maxInset: number },
+  depthAt: (inset: number) => number,
+  keepAt: (inset: number) => ((p: CamPoint) => boolean) | null,
+  enter: Enter,
+  top: number,
+  position: CamPoint,
+  sharpCornerAngle: number | null,
 ) {
   const { tipRadius, maxInset } = geometry;
   const limited = Number.isFinite(maxInset);
@@ -366,27 +441,6 @@ async function carveSinglePass(
       builder.carveTo(p.x, p.y, z(p.d));
     }
     position = run[run.length - 1];
-  }
-
-  if (limited) {
-    for (const contour of orderByProximity(
-      groupComponents(await insetContours(region, maxInset)).flat(),
-      position,
-    )) {
-      cutContour(
-        builder,
-        contour,
-        maxInset,
-        maxInset,
-        depthAt,
-        null,
-        keepAt(maxInset),
-        enter,
-        // The axis isn't cut where it's this wide: nothing above is cleared.
-        top,
-      );
-      position = contour[0];
-    }
   }
   return position;
 }

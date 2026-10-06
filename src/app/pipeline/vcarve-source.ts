@@ -25,6 +25,7 @@ export type PlugSource = {
   maxDepth: number;
   plug: InlayPlug;
   stepover: number | null;
+  centerLine: boolean;
   sharpCorners: boolean;
   sharpCornerAngle: number;
 };
@@ -71,6 +72,7 @@ export function plugSource(
     maxDepth: start + Math.max(0, operation.inlayAbove),
     plug: { grow: start * tan, margin: operation.inlayMargin },
     stepover: pocket.stepover && pocket.stepover > 0 ? pocket.stepover : null,
+    centerLine: !!pocket.centerLine,
     sharpCorners: pocket.sharpCorners ?? true,
     sharpCornerAngle: pocket.sharpCornerAngle ?? 150,
   };
