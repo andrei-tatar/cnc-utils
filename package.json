@@ -3,9 +3,13 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
+    "samples": "node scripts/samples-index.mjs",
+    "prestart": "npm run samples",
     "start": "ng serve",
+    "prebuild": "npm run samples",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
+    "pretest": "npm run samples",
     "test": "ng test"
   },
   "private": true,

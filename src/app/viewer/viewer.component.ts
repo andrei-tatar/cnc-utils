@@ -266,6 +266,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
   private content = new Group();
   /** Keep framing the content until the user moves the camera themselves. */
   private autoFit = true;
+  /** The content's box as last framed automatically ('' for none). */
+  private fittedBox = '';
 
   camera!: OrthographicCamera;
 
@@ -454,7 +456,6 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
     let arrowsKey = '';
     let viewKey = '';
-    let fittedBox = '';
     const frame = () => {
       const pixelsPerUnit =
         (renderer.domElement.clientHeight * this.camera.zoom) / frustumSize;
@@ -499,8 +500,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
           : [...box.min.toArray(), ...box.max.toArray()]
               .map((v) => v.toFixed(2))
               .join();
-        if (boxKey && boxKey !== fittedBox) {
-          fittedBox = boxKey;
+        if (boxKey && boxKey !== this.fittedBox) {
+          this.fittedBox = boxKey;
           this.fitToView(box);
         }
       }
@@ -865,6 +866,17 @@ export class ViewerComponent implements OnInit, OnDestroy {
     );
     this.camera.updateProjectionMatrix();
     this.controls.update();
+  }
+
+  /**
+   * Frame the content again, and keep framing it as it arrives or changes
+   * until the user moves the camera (as on a first visit): for a project
+   * that was just opened, whose shapes and toolpaths are still coming.
+   */
+  refit() {
+    this.autoFit = true;
+    this.fittedBox = '';
+    this.requestRender();
   }
 
   /** Look straight down at the XY plane (X right, Y up). */

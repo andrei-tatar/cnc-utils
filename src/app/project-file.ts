@@ -1,9 +1,7 @@
-import { EMPTY, Observable, switchMap } from 'rxjs';
+import { EMPTY, from, Observable, switchMap } from 'rxjs';
 import { readFile } from '../util';
 import { migrateModel, ModelType } from './model-editor/model';
-import { loadModelFromMetadata } from './store';
-
-const MODEL_PREFIX = '; model=';
+import { loadModelFromGcode } from './store';
 
 /** Saves `data` as a file through the browser's download. */
 export function downloadFile(data: string, fileName: string) {
@@ -28,18 +26,7 @@ export function downloadFile(data: string, fileName: string) {
 export function readModelFromNcFile(): Observable<ModelType> {
   return readFile().pipe(
     switchMap((file) => file.text()),
-    switchMap((content) => {
-      const foundLine = content
-        .split('\n')
-        .find((l) => l.startsWith(MODEL_PREFIX));
-
-      if (foundLine) {
-        return loadModelFromMetadata(
-          foundLine.substring(MODEL_PREFIX.length),
-        ).then(migrateModel);
-      }
-
-      return EMPTY;
-    }),
+    switchMap((content) => loadModelFromGcode(content)),
+    switchMap((model) => (model ? from([migrateModel(model)]) : EMPTY)),
   );
 }

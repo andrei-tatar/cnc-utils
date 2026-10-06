@@ -1,5 +1,7 @@
 import { ModelType } from './model-editor/model';
 
+const MODEL_PREFIX = '; model=';
+
 export async function getModelMetadata(model: ModelType) {
   const json = JSON.stringify(model);
   const byteArray = new TextEncoder().encode(json);
@@ -45,4 +47,17 @@ export async function loadModelFromMetadata(
   const arrayBuffer = await new Response(cs.readable).arrayBuffer();
   const decoded = new TextDecoder().decode(arrayBuffer);
   return JSON.parse(decoded);
+}
+
+/**
+ * The project embedded in a .nc file's text, as stored (not migrated), or
+ * null when it has none.
+ */
+export async function loadModelFromGcode(
+  content: string,
+): Promise<unknown | null> {
+  const line = content.split('\n').find((l) => l.startsWith(MODEL_PREFIX));
+  return line
+    ? loadModelFromMetadata(line.substring(MODEL_PREFIX.length).trim())
+    : null;
 }

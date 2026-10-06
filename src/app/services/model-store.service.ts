@@ -11,8 +11,9 @@ import {
   Subject,
   switchMap,
 } from 'rxjs';
-import { ModelType } from '../model-editor/model';
+import { migrateModel, ModelType } from '../model-editor/model';
 import { readModelFromNcFile } from '../project-file';
+import { loadSample, Sample } from '../samples';
 import { deepEqual } from '../../util';
 import { loadModel, saveModel } from './model-persistence';
 /** Saving waits for a pause in editing (and happens when leaving). */
@@ -69,6 +70,11 @@ export class ModelStore {
   /** Loads the project embedded in a previously downloaded .nc file. */
   open() {
     this.open$.next();
+  }
+
+  /** Replaces the project with a sample one. */
+  async openSample(sample: Sample) {
+    this.model$.next(migrateModel(await loadSample(sample)));
   }
 }
 

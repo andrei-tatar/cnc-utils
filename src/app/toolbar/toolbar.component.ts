@@ -3,10 +3,19 @@ import {
   Component,
   input,
   output,
+  signal,
 } from '@angular/core';
+import {
+  NgbDropdown,
+  NgbDropdownItem,
+  NgbDropdownMenu,
+  NgbDropdownToggle,
+} from '@ng-bootstrap/ng-bootstrap';
+import { listSamples, Sample } from '../samples';
 
 @Component({
   selector: 'app-toolbar',
+  imports: [NgbDropdown, NgbDropdownToggle, NgbDropdownMenu, NgbDropdownItem],
   template: `
     <header class="toolbar">
       <span class="toolbar_title">CNC Utils</span>
@@ -20,6 +29,41 @@ import {
         </span>
       }
       <span class="toolbar_spacer"></span>
+      @if (samples().length) {
+        <div
+          ngbDropdown
+          placement="bottom-start bottom-end"
+          class="d-inline-block"
+        >
+          <button
+            ngbDropdownToggle
+            class="btn btn-sm btn-outline-secondary toolbar_button"
+            type="button"
+            title="Open an example project (replaces the current one)"
+          >
+            Samples
+          </button>
+          <div ngbDropdownMenu class="samples">
+            <h6 class="dropdown-header samples_header">
+              Opens in place of the current project
+            </h6>
+            @for (sample of samples(); track sample.file) {
+              <button
+                ngbDropdownItem
+                type="button"
+                (click)="openSample.emit(sample)"
+              >
+                <span class="samples_name">{{ sample.name }}</span>
+                @if (sample.description) {
+                  <span class="samples_description">{{
+                    sample.description
+                  }}</span>
+                }
+              </button>
+            }
+          </div>
+        </div>
+      }
       <button
         class="btn btn-sm btn-outline-secondary toolbar_button"
         type="button"
@@ -70,6 +114,43 @@ import {
       gap: 5px;
     }
 
+    .samples {
+      width: min(360px, calc(100vw - 24px));
+      padding: 4px 0;
+    }
+
+    .samples_header {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 6px 14px 8px;
+    }
+
+    .samples .dropdown-item {
+      display: block;
+      white-space: normal;
+      padding: 10px 14px;
+      border-top: 1px solid var(--bs-border-color-translucent);
+    }
+
+    .samples_name {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    .samples_description {
+      display: block;
+      margin-top: 3px;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      color: var(--bs-secondary-color);
+    }
+
+    .samples .dropdown-item:active .samples_description {
+      color: inherit;
+    }
+
     .working {
       display: inline-flex;
       align-items: center;
@@ -91,8 +172,15 @@ import {
   changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class ToolbarComponent {
+  /** The sample projects (`samples/index.json`); fetched once. */
+  readonly samples = signal<Sample[]>([]);
   /** A computation is running: shows the spinner, blocks the download. */
   readonly working = input(false);
   readonly load = output();
+  readonly openSample = output<Sample>();
   readonly download = output();
+
+  constructor() {
+    listSamples().then((samples) => this.samples.set(samples));
+  }
 }

@@ -33,6 +33,11 @@
               {
                 "glob": "clipper2z.wasm",
                 "input": "node_modules/clipper2-wasm/dist/es"
+              },
+              {
+                "glob": "{*.nc,index.json}",
+                "input": "samples",
+                "output": "samples"
               }
             ],
             "styles": ["src/styles.scss"],
@@ -91,6 +96,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "{*.nc,index.json}",
+                "input": "samples",
+                "output": "samples"
               }
             ],
             "styles": ["src/styles.scss"],
