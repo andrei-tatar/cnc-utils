@@ -45,13 +45,13 @@ formly-wrapper-form-field > div {
   // Formly's built-in types leave an empty host element next to the control;
   // keep it out of the flex row so it doesn't add an extra gap.
   > :is(
-      formly-field-input,
-      formly-field-textarea,
-      formly-field-select,
-      formly-field-checkbox,
-      formly-field-radio,
-      formly-field-multicheckbox
-    ) {
+    formly-field-input,
+    formly-field-textarea,
+    formly-field-select,
+    formly-field-checkbox,
+    formly-field-radio,
+    formly-field-multicheckbox
+  ) {
     display: contents;
   }
 
@@ -120,8 +120,10 @@ app-model-editor formly-field-number .input-group-text {
   color: var(--bs-secondary-color);
 }
 
-// A variable: "name  value" on one row, without labels.
-app-model-editor .variable-row {
+// A variable: "name  value" on one row, without labels; a boolean's shape:
+// "operation  shape" (the first shape has no operation).
+app-model-editor .variable-row,
+app-model-editor .operand-row {
   display: flex;
   align-items: flex-start;
   gap: 6px;
@@ -131,7 +133,13 @@ app-model-editor .variable-row {
     min-width: 0;
   }
 
-  > .variable-value {
+  > .operand-operation {
+    flex: 0 0 40%;
+    min-width: 0;
+  }
+
+  > .variable-value,
+  > .operand-shape {
     flex: 1;
     min-width: 0;
   }

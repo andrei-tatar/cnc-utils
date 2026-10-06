@@ -93,6 +93,7 @@ export function migrateModel(stored: any): ModelType {
 }
 
 function migrateShape(shape: any) {
+  shape = migrateBoolean(shape);
   if (!Array.isArray(shape?.transforms)) {
     return shape;
   }
@@ -113,5 +114,24 @@ function migrateShape(shape: any) {
           }
         : transform,
     ),
+  };
+}
+
+/**
+ * Booleans used to combine exactly two shapes (`shape1Id` `operationType`
+ * `shape2Id`); now they take a list, each shape after the first with its
+ * own operation.
+ */
+function migrateBoolean(shape: any) {
+  if (shape?.type !== 'boolean' || Array.isArray(shape.operands)) {
+    return shape;
+  }
+  const { shape1Id, shape2Id, operationType, ...rest } = shape;
+  return {
+    ...rest,
+    operands: [
+      { shapeId: shape1Id },
+      { shapeId: shape2Id, operation: operationType ?? 'intersection' },
+    ],
   };
 }

@@ -84,8 +84,15 @@ export function describeShape(
         if (other.name) return other.name;
         return depth < 2 ? `(${describeShape(other, shapes, depth + 1)})` : '…';
       };
-      const symbol = BOOLEAN_SYMBOLS[shape['operationType']] ?? '?';
-      return `${operand(shape['shape1Id'])} ${symbol} ${operand(shape['shape2Id'])}`;
+      const operands: any[] = shape['operands'] ?? [];
+      if (!operands.length) return 'boolean';
+      return operands
+        .map((o, i) =>
+          i === 0
+            ? operand(o?.shapeId)
+            : `${BOOLEAN_SYMBOLS[o?.operation] ?? '?'} ${operand(o?.shapeId)}`,
+        )
+        .join(' ');
     }
     default:
       return shape?.type ?? '';
@@ -103,4 +110,34 @@ export function rootModel(field: FormlyFieldConfig | undefined): any {
 /** All shapes in the model, from any field in the form. */
 export function allShapes(field: FormlyFieldConfig | undefined): AnyShape[] {
   return rootModel(field)?.shapes ?? [];
+}
+
+/** The shapes `shape` takes its geometry from (copies and booleans). */
+export function shapeSources(shape: any): string[] {
+  switch (shape?.type) {
+    case 'copy':
+      return [shape.copyOfId];
+    case 'boolean':
+      return (shape.operands ?? []).map((o: any) => o?.shapeId);
+    default:
+      return [];
+  }
+}
+
+/** Whether `fromId` takes its geometry from `id`, directly or not. */
+export function dependsOn(fromId: string, id: string, shapes: any[]): boolean {
+  const seen = new Set<string>();
+  const stack = [fromId];
+  while (stack.length) {
+    const current = stack.pop()!;
+    if (current === id) {
+      return true;
+    }
+    if (seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+    stack.push(...shapeSources(shapes.find((s) => s.id === current)));
+  }
+  return false;
 }

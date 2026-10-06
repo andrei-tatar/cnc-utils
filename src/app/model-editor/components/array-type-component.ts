@@ -879,7 +879,8 @@ export class ArrayTypeComponent
   /**
    * What refers to any of `ids` elsewhere in the model, e.g. "2 operations
    * use it". References are fields named like `toolId`, `shapeId`, ….
-   * Items being removed themselves don't count.
+   * Items being removed themselves don't count. Nested lists are looked
+   * into too (a boolean's shapes).
    */
   private usages(ids: string[], pronoun = 'it'): string[] {
     const removed = new Set(ids.filter(Boolean));
@@ -894,12 +895,7 @@ export class ArrayTypeComponent
     ];
     return sections.flatMap(([key, singular, plural]) => {
       const count = (root[key] ?? []).filter(
-        (item: any) =>
-          !removed.has(item?.id) &&
-          Object.entries(item ?? {}).some(
-            ([field, value]) =>
-              field.endsWith('Id') && removed.has(value as string),
-          ),
+        (item: any) => !removed.has(item?.id) && refersTo(item, removed),
       ).length;
       return count
         ? [
@@ -998,4 +994,19 @@ export class ArrayTypeComponent
       this.formControl.controls[i].get('expanded')?.setValue(false);
     }
   }
+}
+
+/** Whether `item` has a field named like `shapeId` holding one of `ids`. */
+function refersTo(item: unknown, ids: Set<string>): boolean {
+  if (Array.isArray(item)) {
+    return item.some((v) => refersTo(v, ids));
+  }
+  if (!item || typeof item !== 'object') {
+    return false;
+  }
+  return Object.entries(item).some(([field, value]) =>
+    field.endsWith('Id')
+      ? ids.has(value as string)
+      : typeof value === 'object' && refersTo(value, ids),
+  );
 }

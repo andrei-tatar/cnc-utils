@@ -158,27 +158,30 @@ function resolveShape(
   entries$: Observable<ShapeEntry[]>,
 ): Observable<CamShape[]> {
   switch (t.type) {
-    case 'boolean':
-      return combineLatest([
-        resultOf(entries$, t.shape1Id),
-        resultOf(entries$, t.shape2Id),
-      ]).pipe(
+    case 'boolean': {
+      const operands = t.operands ?? [];
+      if (!operands.length || !t.fillRule) {
+        return of([]);
+      }
+      return combineLatest(
+        operands.map((o) => resultOf(entries$, o.shapeId)),
+      ).pipe(
         debounceTime(0),
-        switchMap(([s1, s2]) => {
-          if (!t.operationType || !t.fillRule) {
-            return [];
-          }
-
-          return worker.applyBooleanOperation(
-            s1,
-            s2,
-            t.operationType,
+        switchMap((shapes) =>
+          worker.applyBooleanOperations(
+            shapes.map((shape, i) => ({
+              shape,
+              // The first shape is the starting point.
+              operation:
+                i === 0 ? undefined : (operands[i].operation ?? 'union'),
+            })),
             t.fillRule,
             shapeId,
             geometry,
-          );
-        }),
+          ),
+        ),
       );
+    }
 
     case 'copy':
       // Another shape's result, as this shape's (so the transforms and
