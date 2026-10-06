@@ -79,13 +79,13 @@ export type GcodeOptions = {
 };
 
 export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
-  safetyHeight: 10,
+  safetyHeight: 5,
   carveFeedRate: 1200,
   plungeFeedRate: 300,
   header: true,
   toolChange: 'm6',
-  skipSingleToolChange: true,
-  spindle: false,
+  skipSingleToolChange: false,
+  spindle: true,
   spindleSpeed: 12000,
   spindleDelay: 3,
   returnHome: false,

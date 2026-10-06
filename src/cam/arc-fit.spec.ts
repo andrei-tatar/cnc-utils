@@ -109,7 +109,7 @@ describe('GCodeBuilder arcs', () => {
     const b = circleProgram().goToSafeHeight().travelTo(0, 0).stopProgram();
     const lines = b.build({ arcs: true, header: false }).split('\n');
     const arcAt = lines.findIndex((l) => l.startsWith('G3'));
-    const retractAt = lines.findIndex((l) => l.startsWith('G0 Z10'));
+    const retractAt = lines.findIndex((l) => l.startsWith('G0 Z5'));
     expect(arcAt).toBeGreaterThan(0);
     expect(retractAt).toBeGreaterThan(arcAt);
   });

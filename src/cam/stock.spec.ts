@@ -40,7 +40,7 @@ describe('stockOffset', () => {
       .stopProgram();
     const offset = { x: -10, y: -20, z: 12 };
     const lines = b.build({ header: false, offset }).split('\n');
-    expect(lines).toContain('G0 Z22');
+    expect(lines).toContain('G0 Z17');
     expect(lines).toContain('G0 X0 Y0');
     expect(lines).toContain('G1 Z11 F300');
     expect(lines).toContain('G1 X5 F1200');
@@ -70,6 +70,7 @@ describe('estimateTime', () => {
       carveFeedRate: 1200,
       rapidRate: 3000,
       safetyHeight: 10,
+      spindle: false,
     });
     // 1200 mm at 1200 mm/min, then 3000 mm at 3000 mm/min.
     expect(time.total).toBeCloseTo(120, 6);
