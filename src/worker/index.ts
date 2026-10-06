@@ -1,36 +1,28 @@
+import { isDevMode } from '@angular/core';
+import { Observable } from 'rxjs';
+import { pack, unpack } from './codec';
 import {
-  debounceTime,
-  defer,
-  dematerialize,
-  EMPTY,
-  filter,
-  finalize,
-  ignoreElements,
-  map,
-  materialize,
-  merge,
-  mergeMap,
-  Observable,
-  ReplaySubject,
-  share,
-  Subject,
-  switchMap,
-  take,
-  takeUntil,
-  tap,
-  timer,
-} from 'rxjs';
-import { Contract, MessageFromWorker, MessageToWorker } from './types';
+  Contract,
+  JobOutcome,
+  MessageFromWorker,
+  MessageToWorker,
+} from './types';
 
-type Job = {
-  type: string;
-  args: any[];
-  result$: Subject<any>;
-  stop$: Observable<any>;
-};
-
-const MAX_WORKERS = 6;
-const KEEP_IDLE_FOR = 5 * 60 * 1000; //5 mins
+/** Jobs running at once: leave a core for the page itself. */
+const MAX_WORKERS = Math.max(
+  2,
+  Math.min(12, (navigator.hardwareConcurrency || 4) - 1),
+);
+/** Idle workers are kept this long, then terminated. */
+const KEEP_IDLE_FOR = 5 * 60 * 1000;
+/**
+ * A cancelled job may finish within this long, and its worker (with clipper
+ * and any fonts already loaded) goes back to the pool; after that it's
+ * terminated. Most jobs are short, and starting a worker isn't.
+ */
+const CANCEL_GRACE = 1500;
+/** Workers, including ones finishing cancelled jobs, never exceed this. */
+const MAX_TOTAL_WORKERS = MAX_WORKERS * 2;
 
 type RptContract = {
   [K in keyof Contract]: (
@@ -38,151 +30,175 @@ type RptContract = {
   ) => Observable<ReturnType<Contract[K]>>;
 };
 
+/**
+ * The work functions of `./work`, run in a pool of web workers. Each call
+ * runs when subscribed; unsubscribing cancels it.
+ */
 const worker: RptContract = new Proxy({} as RptContract, {
   get(_target, name: string) {
-    return startJob.bind(null, name);
+    return (...args: unknown[]) => startJob(name, args);
   },
 });
 
 export default worker;
 
-function startJob(type: string, ...args: any[]): Observable<any> {
-  const result$ = new Subject<any>();
-  const stop$ = new ReplaySubject<any>(1);
-  return merge(
-    result$,
-    execute$,
-    defer(() => {
-      jobs$.next({
-        type,
-        args,
-        result$,
-        stop$,
-      });
-      return EMPTY;
-    }),
-  ).pipe(
-    take(1),
-    finalize(() => stop$.next(true)),
-  );
+type Job = {
+  id: number;
+  work: string;
+  args: unknown[];
+  settle(outcome: JobOutcome): void;
+};
+
+class PooledWorker {
+  readonly worker = new Worker(new URL('./main.worker', import.meta.url));
+  /** The job it's running (null while idle). */
+  job: Job | null = null;
+  /** The job was cancelled: its result is dropped when it comes. */
+  cancelled = false;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(private onFree: (w: PooledWorker) => void) {
+    this.worker.addEventListener(
+      'message',
+      ({ data }: MessageEvent<MessageFromWorker>) => {
+        if (data?.type !== 'result' || data.id !== this.job?.id) {
+          return;
+        }
+        const job = this.job;
+        const cancelled = this.cancelled;
+        this.release();
+        // Back in the pool first, so jobs started by the result can use it.
+        this.onFree(this);
+        if (!cancelled) {
+          job.settle(data.outcome);
+        }
+      },
+    );
+    const fail = (error: unknown) => {
+      const job = this.job;
+      const cancelled = this.cancelled;
+      this.terminate();
+      if (job && !cancelled) {
+        job.settle({ kind: 'E', error });
+      }
+    };
+    this.worker.addEventListener('error', (event) => {
+      event.preventDefault();
+      fail(event.error ?? new Error(event.message));
+    });
+    this.worker.addEventListener('messageerror', () =>
+      fail(new Error('could not read the worker’s result')),
+    );
+  }
+
+  run(job: Job) {
+    clearTimeout(this.timer);
+    this.job = job;
+    this.cancelled = false;
+    this.worker.postMessage({
+      type: 'work',
+      id: job.id,
+      work: job.work,
+      args: job.args,
+      cache: !isDevMode(),
+    } satisfies MessageToWorker);
+  }
+
+  /** Stop waiting for the job; terminate if it doesn't finish soon. */
+  cancel() {
+    this.cancelled = true;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.terminate(), CANCEL_GRACE);
+  }
+
+  /** Idle: terminate after a while unless given another job. */
+  idle() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.terminate(), KEEP_IDLE_FOR);
+  }
+
+  terminate() {
+    clearTimeout(this.timer);
+    this.worker.terminate();
+    this.job = null;
+    pool.delete(this);
+    const at = idle.indexOf(this);
+    if (at >= 0) idle.splice(at, 1);
+    pump();
+  }
+
+  private release() {
+    clearTimeout(this.timer);
+    this.job = null;
+    this.cancelled = false;
+  }
 }
 
-const jobs$ = new Subject<Job>();
-const availableWorkers: Observable<WorkerInstance>[] = [];
+const pool = new Set<PooledWorker>();
+const idle: PooledWorker[] = [];
+const queue: Job[] = [];
+let nextId = 1;
 
-const execute$ = jobs$.pipe(
-  mergeMap((work) => {
-    let worker$ = availableWorkers.pop();
-    if (!worker$) {
-      worker$ = new Observable<WorkerInstance>((observer) => {
-        const worker = new Worker(new URL('./main.worker', import.meta.url));
-        const workerInstance = new WorkerInstance(worker);
-        console.log(`[worker] new worker ${workerInstance.id}`);
+function startJob(work: string, args: unknown[]): Observable<any> {
+  return new Observable((subscriber) => {
+    let settled = false;
+    const job: Job = {
+      id: nextId++,
+      work,
+      args: pack(args) as unknown[],
+      settle(outcome) {
+        settled = true;
+        switch (outcome.kind) {
+          case 'N':
+            subscriber.next(unpack(outcome.value));
+            subscriber.complete();
+            break;
+          case 'C':
+            subscriber.complete();
+            break;
+          case 'E':
+            subscriber.error(outcome.error);
+        }
+      },
+    };
+    queue.push(job);
+    pump();
 
-        observer.next(workerInstance);
+    return () => {
+      if (settled) return;
+      const queued = queue.indexOf(job);
+      if (queued >= 0) {
+        queue.splice(queued, 1);
+        return;
+      }
+      for (const w of pool) {
+        if (w.job === job) {
+          w.cancel();
+          pump();
+        }
+      }
+    };
+  });
+}
 
-        const sub = workerInstance.terminate$.subscribe(() => {
-          observer.complete();
-        });
+/** Start queued jobs while there's room. */
+function pump() {
+  while (queue.length) {
+    const active = [...pool].filter((w) => w.job && !w.cancelled).length;
+    if (active >= MAX_WORKERS) return;
 
-        sub.add(() => {
-          const foundIndex = availableWorkers.indexOf(worker$!);
-          if (foundIndex >= 0) {
-            availableWorkers.splice(foundIndex, 1);
-          }
-
-          worker.terminate();
-          console.log(`[worker] terminating ${workerInstance.id}`);
-        });
-
-        return sub;
-      }).pipe(
-        share({
-          connector: () => new ReplaySubject(1),
-          resetOnRefCountZero: () => timer(KEEP_IDLE_FOR),
-        }),
-      );
-    } else {
-      console.log('[worker] using idle worker');
+    let w = idle.pop();
+    if (!w) {
+      if (pool.size >= MAX_TOTAL_WORKERS) return;
+      w = new PooledWorker(onFree);
+      pool.add(w);
     }
-
-    const done$ = new Subject<any>();
-    return worker$.pipe(
-      switchMap((worker) =>
-        worker
-          .execute(work.type, work.args, () => {
-            console.log(`[worker] idle ${worker.id}`);
-            availableWorkers.push(worker$);
-          })
-          .pipe(
-            tap(work.result$),
-            finalize(() => done$.next(1)),
-            takeUntil(work.stop$),
-          ),
-      ),
-      ignoreElements(),
-      takeUntil(done$),
-    );
-  }, MAX_WORKERS),
-  share({
-    resetOnRefCountZero: false,
-  }),
-);
-
-class WorkerInstance {
-  private msg$: Observable<MessageFromWorker>;
-  private terminate = new Subject<any>();
-
-  readonly terminate$ = this.terminate.asObservable();
-  readonly id = crypto.randomUUID();
-
-  constructor(private worker: Worker) {
-    this.msg$ = new Observable<MessageFromWorker>((observer) => {
-      const handler = (ev: MessageEvent<any>) => {
-        observer.next(ev.data);
-      };
-      worker.addEventListener('message', handler);
-      worker.addEventListener('error', (err) => observer.error(err.error));
-      worker.addEventListener('messageerror', (err) =>
-        observer.error(err.data),
-      );
-      return () => worker.removeEventListener('message', handler);
-    }).pipe(share());
+    w.run(queue.shift()!);
   }
+}
 
-  execute(type: string, args: any[], addToIdle: () => void): Observable<any> {
-    return defer(() => {
-      let hasResult = false;
-      const result$ = this.msg$.pipe(
-        filter((v) => v.type === 'result'),
-        take(1),
-        tap((_) => {
-          hasResult = true;
-          addToIdle();
-        }),
-        map((v) => v.result),
-        dematerialize(),
-        finalize(() => {
-          if (!hasResult) {
-            this.terminate.next(1);
-          }
-        }),
-      );
-
-      const tx$ = this.send({
-        type: 'work',
-        work: type,
-        args: args,
-      });
-
-      return merge(result$, tx$);
-    });
-  }
-
-  private send(msg: MessageToWorker): Observable<never> {
-    return new Observable((observer) => {
-      this.worker.postMessage(msg);
-      observer.complete();
-    });
-  }
+function onFree(w: PooledWorker) {
+  idle.push(w);
+  w.idle();
+  pump();
 }

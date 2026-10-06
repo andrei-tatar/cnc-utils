@@ -47,8 +47,19 @@ type TransformEntry = {
   output$: Observable<CamShape[]>;
 };
 
+/** The model's shapes as polygons. */
+export type ShapeResults = {
+  /** Every shape's polygons, flattened together (for the preview). */
+  all$: Observable<CamShape[]>;
+  /**
+   * One shape's polygons (after its transforms); empty while it doesn't
+   * exist. Only emits when that shape changes.
+   */
+  byId(shapeId: string): Observable<CamShape[]>;
+};
+
 /**
- * Turns the model's shapes into polygons, all shapes' flattened together.
+ * Turns the model's shapes into polygons.
  *
  * Each shape keeps its pipeline across model emissions (its inputs are
  * pushed into it), so a shape is only regenerated when its own parameters,
@@ -57,7 +68,7 @@ type TransformEntry = {
 export function generateShapesFromModel(
   model$: Observable<ModelType>,
   working$: Observable<never>,
-): Observable<CamShape[]> {
+): ShapeResults {
   const geometry$ = geometrySettings(model$);
   const entries$: Observable<ShapeEntry[]> = model$.pipe(
     scan(
@@ -94,7 +105,7 @@ export function generateShapesFromModel(
     }),
   );
 
-  return entries$.pipe(
+  const all$ = entries$.pipe(
     // With no shapes, emit an empty list rather than nothing.
     switchMap((s) =>
       s.length ? combineLatest(s.map((i) => i.result$)) : of([]),
@@ -104,6 +115,8 @@ export function generateShapesFromModel(
       connector: () => new ReplaySubject(1),
     }),
   );
+
+  return { all$, byId: (shapeId) => resultOf(entries$, shapeId) };
 }
 
 function createShapeEntry(

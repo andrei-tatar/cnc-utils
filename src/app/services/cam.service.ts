@@ -35,14 +35,16 @@ export class CamService {
   private store = inject(ModelStore);
   private workTracker = inject(WorkTracker);
 
-  readonly shapes$: Observable<CamShape[]> = generateShapesFromModel(
+  private readonly shapes = generateShapesFromModel(
     this.store.changes$,
     this.workTracker.working$,
   );
 
+  readonly shapes$: Observable<CamShape[]> = this.shapes.all$;
+
   readonly program$: Observable<Program> = generateGcodeFromOperations(
     this.store.changes$,
-    this.shapes$,
+    this.shapes,
     this.workTracker.working$,
   ).pipe(share({ connector: () => new ReplaySubject(1) }));
 

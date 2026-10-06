@@ -140,6 +140,16 @@ export const field: FormlyFieldConfig = {
       validators: { validation: ['whole-number'] },
     },
     {
+      key: 'arcs',
+      type: 'boolean',
+      defaultValue: d.arcs,
+      props: {
+        label: 'write curves as arcs (G2 / G3)',
+        description:
+          'much shorter files and smoother motion; turn off for controllers without arc support',
+      },
+    },
+    {
       key: 'curveTolerance',
       type: 'number',
       defaultValue: d.curveTolerance,

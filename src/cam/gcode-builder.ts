@@ -1,4 +1,5 @@
 import { GcodeOptions, resolveGcodeOptions } from './gcode-options';
+import { fitArcs } from './arc-fit';
 import { CamPath, CamPoint, CamPoint3 } from './types';
 
 export class GCodeBuilder {
@@ -10,6 +11,81 @@ export class GCodeBuilder {
     cloned._instructions = [...a._instructions];
     cloned._isAtSafetyHeight = a._isAtSafetyHeight;
     return cloned;
+  }
+
+  /**
+   * A compact copy for sending between threads: the moves (nearly all of
+   * the instructions) go into typed arrays, which copy or transfer far
+   * faster than one object per move.
+   */
+  static pack(builder: GCodeBuilder): PackedGCode {
+    const ops: number[] = [];
+    const nums: number[] = [];
+    const other: PathInstruction[] = [];
+    for (const i of builder._instructions) {
+      switch (i.type) {
+        case 'travel':
+          ops.push(PackedOp.Travel);
+          nums.push(i.to.x, i.to.y);
+          break;
+        case 'carve':
+          ops.push(PackedOp.Carve);
+          nums.push(i.to.x, i.to.y, i.z ?? NaN);
+          break;
+        case 'plunge':
+          ops.push(PackedOp.Plunge);
+          nums.push(i.depth);
+          break;
+        default:
+          ops.push(PackedOp.Other);
+          other.push(i);
+      }
+    }
+    return {
+      packedGCode: true,
+      ops: Uint8Array.from(ops),
+      nums: Float64Array.from(nums),
+      other,
+      isAtSafetyHeight: builder._isAtSafetyHeight,
+    };
+  }
+
+  static unpack(packed: PackedGCode): GCodeBuilder {
+    const builder = new GCodeBuilder();
+    const { ops, nums, other } = packed;
+    const instructions: PathInstruction[] = new Array(ops.length);
+    let n = 0;
+    let o = 0;
+    for (let k = 0; k < ops.length; k++) {
+      switch (ops[k]) {
+        case PackedOp.Travel:
+          instructions[k] = {
+            type: 'travel',
+            to: { x: nums[n], y: nums[n + 1] },
+          };
+          n += 2;
+          break;
+        case PackedOp.Carve: {
+          const z = nums[n + 2];
+          instructions[k] = {
+            type: 'carve',
+            to: { x: nums[n], y: nums[n + 1] },
+            z: Number.isNaN(z) ? undefined : z,
+          };
+          n += 3;
+          break;
+        }
+        case PackedOp.Plunge:
+          instructions[k] = { type: 'plunge', depth: nums[n] };
+          n += 1;
+          break;
+        default:
+          instructions[k] = other[o++];
+      }
+    }
+    builder._instructions = instructions;
+    builder._isAtSafetyHeight = packed.isAtSafetyHeight;
+    return builder;
   }
 
   get isAtSafetyHeight() {
@@ -92,6 +168,17 @@ export class GCodeBuilder {
     return this;
   }
 
+  /** All of `builders`, one after another, in one copy. */
+  static concatAll(builders: GCodeBuilder[]): GCodeBuilder {
+    const result = new GCodeBuilder();
+    result._instructions = ([] as PathInstruction[]).concat(
+      ...builders.map((b) => b._instructions),
+    );
+    result._isAtSafetyHeight =
+      builders[builders.length - 1]?._isAtSafetyHeight ?? false;
+    return result;
+  }
+
   concat(other: GCodeBuilder): GCodeBuilder {
     const result = new GCodeBuilder();
     result._instructions = this._instructions.concat(other._instructions);
@@ -101,17 +188,23 @@ export class GCodeBuilder {
 
   build(options: Partial<GcodeOptions> = {}): string {
     const gcode: string[] = [];
-    this.walk(options, {
-      line: (text) => gcode.push(text),
-      move: (code, changed) => {
-        const coords: string[] = [];
-        if (changed.x !== undefined) coords.push(`X${changed.x}`);
-        if (changed.y !== undefined) coords.push(`Y${changed.y}`);
-        if (changed.z !== undefined) coords.push(`Z${changed.z}`);
-        if (changed.feed !== undefined) coords.push(`F${changed.feed}`);
-        gcode.push(`${code} ${coords.join(' ')}`);
+    this.walk(
+      options,
+      {
+        line: (text) => gcode.push(text),
+        move: (code, changed) => {
+          const coords: string[] = [];
+          if (changed.x !== undefined) coords.push(`X${changed.x}`);
+          if (changed.y !== undefined) coords.push(`Y${changed.y}`);
+          if (changed.z !== undefined) coords.push(`Z${changed.z}`);
+          if (changed.i !== undefined) coords.push(`I${changed.i}`);
+          if (changed.j !== undefined) coords.push(`J${changed.j}`);
+          if (changed.feed !== undefined) coords.push(`F${changed.feed}`);
+          gcode.push(`${code} ${coords.join(' ')}`);
+        },
       },
-    });
+      resolveGcodeOptions(options).arcs,
+    );
     return gcode.join('\n');
   }
 
@@ -153,12 +246,40 @@ export class GCodeBuilder {
     return paths;
   }
 
-  /** Walks the instructions as G-code, handing each line or move to `out`. */
-  private walk(options: Partial<GcodeOptions>, out: GcodeSink) {
+  /**
+   * Walks the instructions as G-code, handing each line or move to `out`.
+   * With `arcs`, runs of cuts along a circle become G2/G3 arcs.
+   */
+  private walk(options: Partial<GcodeOptions>, out: GcodeSink, arcs = false) {
     const o = resolveGcodeOptions(options);
-    const factor = 10 ** Math.max(0, Math.min(6, Math.round(o.decimals)));
+    const places = Math.max(0, Math.min(6, Math.round(o.decimals)));
+    const factor = 10 ** places;
     const round = (v: number) => Math.round(v * factor) / factor;
-    const gcode = { push: out.line };
+    // Arc centres get more places: controllers check that the start and
+    // end are the same distance from it.
+    const centerFactor = 10 ** Math.max(places, 4);
+    const roundCenter = (v: number) =>
+      Math.round(v * centerFactor) / centerFactor;
+    // How far an arc may stray from the cut it replaces: its points by
+    // about what coordinates are rounded to anyway, between them by as much
+    // as the cut itself strays from the curve it follows.
+    const arcPoints = Math.max(0.005, 0.5 / factor);
+    const arcTolerance = {
+      points: arcPoints,
+      chords: Math.max(arcPoints, o.curveTolerance),
+    };
+    const flushing: { push(text: string): void } = {
+      push: (text) => {
+        flushCuts();
+        out.line(text);
+      },
+    };
+    const gcode = arcs ? flushing : { push: out.line };
+
+    // Cuts at one height and feed, held back until the run ends so arcs can
+    // be fitted to them.
+    let pendingCuts: CamPoint3[] = [];
+    let pendingFeed = 0;
 
     // Tool changes only make sense with more than one tool, unless asked.
     const toolCount = new Set(
@@ -206,25 +327,43 @@ export class GCodeBuilder {
     for (const instruction of this._instructions) {
       switch (instruction.type) {
         case 'safety-height':
+          flushCuts();
           move('G0', { z: o.safetyHeight });
           break;
 
         case 'plunge':
-          //TODO: optional helical plunge ?
+          flushCuts();
           startSpindle();
           move('G1', { z: instruction.depth }, plungeFeedRate);
           break;
 
         case 'travel':
+          flushCuts();
           move('G0', instruction.to);
           break;
 
-        case 'carve':
+        case 'carve': {
           startSpindle();
-          move('G1', { ...instruction.to, z: instruction.z }, carveFeedRate);
+          if (arcs && x !== null && y !== null && z !== null) {
+            if (pendingCuts.length && pendingFeed !== carveFeedRate) {
+              flushCuts();
+            }
+            pendingFeed = carveFeedRate;
+            // Unchanged Z: wherever the cut before this one ended.
+            const previous = pendingCuts[pendingCuts.length - 1];
+            pendingCuts.push({
+              ...instruction.to,
+              z: instruction.z ?? previous?.z ?? z,
+            });
+          } else {
+            flushCuts();
+            move('G1', { ...instruction.to, z: instruction.z }, carveFeedRate);
+          }
           break;
+        }
 
         case 'source-shape':
+          flushCuts();
           gcode.push(`; source-shape=${instruction.id}`);
           out.source?.('shape', instruction.id);
           break;
@@ -298,11 +437,110 @@ export class GCodeBuilder {
       }
     }
 
+    flushCuts();
+
+    /** Write the held-back cuts, as arcs where they follow a circle. */
+    function flushCuts() {
+      if (!pendingCuts.length) return;
+      const cuts = pendingCuts;
+      pendingCuts = [];
+      const at = { x: x!, y: y!, z: z! };
+      for (const m of fitArcs([at, ...cuts], arcTolerance)) {
+        const end = m.to as CamPoint3;
+        const done =
+          m.type === 'arc' &&
+          helical(m.points as CamPoint3[], m.center, end) &&
+          arcMove(m.clockwise, end, m.center);
+        if (!done) {
+          for (const p of (m.type === 'line'
+            ? [m.to]
+            : m.points) as CamPoint3[]) {
+            move('G1', p, pendingFeed);
+          }
+        }
+      }
+    }
+
+    /**
+     * Whether the cut's height changes evenly round the arc (a helix, or
+     * level), so one G2/G3 with a Z can stand for it.
+     */
+    function helical(points: CamPoint3[], center: CamPoint, end: CamPoint3) {
+      const startZ = z!;
+      if (points.every((p) => Math.abs(p.z - startZ) <= arcTolerance.points)) {
+        return Math.abs(end.z - startZ) <= arcTolerance.points;
+      }
+      const startX = x!;
+      const startY = y!;
+      let previous = Math.atan2(startY - center.y, startX - center.x);
+      let swept = 0;
+      const angles = points.map((p) => {
+        const a = Math.atan2(p.y - center.y, p.x - center.x);
+        let delta = a - previous;
+        if (delta > Math.PI) delta -= 2 * Math.PI;
+        if (delta < -Math.PI) delta += 2 * Math.PI;
+        previous = a;
+        return (swept += Math.abs(delta));
+      });
+      const total = angles[angles.length - 1];
+      return (
+        total > 0 &&
+        points.every(
+          (p, k) =>
+            Math.abs(startZ + ((end.z - startZ) * angles[k]) / total - p.z) <=
+            arcTolerance.points,
+        )
+      );
+    }
+
+    /**
+     * An arc from the current position, if it still is one once its ends
+     * are rounded: the centre moves onto their perpendicular bisector, so
+     * both ends are exactly as far from it.
+     */
+    function arcMove(clockwise: boolean, to: CamPoint3, center: CamPoint) {
+      const sx = x!;
+      const sy = y!;
+      const ex = round(to.x);
+      const ey = round(to.y);
+      const dx = ex - sx;
+      const dy = ey - sy;
+      const length = Math.hypot(dx, dy);
+      if (length < 2 / factor) return false;
+      const nx = -dy / length;
+      const ny = dx / length;
+      const mx = (sx + ex) / 2;
+      const my = (sy + ey) / 2;
+      const t = (center.x - mx) * nx + (center.y - my) * ny;
+      const i = roundCenter(mx + nx * t - sx);
+      const j = roundCenter(my + ny * t - sy);
+      const startRadius = Math.hypot(i, j);
+      const endRadius = Math.hypot(sx + i - ex, sy + j - ey);
+      if (Math.abs(startRadius - endRadius) > 0.002) return false;
+
+      const changed: MoveChange = { x: ex, y: ey };
+      const ez = round(to.z);
+      if (ez !== z) {
+        z = changed.z = ez;
+      }
+      changed.i = i;
+      changed.j = j;
+      if (pendingFeed !== feedRate) {
+        feedRate = changed.feed = pendingFeed;
+      }
+      x = ex;
+      y = ey;
+      out.move(clockwise ? 'G2' : 'G3', changed, { x: ex, y: ey, z: z ?? 0 });
+      return true;
+    }
+
     function move(
       code: 'G0' | 'G1',
       to: { x?: number; y?: number; z?: number },
       feed?: number,
     ) {
+      // Held-back cuts come first (nothing to do while writing them).
+      flushCuts();
       const changed: MoveChange = {};
 
       if (typeof to.x === 'number') {
@@ -343,15 +581,48 @@ export class GCodeBuilder {
   }
 }
 
-/** The axes (and feed) a move changes, already rounded. */
-type MoveChange = { x?: number; y?: number; z?: number; feed?: number };
+/** A builder as `GCodeBuilder.pack` sends it between threads. */
+export type PackedGCode = {
+  packedGCode: true;
+  /** One `PackedOp` per instruction. */
+  ops: Uint8Array;
+  /** The moves' numbers, in instruction order. */
+  nums: Float64Array;
+  /** The instructions that aren't moves, in order. */
+  other: PathInstruction[];
+  isAtSafetyHeight: boolean;
+};
+
+const enum PackedOp {
+  Travel,
+  Carve,
+  Plunge,
+  Other,
+}
+
+/**
+ * The axes (and feed) a move changes, already rounded; for an arc, also its
+ * centre relative to the start (I, J).
+ */
+type MoveChange = {
+  x?: number;
+  y?: number;
+  z?: number;
+  i?: number;
+  j?: number;
+  feed?: number;
+};
 
 /** Receives the G-code as `walk` produces it. */
 type GcodeSink = {
   /** Any line that isn't a move (comments, spindle, tool changes, …). */
   line(text: string): void;
   /** A move, with what it changes and where it ends up. */
-  move(code: 'G0' | 'G1', changed: MoveChange, at: CamPoint3): void;
+  move(
+    code: 'G0' | 'G1' | 'G2' | 'G3',
+    changed: MoveChange,
+    at: CamPoint3,
+  ): void;
   /** What the following moves belong to (an empty operation id clears it). */
   source?(kind: 'shape' | 'operation', id: string): void;
 };

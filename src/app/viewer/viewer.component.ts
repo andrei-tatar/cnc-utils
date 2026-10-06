@@ -11,7 +11,7 @@ import {
 import {
   ArrowHelper,
   BufferGeometry,
-  Line,
+  LineSegments,
   Shape,
   LineBasicMaterial,
   Material,
@@ -67,6 +67,9 @@ import {
 import { DirectionArrows } from './helpers/direction-arrows';
 import { nestContours } from '../../cam/polygon-nesting';
 import { CamPath, CamShape, Highlight } from '../../cam/types';
+
+/** Half the size of the cross marking a single point, in mm. */
+const POINT_MARK_SIZE = 1;
 
 @Component({
   selector: 'app-viewer',
@@ -536,60 +539,65 @@ export class ViewerComponent implements OnInit, OnDestroy {
       )
       .subscribe();
 
+    // Paths of one operation, move type and shape are drawn together, as
+    // one line object: a pocket alone can have thousands of paths, and each
+    // object is a draw call. Unchanged paths keep their identity (see
+    // `reuseUnchangedPaths`), so an unchanged group keeps its drawing.
     this.paths$
       .pipe(
         switchMap((paths$) => paths$),
         tap((paths) => this.updateDeepest(paths)),
+        map(groupPaths),
         scan(
-          (ctx, paths) =>
+          (ctx, groups) =>
             new Map(
-              paths.map((path) => {
-                const existing = ctx.get(path);
-                if (existing) {
-                  return [path, existing] as const;
+              [...groups].map(([key, paths]) => {
+                const existing = ctx.get(key);
+                if (existing && sameItems(existing.paths, paths)) {
+                  return [key, existing] as const;
                 }
 
+                const [first] = paths;
                 const isHighlighted$ = this.highlight$.pipe(
                   map((h) =>
                     h.operations.length
-                      ? !!path.sourceOperationId &&
-                        h.operations.includes(path.sourceOperationId)
+                      ? !!first.sourceOperationId &&
+                        h.operations.includes(first.sourceOperationId)
                       : !h.shapes.length ||
-                        h.shapes.includes(path.sourceShapeId),
+                        h.shapes.includes(first.sourceShapeId),
                   ),
                   distinctUntilChanged(),
                 );
+                const travel = first.type === 'travel';
 
                 return [
-                  path,
-                  this.drawPath({
-                    path,
-                    scene: this.content,
-                    material:
-                      path.type === 'travel'
-                        ? pathTravelMaterial
-                        : pathCarveMaterial,
-                    materialHighlight:
-                      path.type === 'travel'
+                  key,
+                  {
+                    paths,
+                    draw$: this.drawPaths({
+                      paths,
+                      scene: this.content,
+                      material: travel ? pathTravelMaterial : pathCarveMaterial,
+                      materialHighlight: travel
                         ? highlightPathTravelMaterial
                         : highlightPathCarveMaterial,
-                    arrowMaterial:
-                      path.type === 'travel'
+                      arrowMaterial: travel
                         ? arrowTravelMaterial
                         : arrowCarveMaterial,
-                    colorByDepth: path.type === 'carve',
-                    highlight$: isHighlighted$,
-                  }).pipe(
-                    share({
-                      resetOnRefCountZero: () => timer(0),
-                    }),
-                  ),
+                      colorByDepth: !travel,
+                      highlight$: isHighlighted$,
+                    }).pipe(
+                      share({
+                        resetOnRefCountZero: () => timer(0),
+                      }),
+                    ),
+                  },
                 ] as const;
               }),
             ),
-          new Map<CamPath, Observable<never>>(),
+          new Map<string, { paths: CamPath[]; draw$: Observable<never> }>(),
         ),
-        switchMap((all) => merge(...all.values())),
+        switchMap((all) => merge(...[...all.values()].map((g) => g.draw$))),
         takeUntil(this.destroy$),
       )
       .subscribe();
@@ -635,7 +643,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const fresh: number[] = [];
 
     this.arrows.forEach((arrows) => {
-      if (!arrows.mesh.visible || !frustum.intersectsBox(arrows.bounds)) {
+      if (!arrows.shown || !frustum.intersectsBox(arrows.bounds)) {
         arrows.clear();
         return;
       }
@@ -830,8 +838,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.destroy$.next(1);
   }
 
-  private drawPath(o: {
-    path: CamPath;
+  private drawPaths(o: {
+    paths: CamPath[];
     scene: Object3D;
     material: Material;
     materialHighlight: Material;
@@ -845,61 +853,97 @@ export class ViewerComponent implements OnInit, OnDestroy {
           new Observable<never>((_) => {
             const clean = new Subscription();
 
-            const sceneItems: (Line | Mesh)[] = [];
-
-            const points = o.path.points.map(
-              ({ x, y, z }) => new Vector3(x, y, z),
+            // Each path's segments as separate pairs of points, so one path
+            // doesn't join up with the next.
+            const segments = o.paths.reduce(
+              (n, p) => n + Math.max(0, p.points.length - 1),
+              0,
             );
-            const geometry = new BufferGeometry().setFromPoints(points);
+            const positions = new Float32Array(segments * 6);
+            let at = 0;
+            for (const path of o.paths) {
+              const points = path.points;
+              for (let i = 1; i < points.length; i++) {
+                const a = points[i - 1];
+                const b = points[i];
+                positions[at++] = a.x;
+                positions[at++] = a.y;
+                positions[at++] = a.z;
+                positions[at++] = b.x;
+                positions[at++] = b.y;
+                positions[at++] = b.z;
+              }
+            }
+            const geometry = new BufferGeometry();
+            geometry.setAttribute(
+              'position',
+              new BufferAttribute(positions, 3),
+            );
 
-            const line = new Line(geometry, o.material);
-            sceneItems.push(line);
+            const line = new LineSegments(geometry, o.material);
             o.scene.add(line);
 
-            clean.add(() => o.scene.remove(line));
-
-            const arrows = new DirectionArrows(points, o.arrowMaterial);
-            o.scene.add(arrows.mesh);
-            this.arrows.add(arrows);
+            // Arrows stay per path: each path's midpoint gets one before any
+            // path gets a second (see `layoutArrows`).
+            const arrows = o.paths.map(
+              (path) =>
+                new DirectionArrows(
+                  path.points.map(({ x, y, z }) => new Vector3(x, y, z)),
+                  o.arrowMaterial,
+                ),
+            );
+            for (const a of arrows) {
+              o.scene.add(a.mesh);
+              this.arrows.add(a);
+            }
             this.layoutArrowsSoon();
 
             if (o.colorByDepth) {
               // Recolour whenever the job's deepest cut changes.
-              const colors = new Float32Array(points.length * 3);
+              const colors = new Float32Array(positions.length);
               geometry.setAttribute('color', new BufferAttribute(colors, 3));
               const color = new Color();
               clean.add(
                 this.deepest$.subscribe((deepest) => {
-                  points.forEach((p, i) =>
-                    depthColor(p.z, deepest, color).toArray(colors, i * 3),
-                  );
+                  for (let i = 0; i < positions.length; i += 3) {
+                    depthColor(positions[i + 2], deepest, color).toArray(
+                      colors,
+                      i,
+                    );
+                  }
                   geometry.attributes['color'].needsUpdate = true;
-                  arrows.colorBy((p) => depthColor(p.z, deepest, color));
+                  for (const a of arrows) {
+                    a.colorBy((p) => depthColor(p.z, deepest, color));
+                  }
                   this.requestRender();
                 }),
               );
             }
 
             clean.add(() => {
-              o.scene.remove(arrows.mesh);
-              this.arrows.delete(arrows);
-              arrows.dispose();
+              o.scene.remove(line);
               geometry.dispose();
+              for (const a of arrows) {
+                o.scene.remove(a.mesh);
+                this.arrows.delete(a);
+                a.dispose();
+              }
               this.requestRender();
             });
 
             let isNew = true;
             clean.add(
               o.highlight$.subscribe((highlight) => {
-                sceneItems.forEach((item) => {
-                  item.material = highlight ? o.materialHighlight : o.material;
-                });
-                // Unhighlighted paths are fully transparent; hide their arrows too.
-                // A new path's arrows are laid out with the rest that arrive.
-                if (arrows.mesh.visible !== highlight && !isNew) {
-                  this.arrowsDirty = true;
+                line.material = highlight ? o.materialHighlight : o.material;
+                // Unhighlighted paths are fully transparent; hide their
+                // arrows too. New paths' arrows are laid out with the rest
+                // that arrive.
+                for (const a of arrows) {
+                  if (a.shown !== highlight && !isNew) {
+                    this.arrowsDirty = true;
+                  }
+                  a.shown = highlight;
                 }
-                arrows.mesh.visible = highlight;
                 isNew = false;
                 this.requestRender();
               }),
@@ -926,7 +970,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
           new Observable<never>((_) => {
             const clean = new Subscription();
 
-            const sceneItems: (Line | Mesh)[] = [];
+            const sceneItems: (LineSegments | Mesh)[] = [];
 
             // Fill each outline with its holes cut out, rather than filling
             // every closed polygon (which paints holes over as solid).
@@ -951,24 +995,46 @@ export class ViewerComponent implements OnInit, OnDestroy {
               });
             }
 
+            // Every outline of the shape as one line object; single points
+            // (centre marks, drill points) as small crosses.
+            const segments: number[] = [];
             for (const poly of o.shape.polygons) {
-              const srcPoints = [...poly.points];
+              const points = poly.points;
+              if (points.length === 1) {
+                const { x, y } = points[0];
+                const r = POINT_MARK_SIZE;
+                segments.push(x - r, y - r, 0, x + r, y + r, 0);
+                segments.push(x - r, y + r, 0, x + r, y - r, 0);
+                continue;
+              }
+              for (let i = 1; i < points.length; i++) {
+                const a = points[i - 1];
+                const b = points[i];
+                segments.push(a.x, a.y, 0, b.x, b.y, 0);
+              }
+              const first = points[0];
+              const last = points[points.length - 1];
               if (
                 poly.close &&
-                !pointsEqual(srcPoints[0], srcPoints[srcPoints.length - 1])
+                points.length > 2 &&
+                !pointsEqual(first, last)
               ) {
-                srcPoints.push(srcPoints[0]);
+                segments.push(last.x, last.y, 0, first.x, first.y, 0);
               }
-
-              const points = srcPoints.map(({ x, y }) => new Vector2(x, y));
-
-              const geometry = new BufferGeometry().setFromPoints(points);
-
-              const line = new Line(geometry, o.material);
-              sceneItems.push(line);
-              o.scene.add(line);
-
-              clean.add(() => o.scene.remove(line));
+            }
+            if (segments.length) {
+              const geometry = new BufferGeometry();
+              geometry.setAttribute(
+                'position',
+                new BufferAttribute(new Float32Array(segments), 3),
+              );
+              const outline = new LineSegments(geometry, o.material);
+              sceneItems.push(outline);
+              o.scene.add(outline);
+              clean.add(() => {
+                o.scene.remove(outline);
+                geometry.dispose();
+              });
             }
             this.requestRender();
             clean.add(() => this.requestRender());
@@ -976,7 +1042,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             clean.add(
               o.highlight$.subscribe((highlight) => {
                 sceneItems.forEach((item) => {
-                  if (item instanceof Line) {
+                  if (item instanceof LineSegments) {
                     item.material = highlight
                       ? o.materialHighlight
                       : o.material;
@@ -1001,4 +1067,20 @@ export class ViewerComponent implements OnInit, OnDestroy {
       ),
     );
   }
+}
+
+/** Paths grouped by what's drawn together: operation, move type, shape. */
+function groupPaths(paths: CamPath[]): Map<string, CamPath[]> {
+  const groups = new Map<string, CamPath[]>();
+  for (const path of paths) {
+    const key = `${path.sourceOperationId ?? ''}|${path.type}|${path.sourceShapeId}`;
+    const group = groups.get(key);
+    if (group) group.push(path);
+    else groups.set(key, [path]);
+  }
+  return groups;
+}
+
+function sameItems<T>(a: T[], b: T[]) {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
 }

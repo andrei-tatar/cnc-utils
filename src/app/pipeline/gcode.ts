@@ -1,7 +1,6 @@
 import {
   BehaviorSubject,
   combineLatest,
-  debounceTime,
   distinctUntilChanged,
   map,
   Observable,
@@ -12,9 +11,10 @@ import {
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
-import { CamPath, CamShape } from '../../cam/types';
+import { CamPath } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
 import { geometrySettings } from './geometry-settings';
+import { ShapeResults } from './shapes';
 import { OperationInputs, operationInputs } from './operation-inputs';
 import { distinctItems, distinctJson, shareLatest } from './operators';
 import { routeOperation } from './route-operation';
@@ -41,7 +41,7 @@ export type Program = {
  */
 export function generateGcodeFromOperations(
   model$: Observable<ModelType>,
-  shapes$: Observable<CamShape[]>,
+  shapes: ShapeResults,
   working$: Observable<never>,
 ): Observable<Program> {
   const geometry$ = geometrySettings(model$);
@@ -58,7 +58,7 @@ export function generateGcodeFromOperations(
           return createOperationEntry(
             operation.id,
             inputs,
-            shapes$,
+            shapes,
             geometry$,
             working$,
           );
@@ -87,7 +87,7 @@ export function generateGcodeFromOperations(
 function createOperationEntry(
   id: string,
   inputs: OperationInputs,
-  shapes$: Observable<CamShape[]>,
+  shapes: ShapeResults,
   geometry$: Observable<GeometrySettings>,
   working$: Observable<never>,
 ): OperationEntry {
@@ -95,13 +95,10 @@ function createOperationEntry(
   const input = <K extends keyof OperationInputs>(key: K) =>
     inputs$.pipe(map((i) => i[key]));
 
-  const shape$ = combineLatest([
-    input('shapeId').pipe(distinctUntilChanged()),
-    shapes$.pipe(debounceTime(0)),
-  ]).pipe(
-    map(([shapeId, allShapes]) =>
-      allShapes.filter((shape) => shape.sourceShapeId === shapeId),
-    ),
+  // Only this operation's shape: other shapes changing don't wake it.
+  const shape$ = input('shapeId').pipe(
+    distinctUntilChanged(),
+    switchMap((shapeId) => shapes.byId(shapeId)),
     distinctItems(),
   );
 
@@ -164,7 +161,8 @@ function wholeProgram(
   if (modelMetadata !== undefined) {
     meta.addModelMetadata(modelMetadata);
   }
-  const result = [meta, ...builders].reduce((a, b) => a.concat(b));
+  // One copy of every instruction, rather than one per operation.
+  const result = GCodeBuilder.concatAll([meta, ...builders]);
   // The final retract belongs to no operation.
   return result.sourceOperationId('').goToSafeHeight().stopProgram();
 }

@@ -3,16 +3,18 @@ import {
   BehaviorSubject,
   debounceTime,
   distinctUntilChanged,
+  filter,
   fromEvent,
+  merge,
   Observable,
   shareReplay,
   Subject,
   switchMap,
 } from 'rxjs';
-import { migrateModel, ModelType } from '../model-editor/model';
+import { ModelType } from '../model-editor/model';
 import { readModelFromNcFile } from '../project-file';
-
-const MODEL_STORAGE_KEY = 'model';
+import { deepEqual } from '../../util';
+import { loadModel, saveModel } from './model-persistence';
 /** Saving waits for a pause in editing (and happens when leaving). */
 const SAVE_DELAY = 500;
 
@@ -28,13 +30,12 @@ export class ModelStore {
    *
    * Compared as a snapshot taken when it was emitted: Formly edits the
    * model it was given (this one) in place, so by the next edit the
-   * previous object already matches it.
+   * previous object already matches it. The snapshot copies objects and
+   * arrays but shares strings, so a large imported file costs nothing to
+   * snapshot or compare (the same string compares equal at once).
    */
   readonly changes$: Observable<ModelType> = this.model$.pipe(
-    distinctUntilChanged(
-      (a, b) => a === b,
-      (model) => JSON.stringify(model),
-    ),
+    distinctUntilChanged(deepEqual, snapshot),
     shareReplay({ bufferSize: 1, refCount: false }),
   );
 
@@ -42,8 +43,14 @@ export class ModelStore {
 
   constructor() {
     this.changes$.pipe(debounceTime(SAVE_DELAY)).subscribe(saveModel);
-    // Don't lose an edit still waiting to be saved.
-    fromEvent(window, 'pagehide').subscribe(() => saveModel(this.value));
+    // Don't lose an edit still waiting to be saved: when the page is hidden
+    // (it may be frozen or discarded without closing) or leaves.
+    merge(
+      fromEvent(window, 'pagehide'),
+      fromEvent(document, 'visibilitychange').pipe(
+        filter(() => document.visibilityState === 'hidden'),
+      ),
+    ).subscribe(() => saveModel(this.value));
 
     // A new request cancels one still waiting for its file.
     this.open$
@@ -65,11 +72,17 @@ export class ModelStore {
   }
 }
 
-function loadModel(): ModelType {
-  const model = localStorage.getItem(MODEL_STORAGE_KEY);
-  return migrateModel(model ? JSON.parse(model) : {});
-}
-
-function saveModel(model: ModelType) {
-  localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify(model));
+/** A copy of the objects and arrays in `value`, sharing everything else. */
+function snapshot<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(snapshot) as T;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const copy: Record<string, unknown> = {};
+    for (const key in value) {
+      copy[key] = snapshot(value[key]);
+    }
+    return copy as T;
+  }
+  return value;
 }

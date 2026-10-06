@@ -57,6 +57,7 @@ export class DirectionArrows {
   /** Number of candidates up to and including each built level. */
   private readonly levelEnds: number[] = [];
   private colorAt: ((position: Vector3) => Color) | null = null;
+  private _shown = true;
 
   constructor(
     private readonly points: Vector3[],
@@ -88,11 +89,25 @@ export class DirectionArrows {
     this.bounds = new Box3().setFromPoints(points);
   }
 
+  /**
+   * Whether the arrows are shown at all (their path is highlighted). Only
+   * drawn while some are laid out: an empty mesh would still cost a draw
+   * call, and a program has thousands of paths.
+   */
+  get shown() {
+    return this._shown;
+  }
+
+  set shown(value: boolean) {
+    this._shown = value;
+    this.syncVisible();
+  }
+
   /** Lay the arrows out for the current scale (screen pixels per unit). */
   update(pixelsPerUnit: number) {
     const level = this.visibleLevel(this.length * pixelsPerUnit);
     if (level < 0) {
-      this.mesh.count = 0;
+      this.clear();
       return;
     }
     this.buildLevels(level);
@@ -108,6 +123,7 @@ export class DirectionArrows {
 
     this.mesh.count = count;
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.syncVisible();
   }
 
   /** Number of arrows currently laid out (a prefix of all candidates). */
@@ -137,6 +153,11 @@ export class DirectionArrows {
   /** Lay out nothing (the path is off-screen or hidden). */
   clear() {
     this.mesh.count = 0;
+    this.syncVisible();
+  }
+
+  private syncVisible() {
+    this.mesh.visible = this._shown && this.mesh.count > 0;
   }
 
   /**

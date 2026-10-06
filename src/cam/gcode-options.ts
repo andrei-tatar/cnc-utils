@@ -28,6 +28,8 @@ export type GcodeOptions = {
   returnHome: boolean;
   /** Decimal places for coordinates. */
   decimals: number;
+  /** Write cuts that follow a circle as arcs (G2 / G3) instead of many lines. */
+  arcs: boolean;
   /**
    * Max distance (mm) between a curve (circle, arc, SVG, text) and the
    * polygon that stands in for it.
@@ -49,6 +51,7 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   spindleDelay: 3,
   returnHome: false,
   decimals: 2,
+  arcs: true,
   curveTolerance: 0.01,
   geometryDecimals: 2,
 };

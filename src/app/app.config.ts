@@ -1,6 +1,7 @@
 import {
   ApplicationConfig,
   importProvidersFrom,
+  provideAppInitializer,
   provideZonelessChangeDetection,
   provideZoneChangeDetection,
 } from '@angular/core';
@@ -21,6 +22,7 @@ import { FileTypeComponent } from './model-editor/components/file-type-component
 import { HiddenTypeComponent } from './model-editor/components/hidden-type-component';
 import { FontTypeComponent } from './model-editor/components/font-type-component';
 import { SectionTypeComponent } from './model-editor/components/section-type-component';
+import { preloadModel } from './services/model-persistence';
 
 export function WholeNumberValidator(
   control: AbstractControl,
@@ -36,6 +38,8 @@ export const appConfig: ApplicationConfig = {
   providers: [
     //provideZoneChangeDetection({ eventCoalescing: true }),
     provideZonelessChangeDetection(),
+    // The saved project is read (asynchronously) before anything uses it.
+    provideAppInitializer(preloadModel),
     provideRouter(routes),
     provideAnimationsAsync(),
     importProvidersFrom(ReactiveFormsModule),
