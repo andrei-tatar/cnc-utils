@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { numberIn } from '../variables/field';
 
 /** Scale the shape to a given width and/or height. */
 export interface ModelType {
@@ -43,7 +44,10 @@ const field: FormlyFieldConfig = {
       expressions: {
         hide: (field: FormlyFieldConfig) =>
           field.model?.type !== Definition.type ||
-          !(field.model?.fitWidth > 0 && field.model?.fitHeight > 0),
+          !(
+            (numberIn(field, field.model?.fitWidth) ?? 0) > 0 &&
+            (numberIn(field, field.model?.fitHeight) ?? 0) > 0
+          ),
       },
     },
     {

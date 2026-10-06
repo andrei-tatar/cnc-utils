@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { numberIn } from '../variables/field';
 import { allTools } from '../tools';
 
 /** Drill holes at the shape's points (and, if asked, outline centres). */
@@ -61,7 +62,10 @@ const field: FormlyFieldConfig = {
           hideUnlessDrill(field) || drillTool(field)?.bitType !== 'drill',
         'props.label': (field: FormlyFieldConfig) => {
           const tool = drillTool(field);
-          const extra = pointLength(tool?.diameter, tool?.pointAngle);
+          const extra = pointLength(
+            numberIn(field, tool?.diameter),
+            numberIn(field, tool?.pointAngle),
+          );
           return `full diameter at that depth (+${extra.toFixed(2)} mm for the point)`;
         },
       },
@@ -84,7 +88,8 @@ const field: FormlyFieldConfig = {
       props: { label: 'between pecks, only lift to break the chip' },
       expressions: {
         hide: (field: FormlyFieldConfig) =>
-          hideUnlessDrill(field) || !(field.model?.peck > 0),
+          hideUnlessDrill(field) ||
+          !((numberIn(field, field.model?.peck) ?? 0) > 0),
       },
     },
     {

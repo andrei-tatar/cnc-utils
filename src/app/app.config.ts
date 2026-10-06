@@ -22,12 +22,23 @@ import { FileTypeComponent } from './model-editor/components/file-type-component
 import { HiddenTypeComponent } from './model-editor/components/hidden-type-component';
 import { FontTypeComponent } from './model-editor/components/font-type-component';
 import { SectionTypeComponent } from './model-editor/components/section-type-component';
+import {
+  NumberTypeComponent,
+  numberExpressionExtension,
+} from './model-editor/components/number-type-component';
+import { evaluateField } from './model-editor/variables/field';
 import { preloadModel } from './services/model-persistence';
 
 export function WholeNumberValidator(
-  control: AbstractControl,
+  _: AbstractControl,
+  field: FormlyFieldConfig,
 ): ValidationErrors | null {
-  if (!control.value || +control.value === Math.round(+control.value)) {
+  // The value an expression works out to (it reports its own errors).
+  const result = evaluateField(field);
+  if (!result || !('value' in result)) {
+    return null;
+  }
+  if (!result.value || result.value === Math.round(result.value)) {
     return null;
   }
 
@@ -61,6 +72,9 @@ export const appConfig: ApplicationConfig = {
           },
         ],
         wrappers: [{ name: 'group', component: GroupWrapperComponent }],
+        extensions: [
+          { name: 'number-expression', extension: numberExpressionExtension },
+        ],
         validators: [
           { name: 'whole-number', validation: WholeNumberValidator },
         ],
@@ -68,14 +82,26 @@ export const appConfig: ApplicationConfig = {
           { name: 'whole-number', message: 'Must be a whole number' },
           { name: 'required', message: 'Required' },
           {
+            name: 'expression',
+            message: (error: { message: string }) => error.message,
+          },
+          {
             name: 'min',
-            message: (_: unknown, field: FormlyFieldConfig) =>
-              `Must be at least ${field.props?.min}`,
+            message: (error: { min: number; actual: number }) =>
+              `Must be at least ${error.min}${
+                error.actual !== undefined
+                  ? ` (it is ${round(error.actual)})`
+                  : ''
+              }`,
           },
           {
             name: 'max',
-            message: (_: unknown, field: FormlyFieldConfig) =>
-              `Must be at most ${field.props?.max}`,
+            message: (error: { max: number; actual: number }) =>
+              `Must be at most ${error.max}${
+                error.actual !== undefined
+                  ? ` (it is ${round(error.actual)})`
+                  : ''
+              }`,
           },
         ],
         extras: {
@@ -86,5 +112,24 @@ export const appConfig: ApplicationConfig = {
       }),
     ),
     importProvidersFrom(FormlyBootstrapModule),
+    // After the Bootstrap types: replaces their `number` input with one
+    // that also takes expressions.
+    importProvidersFrom(
+      FormlyModule.forChild({
+        types: [
+          {
+            name: 'number',
+            component: NumberTypeComponent,
+            wrappers: ['form-field'],
+            extends: undefined,
+            defaultOptions: {},
+          },
+        ],
+      }),
+    ),
   ],
 };
+
+function round(value: number) {
+  return Math.round(value * 1e4) / 1e4;
+}

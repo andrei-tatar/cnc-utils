@@ -41,6 +41,7 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
 
   @Input()
   model: ModelType = {
+    variables: [],
     shapes: [],
     tools: [],
     operations: [],
@@ -67,13 +68,23 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
 }
 
 /**
- * Re-run every validator, bottom-up, without emitting events. Validators that
- * look at other parts of the model (does this operation's tool still exist?)
- * don't re-run on their own when only that other part changes.
+ * Re-run every validator, bottom-up, without emitting value events.
+ * Validators that look at other parts of the model (does this operation's
+ * tool still exist? what is this variable now?) don't re-run on their own
+ * when only that other part changes.
  */
 function revalidate(control: AbstractControl) {
   if (control instanceof FormGroup || control instanceof FormArray) {
     Object.values(control.controls).forEach(revalidate);
   }
+  const before = control.errors;
   control.updateValueAndValidity({ onlySelf: true, emitEvent: false });
+  // Error messages only update on a status event: send one when the
+  // problem changed (e.g. a variable it uses now has an error).
+  if (
+    (before || control.errors) &&
+    JSON.stringify(before) !== JSON.stringify(control.errors)
+  ) {
+    (control.statusChanges as EventEmitter<unknown>).emit(control.status);
+  }
 }

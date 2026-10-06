@@ -1,5 +1,6 @@
 import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { resolvedModelOf } from '../variables/field';
 import { allShapes, shapeLabel } from '../shapes/describe';
 import {
   allTools,
@@ -184,7 +185,7 @@ export const field: FormlyFieldConfig = {
         expressions: {
           'props.placeholder': (field: FormlyFieldConfig) =>
             describeOperation(
-              field.model,
+              resolvedModelOf(field),
               allShapes(field),
               allTools(field),
               allOperations(field),

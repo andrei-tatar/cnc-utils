@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { resolvedItem, resolvedModelOf } from '../variables/field';
 import { rootModel } from '../shapes/describe';
 import { toolFeedsAndSpeeds } from './feeds-and-speeds';
 import type { HeaderAction } from '../components/array-type-component';
@@ -121,7 +122,7 @@ export const field: FormlyFieldConfig = {
       {
         label: 'Library',
         title: 'Tool library: tools kept for every project',
-        async run({ injector, items, add }) {
+        async run({ injector, field, items, add }) {
           const { ToolLibraryDialogComponent } =
             await import('../components/tool-library-dialog.component');
           const ref = injector.get(NgbModal).open(ToolLibraryDialogComponent, {
@@ -131,7 +132,10 @@ export const field: FormlyFieldConfig = {
           });
           Object.assign(ref.componentInstance, {
             // As they are now: the live list fills in an added tool later.
-            projectTools: structuredClone(items),
+            // Expressions are worked out: the library has no variables.
+            projectTools: structuredClone(
+              items.map((tool) => resolvedItem(field, tool)),
+            ),
             addToProject: (tool: object) => add(tool),
           });
           ref.result.catch(() => {});
@@ -158,7 +162,7 @@ export const field: FormlyFieldConfig = {
         },
         expressions: {
           'props.placeholder': (field: FormlyFieldConfig) =>
-            describeTool(field.model),
+            describeTool(resolvedModelOf(field)),
         },
       },
       {

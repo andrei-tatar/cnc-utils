@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { numberIn } from '../variables/field';
 import { allTools } from '../tools';
 import { allOperations } from './describe';
 
@@ -23,7 +24,8 @@ const hideUnlessVCarve = (field: FormlyFieldConfig) =>
 const hideIfUnlimited = (field: FormlyFieldConfig) =>
   field.model?.type !== Definition.type || !!field.model?.unlimitedDepth;
 
-const singlePass = (field: FormlyFieldConfig) => !(field.model?.stepover > 0);
+const singlePass = (field: FormlyFieldConfig) =>
+  !((numberIn(field, field.model?.stepover) ?? 0) > 0);
 
 // A single pass always cuts into corners: only how sharp they must be applies.
 const hideUnlessSharpCorners = (field: FormlyFieldConfig) =>

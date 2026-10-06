@@ -6,6 +6,7 @@ import {
   Observable,
   ReplaySubject,
   share,
+  shareReplay,
   Subject,
   withLatestFrom,
 } from 'rxjs';
@@ -28,6 +29,8 @@ import {
 import { generateShapesFromModel } from '../pipeline/shapes';
 import { downloadFile } from '../project-file';
 import { getModelMetadata } from '../store';
+import { ModelFieldConfig, ModelType } from '../model-editor/model';
+import { resolveModel } from '../model-editor/variables/resolve';
 import { ModelStore } from './model-store.service';
 import { WorkTracker } from './work-tracker.service';
 
@@ -40,15 +43,25 @@ export class CamService {
   private store = inject(ModelStore);
   private workTracker = inject(WorkTracker);
 
+  /**
+   * The model with the variables worked out and put in place of the
+   * expressions in number fields. Changing a variable re-emits it, and the
+   * pipelines below then re-run whatever its new value changes.
+   */
+  private readonly model$: Observable<ModelType> = this.store.changes$.pipe(
+    map((model) => resolveModel(model, ModelFieldConfig)),
+    shareReplay({ bufferSize: 1, refCount: false }),
+  );
+
   private readonly shapes = generateShapesFromModel(
-    this.store.changes$,
+    this.model$,
     this.workTracker.working$,
   );
 
   readonly shapes$: Observable<CamShape[]> = this.shapes.all$;
 
   readonly program$: Observable<Program> = generateGcodeFromOperations(
-    this.store.changes$,
+    this.model$,
     this.shapes,
     this.workTracker.working$,
   ).pipe(share({ connector: () => new ReplaySubject(1) }));
@@ -72,7 +85,7 @@ export class CamService {
   );
 
   /** The stock, and where the G-code's zero is in design coordinates. */
-  readonly stock$: Observable<StockView> = this.store.changes$.pipe(
+  readonly stock$: Observable<StockView> = this.model$.pipe(
     map((model) => {
       const stock = resolveStock(model.stock);
       const offset = stockOffset(stock);
@@ -87,7 +100,7 @@ export class CamService {
   /** Roughly how long the job takes, in all and per operation. */
   readonly time$: Observable<TimeSummary> = combineLatest([
     this.program$.pipe(map(programTime)),
-    this.store.changes$,
+    this.model$,
   ]).pipe(
     map(([time, model]) => ({
       total: time.total,

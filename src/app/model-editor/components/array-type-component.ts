@@ -17,6 +17,7 @@ import {
 import { generateId } from '../../../util';
 import { NgbCollapseModule, NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { rootModel } from '../shapes/describe';
+import { resolvedItem } from '../variables/field';
 import { ConfirmDialogComponent } from './confirm-dialog.component';
 import {
   readCollapsedSections,
@@ -33,6 +34,8 @@ export type HeaderAction = {
   title: string;
   run(context: {
     injector: Injector;
+    /** The list's field. */
+    field: FormlyFieldConfig;
     items: any[];
     /** Add an item (a new id is given to it). */
     add(item: object): Promise<void>;
@@ -384,6 +387,44 @@ export type HeaderAction = {
       --bs-btn-hover-border-color: transparent;
     }
 
+    // props.inline: an item is one row of fields, always shown.
+    .item--inline {
+      display: flex;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 3px 4px;
+      overflow: visible;
+
+      // As tall as the inputs, so they line up with the first line of
+      // fields (an error message may show below).
+      > .drag-handle,
+      > .remove-button {
+        height: 30px;
+        padding-top: 0;
+        padding-bottom: 0;
+        align-items: center;
+      }
+
+      &.item--invalid {
+        background: color-mix(
+          in srgb,
+          var(--bs-danger) 4%,
+          var(--editor-card-bg)
+        );
+      }
+    }
+
+    .item_inline-fields {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .list_description {
+      font-size: 0.75rem;
+      color: var(--bs-secondary-color);
+      padding: 0 2px 6px;
+    }
+
     .item_body {
       display: none;
       padding: 8px 10px 4px;
@@ -483,21 +524,18 @@ export type HeaderAction = {
         cdkDropListLockAxis="y"
         (cdkDropListDropped)="drop($event)"
       >
+        @if (inline && props.description) {
+          <div class="list_description">{{ props.description }}</div>
+        }
         @for (field of field.fieldGroup; track $index) {
           @let problems = issues(field);
-          <div
-            class="item"
-            [class.item--expanded]="field.model.expanded"
-            [class.item--invalid]="problems.length"
-            [class.item--off]="isOff(field.model)"
-            cdkDrag
-          >
-            <div class="item_header" (click)="toggleExpanded($index)">
-              <span
-                class="drag-handle"
-                cdkDragHandle
-                title="drag to reorder"
-                (click)="$event.stopPropagation()"
+          @if (inline) {
+            <div
+              class="item item--inline"
+              [class.item--invalid]="problems.length"
+              cdkDrag
+            >
+              <span class="drag-handle" cdkDragHandle title="drag to reorder"
                 ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
                   <g class="dots">
                     <circle cx="6" cy="4" r="1.2" />
@@ -508,92 +546,138 @@ export type HeaderAction = {
                     <circle cx="10" cy="12" r="1.2" />
                   </g></svg
               ></span>
-              <span class="chevron" [class.open]="field.model.expanded"
-                ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M6 3.5 10.5 8 6 12.5" /></svg
-              ></span>
-              <span class="item_index">{{ $index + 1 }}</span>
-              <span
-                class="item_name"
-                [class.item_name--auto]="!field.model?.name && describeItem"
-                >{{ itemName(field.model) }}</span
+              <div class="item_inline-fields">
+                <formly-field [field]="field"></formly-field>
+              </div>
+              <button
+                class="btn btn-sm remove-button"
+                type="button"
+                [title]="'Remove ' + itemLabel"
+                [attr.aria-label]="
+                  'Remove ' + itemLabel + ' ' + itemName(field.model)
+                "
+                (click)="confirmRemove($index)"
               >
-              @if (itemType(field.model); as type) {
-                <span class="item_type">{{ type }}</span>
-              }
-              @if (problems.length) {
+                <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
+                  />
+                </svg>
+              </button>
+            </div>
+          } @else {
+            <div
+              class="item"
+              [class.item--expanded]="field.model.expanded"
+              [class.item--invalid]="problems.length"
+              [class.item--off]="isOff(field.model)"
+              cdkDrag
+            >
+              <div class="item_header" (click)="toggleExpanded($index)">
                 <span
-                  class="issue-chip"
-                  role="img"
-                  [attr.aria-label]="'Needs attention: ' + problems.join(', ')"
-                  [title]="'Needs attention: ' + problems.join(', ')"
-                  >⚠ {{ problems.length }}</span
+                  class="drag-handle"
+                  cdkDragHandle
+                  title="drag to reorder"
+                  (click)="$event.stopPropagation()"
+                  ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <g class="dots">
+                      <circle cx="6" cy="4" r="1.2" />
+                      <circle cx="10" cy="4" r="1.2" />
+                      <circle cx="6" cy="8" r="1.2" />
+                      <circle cx="10" cy="8" r="1.2" />
+                      <circle cx="6" cy="12" r="1.2" />
+                      <circle cx="10" cy="12" r="1.2" />
+                    </g></svg
+                ></span>
+                <span class="chevron" [class.open]="field.model.expanded"
+                  ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M6 3.5 10.5 8 6 12.5" /></svg
+                ></span>
+                <span class="item_index">{{ $index + 1 }}</span>
+                <span
+                  class="item_name"
+                  [class.item_name--auto]="!field.model?.name && describeItem"
+                  >{{ itemName(field.model) }}</span
                 >
-              }
-              @if (toggle; as t) {
-                <button
-                  class="btn btn-sm toggle-button"
-                  type="button"
-                  [class.off]="isOff(field.model)"
-                  [attr.aria-pressed]="!isOff(field.model)"
-                  [title]="isOff(field.model) ? t.offTitle : t.onTitle"
-                  [attr.aria-label]="
-                    (isOff(field.model) ? t.offTitle : t.onTitle) +
-                    ': ' +
-                    itemName(field.model)
-                  "
-                  (click)="$event.stopPropagation(); toggleFlag($index)"
-                >
-                  @if (t.icon === 'eye') {
+                @if (itemType(field.model); as type) {
+                  <span class="item_type">{{ type }}</span>
+                }
+                @if (problems.length) {
+                  <span
+                    class="issue-chip"
+                    role="img"
+                    [attr.aria-label]="
+                      'Needs attention: ' + problems.join(', ')
+                    "
+                    [title]="'Needs attention: ' + problems.join(', ')"
+                    >⚠ {{ problems.length }}</span
+                  >
+                }
+                @if (toggle; as t) {
+                  <button
+                    class="btn btn-sm toggle-button"
+                    type="button"
+                    [class.off]="isOff(field.model)"
+                    [attr.aria-pressed]="!isOff(field.model)"
+                    [title]="isOff(field.model) ? t.offTitle : t.onTitle"
+                    [attr.aria-label]="
+                      (isOff(field.model) ? t.offTitle : t.onTitle) +
+                      ': ' +
+                      itemName(field.model)
+                    "
+                    (click)="$event.stopPropagation(); toggleFlag($index)"
+                  >
+                    @if (t.icon === 'eye') {
+                      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path
+                          d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"
+                        />
+                        <circle cx="8" cy="8" r="2" />
+                        @if (isOff(field.model)) {
+                          <path d="M2.5 13.5l11-11" />
+                        }
+                      </svg>
+                    } @else {
+                      <svg
+                        class="icon switch"
+                        viewBox="0 0 20 16"
+                        aria-hidden="true"
+                      >
+                        <rect x="1.5" y="4" width="17" height="8" rx="4" />
+                        <circle
+                          class="knob"
+                          [attr.cx]="isOff(field.model) ? 5.5 : 14.5"
+                          cy="8"
+                          r="2.6"
+                        />
+                      </svg>
+                    }
+                  </button>
+                }
+                @if (field.props?.['removable'] !== false) {
+                  <button
+                    class="btn btn-sm remove-button"
+                    type="button"
+                    [title]="'Remove ' + itemLabel"
+                    [attr.aria-label]="
+                      'Remove ' + itemLabel + ' ' + itemName(field.model)
+                    "
+                    (click)="$event.stopPropagation(); confirmRemove($index)"
+                  >
                     <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
                       <path
-                        d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"
-                      />
-                      <circle cx="8" cy="8" r="2" />
-                      @if (isOff(field.model)) {
-                        <path d="M2.5 13.5l11-11" />
-                      }
-                    </svg>
-                  } @else {
-                    <svg
-                      class="icon switch"
-                      viewBox="0 0 20 16"
-                      aria-hidden="true"
-                    >
-                      <rect x="1.5" y="4" width="17" height="8" rx="4" />
-                      <circle
-                        class="knob"
-                        [attr.cx]="isOff(field.model) ? 5.5 : 14.5"
-                        cy="8"
-                        r="2.6"
+                        d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
                       />
                     </svg>
-                  }
-                </button>
-              }
-              @if (field.props?.['removable'] !== false) {
-                <button
-                  class="btn btn-sm remove-button"
-                  type="button"
-                  [title]="'Remove ' + itemLabel"
-                  [attr.aria-label]="
-                    'Remove ' + itemLabel + ' ' + itemName(field.model)
-                  "
-                  (click)="$event.stopPropagation(); confirmRemove($index)"
-                >
-                  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                    <path
-                      d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
-                    />
-                  </svg>
-                </button>
-              }
-            </div>
+                  </button>
+                }
+              </div>
 
-            <div class="item_body" [class.visible]="field.model.expanded">
-              <formly-field [field]="field"></formly-field>
+              <div class="item_body" [class.visible]="field.model.expanded">
+                <formly-field [field]="field"></formly-field>
+              </div>
             </div>
-          </div>
+          }
         } @empty {
           <div class="list_empty">
             No {{ props.label }} yet — use “Add {{ itemLabel }}” above.
@@ -626,6 +710,7 @@ export class ArrayTypeComponent
   runAction(action: HeaderAction) {
     action.run({
       injector: this.injector,
+      field: this.field,
       items: this.model ?? [],
       add: async (item) => {
         this.collapsed = this.collapsible ? false : this.collapsed;
@@ -637,6 +722,11 @@ export class ArrayTypeComponent
 
   get collapsible() {
     return this.props['collapsible'] === true;
+  }
+
+  /** `props.inline`: items are edited in place, one row each (variables). */
+  get inline() {
+    return this.props['inline'] === true;
   }
 
   get isValid() {
@@ -728,7 +818,7 @@ export class ArrayTypeComponent
   itemName(model: any): string {
     return (
       model?.name ||
-      this.describeItem?.(model, this.field) ||
+      this.describeItem?.(resolvedItem(this.field, model, true), this.field) ||
       model?.type ||
       'unnamed'
     );
@@ -755,7 +845,7 @@ export class ArrayTypeComponent
     this.collapseAllItems();
     this.collapsed = this.collapsible ? false : this.collapsed;
     const id = await generateId();
-    this.add(undefined, { id, expanded: true });
+    this.add(undefined, this.inline ? { id } : { id, expanded: true });
   }
 
   /** Ask before removing, mentioning anything that refers to the item. */

@@ -7,12 +7,17 @@ import {
 } from './operations';
 import { ModelType as GcodeModelType, field as gcodeField } from './gcode';
 import { ModelType as StockModelType, field as stockField } from './stock';
+import {
+  ModelType as VariablesModelType,
+  field as variablesField,
+} from './variables';
 import { resolveStock } from '../../cam/stock';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { OmitUnion } from '../../util';
 import { ToolOverrides } from './tools/feeds-and-speeds';
 
-export type ModelType = ShapesModelType &
+export type ModelType = VariablesModelType &
+  ShapesModelType &
   ToolsModelType &
   OperationsModelType &
   StockModelType &
@@ -45,6 +50,7 @@ export type ToolParameters = OmitUnion<
   'id' | 'expanded' | 'name' | 'spindleSpeed' | 'feedRate' | 'plungeFeedRate'
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [
+  variablesField,
   shapesField,
   toolsField,
   operationsField,
@@ -69,6 +75,8 @@ export function migrateModel(stored: any): ModelType {
 
   return {
     ...stored,
+    // Projects from before variables have none.
+    variables: Array.isArray(stored?.variables) ? stored.variables : [],
     shapes: (Array.isArray(stored?.shapes) ? stored.shapes : []).map(
       migrateShape,
     ),

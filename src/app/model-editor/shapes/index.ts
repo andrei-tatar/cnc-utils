@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { resolvedModelOf } from '../variables/field';
 import { allShapes, describeShape } from './describe';
 import {
   field as transformsField,
@@ -138,7 +139,7 @@ export const field: FormlyFieldConfig = {
         },
         expressions: {
           'props.placeholder': (field: FormlyFieldConfig) =>
-            describeShape(field.model, allShapes(field)),
+            describeShape(resolvedModelOf(field), allShapes(field)),
         },
       },
       {

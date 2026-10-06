@@ -106,3 +106,46 @@ app-model-editor {
     font-size: 0.85rem;
   }
 }
+
+// Number fields (they also take expressions, and show what those work out
+// to beside them).
+formly-wrapper-form-field > div > formly-field-number {
+  flex: 1;
+  min-width: 0;
+}
+
+app-model-editor formly-field-number .input-group-text {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+}
+
+// A variable: "name  value" on one row, without labels.
+app-model-editor .variable-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+
+  > .variable-name {
+    flex: 0 0 32%;
+    min-width: 0;
+  }
+
+  > .variable-value {
+    flex: 1;
+    min-width: 0;
+  }
+
+  // Formly's field wrapper keeps 1rem below every field; a row needs none.
+  formly-wrapper-form-field {
+    margin-bottom: 0;
+  }
+
+  formly-wrapper-form-field > div {
+    margin-bottom: 0 !important;
+
+    > .invalid-feedback {
+      margin: 0;
+    }
+  }
+}
