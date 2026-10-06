@@ -19,6 +19,7 @@ import {
 } from '../../cam/geometry';
 import { getCentroid } from './utils';
 import { enterCut } from '../../cam/ramp';
+import { rasterLines, rasterPaths, staysInside } from '../../cam/raster';
 
 // Irrelevant with round joins.
 const MITER_LIMIT = 2;
@@ -35,6 +36,14 @@ export async function routePocketHole(
     depthPerStep: number;
     steps: number;
     startDepth: number;
+    /**
+     * offset: rings following the outline, inwards.
+     * raster: parallel lines `alongAxis`, then a pass round the outline.
+     */
+    strategy?: 'offset' | 'raster';
+    alongAxis?: 'x' | 'y';
+    /** Raster: cut every line of the last level the same way. */
+    allPassesInSameDirection?: boolean;
     /** Ramp down into the cut at this angle (degrees) instead of plunging. */
     rampAngle?: number | null;
     /** How precisely to work (see GeometrySettings). */
@@ -49,6 +58,14 @@ export async function routePocketHole(
 
   const groups = await groupShapes(input);
   const sorted = sortPaths(groups, start);
+
+  if (options.strategy === 'raster') {
+    for (const shape of sorted) {
+      start = await routeRaster(builder, shape, { ...options, start });
+    }
+    sorted.forEach((s) => s.delete());
+    return builder;
+  }
 
   for (const shape of sorted) {
     const outlines = await getShapeOutlines(shape, { ...options, start });
@@ -136,6 +153,126 @@ export async function routePocketHole(
   return builder;
 }
 
+/** Cut one group of shapes as raster lines; returns where the bit ends up. */
+async function routeRaster(
+  builder: GCodeBuilder,
+  shape: PathsD,
+  options: {
+    toolSize: number;
+    toolEngagement: number;
+    leaveStock: number;
+    depthPerStep: number;
+    steps: number;
+    startDepth: number;
+    alongAxis?: 'x' | 'y';
+    allPassesInSameDirection?: boolean;
+    rampAngle?: number | null;
+    start: CamPoint;
+  },
+): Promise<CamPoint> {
+  let start = options.start;
+  const area = await toolCenterArea(shape, options);
+  const loops: CamPoint[][] = [];
+  for (let i = 0; i < area.size(); i++) {
+    const path = area.get(i);
+    loops.push(getPoints(path));
+    path.delete();
+  }
+  area.delete();
+  if (!loops.length) {
+    return start;
+  }
+
+  const along = options.alongAxis ?? 'y';
+  const lines = rasterLines(
+    loops,
+    along,
+    options.toolSize * options.toolEngagement,
+  );
+
+  for (let step = 0; step < options.steps; step++) {
+    const depth = options.startDepth + options.depthPerStep * (step + 1);
+    const oneWay =
+      !!options.allPassesInSameDirection && step === options.steps - 1;
+
+    // Carry on to the next path without lifting when it's close and the
+    // move stays inside (one way always lifts, like the flat operation).
+    const goTo = (point: CamPoint) => {
+      if (
+        oneWay ||
+        builder.isAtSafetyHeight ||
+        getDistance(start, point) > options.toolSize * 2 ||
+        !staysInside(loops, start, point)
+      ) {
+        builder.goToSafeHeight();
+      }
+    };
+    const cut = (points: CamPoint[], close: boolean) => {
+      goTo(points[0]);
+      if (builder.isAtSafetyHeight) {
+        points = enterCut(
+          builder,
+          points,
+          close,
+          -(depth - options.depthPerStep),
+          -depth,
+          options.rampAngle ?? null,
+          options.toolSize,
+        );
+      } else {
+        builder.carveTo(points[0].x, points[0].y);
+      }
+      for (const pt of points.slice(1)) {
+        builder.carveTo(pt.x, pt.y);
+      }
+      if (close) {
+        builder.carveTo(points[0].x, points[0].y);
+      }
+      start = close ? points[0] : points[points.length - 1];
+    };
+
+    builder.goToSafeHeight();
+    for (const path of rasterPaths(lines, loops, along, start, oneWay)) {
+      cut(path, false);
+    }
+
+    // Round the outline (and any islands), nearest first, to clean up
+    // between the ends of the lines.
+    const left = [...loops];
+    while (left.length) {
+      let best = { loop: 0, point: 0, distance: Infinity };
+      left.forEach((loop, i) => {
+        const point = findClosestPointIndex(start, loop);
+        const distance = getDistance(start, loop[point]);
+        if (distance < best.distance) {
+          best = { loop: i, point, distance };
+        }
+      });
+      const [loop] = left.splice(best.loop, 1);
+      cut([...loop.slice(best.point), ...loop.slice(0, best.point)], true);
+    }
+  }
+
+  return start;
+}
+
+/**
+ * Where the centre of the tool can go: the shapes joined, less the stock to
+ * leave and half the tool.
+ */
+async function toolCenterArea(
+  paths: PathsD,
+  options: { leaveStock: number; toolSize: number },
+): Promise<PathsD> {
+  //small grow to join any overlapping polygons
+  paths = await clipperInflateRaw(paths, precision() * 2, ...offsetArgs());
+
+  //shrink to leave stock and half tool size
+  paths = await clipperInflateRaw(paths, -options.leaveStock, ...offsetArgs());
+
+  return clipperInflateRaw(paths, -options.toolSize / 2, ...offsetArgs());
+}
+
 async function getShapeOutlines(
   currentPaths: PathsD,
   options: {
@@ -145,30 +282,14 @@ async function getShapeOutlines(
     start: CamPoint;
   },
 ): Promise<PathD[]> {
-  //small grow to join any overlapping polygons
-  currentPaths = await clipperInflateRaw(
-    currentPaths,
-    precision() * 2,
-    ...offsetArgs(),
-  );
-
-  //shrink to leave stock and half tool size
-  currentPaths = await clipperInflateRaw(
-    currentPaths,
-    -options.leaveStock,
-    ...offsetArgs(),
-  );
-
   const outlines: PathD[] = [];
   const stepSize = -options.toolSize * options.toolEngagement;
   let firstStep = true;
   while (true) {
     // get the next outline
-    currentPaths = await clipperInflateRaw(
-      currentPaths,
-      firstStep ? -options.toolSize / 2 : stepSize,
-      ...offsetArgs(),
-    );
+    currentPaths = firstStep
+      ? await toolCenterArea(currentPaths, options)
+      : await clipperInflateRaw(currentPaths, stepSize, ...offsetArgs());
 
     firstStep = false;
 
@@ -297,10 +418,8 @@ function sortPaths(input: PathsD[], start: CamPoint = { x: 0, y: 0 }) {
   const toSort = [...input];
 
   while (toSort.length) {
-    const closestPathIndex = findClosestPointMapIndex(
-      start,
-      toSort,
-      (i) => centers.get(i)!,
+    const closestPathIndex = findClosestPointMapIndex(start, toSort, (i) =>
+      centers.get(i)!,
     );
 
     const closestPath = toSort[closestPathIndex];

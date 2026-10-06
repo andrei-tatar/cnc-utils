@@ -21,7 +21,7 @@ export function describeOperation(
   let what: string;
   switch (operation?.type) {
     case 'pocket':
-      what = `pocket ${total(operation.startDepth, operation.depth, operation.steps)}`;
+      what = `pocket${operation.strategy === 'raster' ? ' raster' : ''} ${total(operation.startDepth, operation.depth, operation.steps)}`;
       break;
     case 'profile':
       what = `profile${partLabel(operation.mode)} ${operation.side ?? ''} ${total(operation.startDepth, operation.depth, operation.steps)}`;

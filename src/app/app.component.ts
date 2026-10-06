@@ -471,6 +471,10 @@ export class AppComponent implements OnInit, OnDestroy {
                             depthPerStep: op.depth,
                             steps: op.steps,
                             startDepth: op.startDepth,
+                            strategy: op.strategy ?? 'offset',
+                            alongAxis: op.alongAxis ?? 'y',
+                            allPassesInSameDirection:
+                              !!op.allPassesInSameDirection,
                             rampAngle: tool.ramp ? tool.rampAngle : null,
                           })
                           .pipe(

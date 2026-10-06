@@ -7,10 +7,29 @@ export interface ModelType {
   steps: number;
   leaveStock: number;
   toolEngagement: number;
+  strategy?: 'offset' | 'raster';
+  alongAxis?: 'x' | 'y';
+  allPassesInSameDirection?: boolean;
 }
+
+const hideUnlessRaster = (field: FormlyFieldConfig) =>
+  field.model?.type !== Definition.type || field.model?.strategy !== 'raster';
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
+    {
+      key: 'strategy',
+      type: 'enum',
+      defaultValue: 'offset',
+      props: {
+        label: 'strategy',
+        required: true,
+        options: [
+          { value: 'offset', label: 'offset' },
+          { value: 'raster', label: 'raster' },
+        ],
+      },
+    },
     {
       key: 'startDepth',
       type: 'number',
@@ -59,6 +78,29 @@ const field: FormlyFieldConfig = {
         label: 'engagement',
         required: true,
       },
+    },
+    {
+      key: 'alongAxis',
+      type: 'enum',
+      defaultValue: 'y',
+      props: {
+        label: 'along axis',
+        required: true,
+        options: [
+          { value: 'x', label: 'x' },
+          { value: 'y', label: 'y' },
+        ],
+      },
+      expressions: { hide: hideUnlessRaster },
+    },
+    {
+      key: 'allPassesInSameDirection',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'all passes same dir.',
+      },
+      expressions: { hide: hideUnlessRaster },
     },
   ],
   expressions: {
