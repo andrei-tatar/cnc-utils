@@ -21,7 +21,10 @@ export type ShapeParameters = OmitUnion<
   'id' | 'transforms' | 'expanded' | 'name' | 'hidden'
 >;
 export type TransformType = ShapeType['transforms'][number];
-export type TransformParameters = OmitUnion<TransformType, 'id' | 'expanded'>;
+export type TransformParameters = OmitUnion<
+  TransformType,
+  'id' | 'expanded' | 'disabled'
+>;
 export type OperationType = OperationsModelType['operations'][number];
 export type OperationParameters = OmitUnion<
   OperationType,

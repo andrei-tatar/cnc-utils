@@ -57,6 +57,8 @@ export type ModelType = {
     ) & {
       id: string;
       expanded: boolean;
+      /** Skipped: the shape passes through unchanged. */
+      disabled?: boolean;
     }
   >;
 };
@@ -81,12 +83,23 @@ export const field: FormlyFieldConfig = {
     label: 'transforms',
     itemLabel: 'transform',
     accent: '#7c3aed',
+    toggle: {
+      key: 'disabled',
+      icon: 'switch',
+      onTitle: 'Disable: pass the shape through unchanged',
+      offTitle: 'Disabled — click to apply this transform again',
+    },
   },
   fieldArray: {
     fieldGroup: [
       {
         key: 'id',
         type: 'hidden',
+      },
+      {
+        key: 'disabled',
+        type: 'hidden',
+        defaultValue: false,
       },
       {
         key: 'expanded',

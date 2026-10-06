@@ -342,8 +342,8 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
       }
     }
 
-    // Hidden shapes / disabled operations: dimmed so the state shows at a
-    // glance.
+    // Hidden shapes / disabled transforms and operations: dimmed so the
+    // state shows at a glance.
     .item--off > .item_header {
       .item_index,
       .item_name,
@@ -821,8 +821,8 @@ export class ArrayTypeComponent
 
   /**
    * Optional `props.toggle`: a per-item on/off flag shown as a button in the
-   * header (hide a shape in the preview, disable an operation). The flag is
-   * true when the item is "off".
+   * header (hide a shape in the preview, disable a transform or an
+   * operation). The flag is true when the item is "off".
    */
   get toggle():
     | { key: string; icon: 'eye' | 'switch'; onTitle: string; offTitle: string }

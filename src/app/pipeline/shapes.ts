@@ -41,7 +41,8 @@ type ShapeEntry = {
 /** A long-lived pipeline for one transform of a shape. */
 type TransformEntry = {
   transformId: string;
-  transformParameters$: BehaviorSubject<TransformParameters>;
+  /** Null while the transform is disabled (its input passes through). */
+  transformParameters$: BehaviorSubject<TransformParameters | null>;
   input: Subject<CamShape[]>;
   output$: Observable<CamShape[]>;
 };
@@ -206,13 +207,14 @@ function applyTransforms(
     scan(
       (ctx, transforms) =>
         transforms.map(
-          ({ id: transformId, expanded: _, ...transformParams }) => {
+          ({ id: transformId, expanded: _, disabled, ...transformParams }) => {
+            const params = disabled ? null : transformParams;
             const existing = ctx.find((t) => t.transformId === transformId);
             if (existing) {
-              existing.transformParameters$.next(transformParams);
+              existing.transformParameters$.next(params);
               return existing;
             }
-            return createTransformEntry(transformId, transformParams, working$);
+            return createTransformEntry(transformId, params, working$);
           },
         ),
       [] as TransformEntry[],
@@ -241,7 +243,7 @@ function applyTransforms(
 
 function createTransformEntry(
   transformId: string,
-  transformParameters: TransformParameters,
+  transformParameters: TransformParameters | null,
   working$: Observable<never>,
 ): TransformEntry {
   const transformParameters$ = new BehaviorSubject(transformParameters);
@@ -253,7 +255,9 @@ function createTransformEntry(
       input.pipe(
         distinctUntilChanged(),
         switchMap((shape) =>
-          race(worker.applyTransform(shape, transform), working$),
+          transform
+            ? race(worker.applyTransform(shape, transform), working$)
+            : of(shape),
         ),
       ),
     ),
