@@ -37,9 +37,33 @@ import {
   ModelType as BoundsModelType,
 } from './transform-bounds';
 import {
-  Definition as OneTimeDefinition,
-  ModelType as OneTimeModelType,
-} from './transform-onetime';
+  Definition as PolarDefinition,
+  ModelType as PolarModelType,
+} from './transform-polar';
+import {
+  Definition as DogboneDefinition,
+  ModelType as DogboneModelType,
+} from './transform-dogbone';
+import {
+  Definition as CornersDefinition,
+  ModelType as CornersModelType,
+} from './transform-corners';
+import {
+  Definition as FitDefinition,
+  ModelType as FitModelType,
+} from './transform-fit';
+import {
+  Definition as SimplifyDefinition,
+  ModelType as SimplifyModelType,
+} from './transform-simplify';
+import {
+  Definition as MirrorDefinition,
+  ModelType as MirrorModelType,
+} from './transform-mirror';
+import {
+  Definition as CentersDefinition,
+  ModelType as CentersModelType,
+} from './transform-centers';
 
 export type ModelType = {
   transforms: Array<
@@ -53,7 +77,13 @@ export type ModelType = {
       | ClipperInflateModelType
       | ConvexHullModelType
       | BoundsModelType
-      | OneTimeModelType
+      | PolarModelType
+      | DogboneModelType
+      | CornersModelType
+      | FitModelType
+      | SimplifyModelType
+      | MirrorModelType
+      | CentersModelType
     ) & {
       id: string;
       expanded: boolean;
@@ -64,16 +94,22 @@ export type ModelType = {
 };
 
 const transforms = [
-  RepeatDefinition,
   TranslateDefinition,
   AlignDefinition,
   RotateDefinition,
   ScaleDefinition,
+  FitDefinition,
   FlipDefinition,
+  MirrorDefinition,
+  RepeatDefinition,
+  PolarDefinition,
   ClipperInflateDefinition,
+  CornersDefinition,
+  DogboneDefinition,
+  SimplifyDefinition,
   ConvexHullDefinition,
   BoundsDefinition,
-  OneTimeDefinition,
+  CentersDefinition,
 ];
 
 export const field: FormlyFieldConfig = {

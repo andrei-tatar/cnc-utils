@@ -52,7 +52,8 @@ export const ModelFieldConfig: FormlyFieldConfig[] = [
  * Bring a stored model (localStorage, or the metadata embedded in a .nc
  * file) up to the current shape. Projects saved before operations became
  * their own section kept them nested in each tool: move them out, in tool
- * order, linking each to its tool.
+ * order, linking each to its tool. Transforms that were replaced are
+ * converted to what replaced them.
  */
 export function migrateModel(stored: any): ModelType {
   const tools: any[] = Array.isArray(stored?.tools) ? stored.tools : [];
@@ -64,7 +65,9 @@ export function migrateModel(stored: any): ModelType {
 
   return {
     ...stored,
-    shapes: Array.isArray(stored?.shapes) ? stored.shapes : [],
+    shapes: (Array.isArray(stored?.shapes) ? stored.shapes : []).map(
+      migrateShape,
+    ),
     tools: tools.map(({ operations: _, ...tool }) => tool),
     operations: [
       ...(Array.isArray(stored?.operations) ? stored.operations : []),
@@ -72,5 +75,29 @@ export function migrateModel(stored: any): ModelType {
     ],
     // Projects from before G-code options existed get the defaults.
     gcode: resolveGcodeOptions(stored?.gcode),
+  };
+}
+
+function migrateShape(shape: any) {
+  if (!Array.isArray(shape?.transforms)) {
+    return shape;
+  }
+  return {
+    ...shape,
+    transforms: shape.transforms.map((transform: any) =>
+      transform?.type === 'onetime'
+        ? // The old fixed "onetime" transform: a 21 mm circle at the centre
+          // of every polygon, added to the shape.
+          {
+            id: transform.id,
+            expanded: transform.expanded,
+            disabled: transform.disabled,
+            type: 'centers',
+            centersRadius: 21,
+            centersOf: 'all',
+            centersKeepOriginal: true,
+          }
+        : transform,
+    ),
   };
 }

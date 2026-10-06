@@ -3,8 +3,15 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 export interface ModelType {
   type: 'rotate';
   rotateAngle: number;
-  around: `${'xmin' | 'xmax' | 'xcenter'}-${'ymin' | 'ymax' | 'ycenter'}`;
+  /** A point of the bounding box, or `point` for (aroundX, aroundY). */
+  around:
+    `${'xmin' | 'xmax' | 'xcenter'}-${'ymin' | 'ymax' | 'ycenter'}` | 'point';
+  aroundX?: number;
+  aroundY?: number;
 }
+
+const hideUnlessPoint = (field: FormlyFieldConfig) =>
+  field.model?.type !== Definition.type || field.model?.around !== 'point';
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
@@ -34,8 +41,23 @@ const field: FormlyFieldConfig = {
           { value: 'xcenter-ymax', label: 'xcenter ymax' },
           { value: 'xmin-ycenter', label: 'xmin ycenter' },
           { value: 'xmax-ycenter', label: 'xmax ycenter' },
+          { value: 'point', label: 'a point' },
         ],
       },
+    },
+    {
+      key: 'aroundX',
+      type: 'number',
+      defaultValue: 0,
+      props: { label: 'x', required: true },
+      expressions: { hide: hideUnlessPoint },
+    },
+    {
+      key: 'aroundY',
+      type: 'number',
+      defaultValue: 0,
+      props: { label: 'y', required: true },
+      expressions: { hide: hideUnlessPoint },
     },
   ],
   expressions: {

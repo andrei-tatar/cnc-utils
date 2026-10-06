@@ -5,7 +5,16 @@ import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
 import { applyConvexHull } from './convex-hull-transform';
 import { pointInPolygon } from '../../cam/polygon-nesting';
-import { getCentroid } from './utils';
+import {
+  boxPoint,
+  centerMarks,
+  fitToSize,
+  getBoundingBox,
+  mirrorCopy,
+  polarArray,
+  shapeCorners,
+} from './shape-transforms';
+import { dogbones, simplifyShapes } from './clipper-transforms';
 
 export async function applyTransform(
   input: CamShape[],
@@ -50,9 +59,10 @@ export async function applyTransform(
       case 'rotate': {
         const box = getBoundingBox(input);
 
-        const [ox, oy] = transform.around.split('-').map((v) => v.substring(1));
-        const dx = getRotationOrigin(box.x, box.width, ox);
-        const dy = getRotationOrigin(box.y, box.height, oy);
+        const { x: dx, y: dy } =
+          transform.around === 'point'
+            ? { x: transform.aroundX ?? 0, y: transform.aroundY ?? 0 }
+            : boxPoint(box, transform.around);
 
         const rotateMatrix = new Matrix3()
           .translate(-dx, -dy)
@@ -157,28 +167,26 @@ export async function applyTransform(
           mergeAllShapes: transform.mergeAllShapes,
         });
 
-      case 'onetime':
-        return input.map((s) => {
-          const radius = 21;
-          const newpolygons: CamPolygon[] = [];
-          for (const p of s.polygons) {
-            const { x: cx, y: cy } = getCentroid(p.points);
+      case 'polar':
+        return polarArray(input, transform);
 
-            const newPoly: CamPolygon = { close: true, points: [] };
-            for (let i = 0; i < 60; i++) {
-              const a = (2 * Math.PI * i) / 60;
-              const x = cx + Math.sin(a) * radius;
-              const y = cy + Math.cos(a) * radius;
-              newPoly.points.push({ x, y });
-            }
-            newpolygons.push(newPoly);
-          }
+      case 'fit':
+        return fitToSize(input, transform);
 
-          return {
-            sourceShapeId: s.sourceShapeId,
-            polygons: [...s.polygons, ...newpolygons],
-          } as CamShape;
-        });
+      case 'mirror':
+        return mirrorCopy(input, transform);
+
+      case 'simplify':
+        return await simplifyShapes(input, transform.simplifyTolerance);
+
+      case 'centers':
+        return centerMarks(input, transform);
+
+      case 'dogbone':
+        return await dogbones(input, transform);
+
+      case 'corners':
+        return shapeCorners(input, transform);
 
       default:
         return input;
@@ -187,18 +195,6 @@ export async function applyTransform(
     console.error(err);
   }
   return input;
-}
-
-function getRotationOrigin(start: number, size: number, type: string) {
-  switch (type) {
-    case 'min':
-      return start;
-    case 'max':
-      return start + size;
-    case 'center':
-    default:
-      return start + size / 2;
-  }
 }
 
 /**
@@ -252,25 +248,6 @@ function boundingRectangles(
       .map((p) => rectangle(p.points))
       .filter((r): r is CamPolygon => r !== null),
   }));
-}
-
-function getBoundingBox(input: CamShape[]) {
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  input.forEach((shape) => {
-    shape.polygons.forEach((poly) => {
-      poly.points.forEach((point) => {
-        minX = Math.min(minX, point.x);
-        minY = Math.min(minY, point.y);
-        maxX = Math.max(maxX, point.x);
-        maxY = Math.max(maxY, point.y);
-      });
-    });
-  });
-
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 function applyMatrixTransform(input: CamShape, matrix: Matrix3): CamShape {

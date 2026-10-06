@@ -139,7 +139,12 @@ function createShapeEntry(
     shareLatest(),
   );
 
-  const result$ = applyTransforms(shape$, shapeTransforms$, working$);
+  const result$ = applyTransforms(
+    shape$,
+    shapeTransforms$,
+    geometry$,
+    working$,
+  );
 
   return { shapeId, result$, shapeParameters$, shapeTransforms$ };
 }
@@ -214,6 +219,7 @@ function resultOf(
 function applyTransforms(
   shape$: Observable<CamShape[]>,
   shapeTransforms$: Observable<ShapeType['transforms']>,
+  geometry$: Observable<GeometrySettings>,
   working$: Observable<never>,
 ): Observable<CamShape[]> {
   const transforms$ = shapeTransforms$.pipe(
@@ -227,7 +233,12 @@ function applyTransforms(
               existing.transformParameters$.next(params);
               return existing;
             }
-            return createTransformEntry(transformId, params, working$);
+            return createTransformEntry(
+              transformId,
+              params,
+              geometry$,
+              working$,
+            );
           },
         ),
       [] as TransformEntry[],
@@ -257,19 +268,23 @@ function applyTransforms(
 function createTransformEntry(
   transformId: string,
   transformParameters: TransformParameters | null,
+  geometry$: Observable<GeometrySettings>,
   working$: Observable<never>,
 ): TransformEntry {
   const transformParameters$ = new BehaviorSubject(transformParameters);
-  const input = new Subject<CamShape[]>();
+  // Replays the latest input, so new settings apply to it right away.
+  const input = new ReplaySubject<CamShape[]>(1);
 
-  const output$ = transformParameters$.pipe(
-    distinctJson(),
-    switchMap((transform) =>
+  const output$ = combineLatest([
+    transformParameters$.pipe(distinctJson()),
+    geometry$,
+  ]).pipe(
+    switchMap(([transform, geometry]) =>
       input.pipe(
         distinctUntilChanged(),
         switchMap((shape) =>
           transform
-            ? race(worker.applyTransform(shape, transform), working$)
+            ? race(worker.applyTransform(shape, transform, geometry), working$)
             : of(shape),
         ),
       ),

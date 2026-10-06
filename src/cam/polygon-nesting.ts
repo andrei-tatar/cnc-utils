@@ -13,17 +13,7 @@ export type NestedContour = {
  * Islands inside holes become outlines of their own.
  */
 export function nestContours(contours: CamPoint[][]): NestedContour[] {
-  const boxes = contours.map(boundingBox);
-
-  const parents = contours.map((contour, i) =>
-    contours.flatMap((other, j) =>
-      j !== i &&
-      contains(boxes[j], boxes[i]) &&
-      pointInPolygon(contour[0], other)
-        ? [j]
-        : [],
-    ),
-  );
+  const parents = containingContours(contours);
   const depth = parents.map((p) => p.length);
 
   const nested = new Map<number, NestedContour>();
@@ -42,6 +32,32 @@ export function nestContours(contours: CamPoint[][]): NestedContour[] {
   });
 
   return [...nested.values()];
+}
+
+/**
+ * For each contour, the contours it lies inside (by its first point). An
+ * odd number of them makes it a hole.
+ */
+export function containingContours(contours: CamPoint[][]): number[][] {
+  const boxes = contours.map(boundingBox);
+  return contours.map((contour, i) =>
+    contours.flatMap((other, j) =>
+      j !== i &&
+      contains(boxes[j], boxes[i]) &&
+      pointInPolygon(contour[0], other)
+        ? [j]
+        : [],
+    ),
+  );
+}
+
+/** Twice the signed area: positive for counter-clockwise (Y up). */
+export function signedArea2(points: CamPoint[]): number {
+  let sum = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    sum += (points[j].x - points[i].x) * (points[j].y + points[i].y);
+  }
+  return sum;
 }
 
 export function pointInPolygon(point: CamPoint, polygon: CamPoint[]): boolean {
