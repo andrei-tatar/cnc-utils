@@ -1,5 +1,5 @@
 import { GcodeOptions, resolveGcodeOptions } from './gcode-options';
-import { CamPoint } from './types';
+import { CamPath, CamPoint, CamPoint3 } from './types';
 
 export class GCodeBuilder {
   private _instructions: PathInstruction[] = [];
@@ -100,10 +100,65 @@ export class GCodeBuilder {
   }
 
   build(options: Partial<GcodeOptions> = {}): string {
+    const gcode: string[] = [];
+    this.walk(options, {
+      line: (text) => gcode.push(text),
+      move: (code, changed) => {
+        const coords: string[] = [];
+        if (changed.x !== undefined) coords.push(`X${changed.x}`);
+        if (changed.y !== undefined) coords.push(`Y${changed.y}`);
+        if (changed.z !== undefined) coords.push(`Z${changed.z}`);
+        if (changed.feed !== undefined) coords.push(`F${changed.feed}`);
+        gcode.push(`${code} ${coords.join(' ')}`);
+      },
+    });
+    return gcode.join('\n');
+  }
+
+  /**
+   * The moves the G-code makes, as paths for the preview: what parsing
+   * `build(options)` back would give, without writing the text. A new path
+   * starts whenever the move type or the source shape/operation changes.
+   */
+  toPaths(options: Partial<GcodeOptions> = {}): CamPath[] {
+    const paths: CamPath[] = [];
+    let path: CamPath | null = null;
+    let sourceShapeId = 'unknown';
+    let sourceOperationId: string | undefined = undefined;
+    let last: CamPoint3 = { x: 0, y: 0, z: 0 };
+
+    this.walk(options, {
+      line: () => {},
+      source: (kind, id) => {
+        if (kind === 'shape') sourceShapeId = id;
+        else sourceOperationId = id || undefined;
+      },
+      move: (code, _, at) => {
+        const type = code === 'G0' ? 'travel' : 'carve';
+        if (
+          !path ||
+          type !== path.type ||
+          sourceShapeId !== path.sourceShapeId ||
+          sourceOperationId !== path.sourceOperationId
+        ) {
+          if (path) paths.push(path);
+          path = { points: [last], sourceShapeId, sourceOperationId, type };
+        }
+        last = at;
+        path.points.push(at);
+      },
+    });
+
+    if (path) paths.push(path);
+    return paths;
+  }
+
+  /** Walks the instructions as G-code, handing each line or move to `out`. */
+  private walk(options: Partial<GcodeOptions>, out: GcodeSink) {
     const o = resolveGcodeOptions(options);
     const factor = 10 ** Math.max(0, Math.min(6, Math.round(o.decimals)));
     const round = (v: number) => Math.round(v * factor) / factor;
-    const gcode: string[] = [];
+    const gcode = { push: out.line };
 
     // Tool changes only make sense with more than one tool, unless asked.
     const toolCount = new Set(
@@ -171,10 +226,12 @@ export class GCodeBuilder {
 
         case 'source-shape':
           gcode.push(`; source-shape=${instruction.id}`);
+          out.source?.('shape', instruction.id);
           break;
 
         case 'source-operation':
           gcode.push(`; source-operation=${instruction.id}`);
+          out.source?.('operation', instruction.id);
           break;
 
         case 'carve-feedrate':
@@ -241,50 +298,63 @@ export class GCodeBuilder {
       }
     }
 
-    return gcode.join('\n');
-
     function move(
-      code: string,
+      code: 'G0' | 'G1',
       to: { x?: number; y?: number; z?: number },
       feed?: number,
     ) {
-      const coords: string[] = [];
+      const changed: MoveChange = {};
 
       if (typeof to.x === 'number') {
         const newX = round(to.x);
         if (newX !== x) {
-          x = newX;
-          coords.push(`X${x}`);
+          x = changed.x = newX;
         }
       }
 
       if (typeof to.y === 'number') {
         const newY = round(to.y);
         if (newY !== y) {
-          y = newY;
-          coords.push(`Y${y}`);
+          y = changed.y = newY;
         }
       }
 
       if (typeof to.z === 'number') {
         const newZ = round(to.z);
         if (newZ !== z) {
-          z = newZ;
-          coords.push(`Z${z}`);
+          z = changed.z = newZ;
         }
       }
 
       if (typeof feed === 'number' && feed !== feedRate) {
-        feedRate = feed;
-        coords.push(`F${feedRate}`);
+        feedRate = changed.feed = feed;
       }
 
-      if (coords.length) {
-        gcode.push(`${code} ${coords.join(' ')}`);
+      if (
+        changed.x !== undefined ||
+        changed.y !== undefined ||
+        changed.z !== undefined ||
+        changed.feed !== undefined
+      ) {
+        // Axes never set yet read as 0, as a G-code reader would assume.
+        out.move(code, changed, { x: x ?? 0, y: y ?? 0, z: z ?? 0 });
       }
     }
   }
 }
+
+/** The axes (and feed) a move changes, already rounded. */
+type MoveChange = { x?: number; y?: number; z?: number; feed?: number };
+
+/** Receives the G-code as `walk` produces it. */
+type GcodeSink = {
+  /** Any line that isn't a move (comments, spindle, tool changes, …). */
+  line(text: string): void;
+  /** A move, with what it changes and where it ends up. */
+  move(code: 'G0' | 'G1', changed: MoveChange, at: CamPoint3): void;
+  /** What the following moves belong to (an empty operation id clears it). */
+  source?(kind: 'shape' | 'operation', id: string): void;
+};
 
 type PathInstruction =
   | { type: 'plunge'; depth: number }

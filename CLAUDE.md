@@ -26,14 +26,14 @@ The whole app is a set of RxJS observable pipelines. There is no NgRx/state-mana
 ### The data flow
 
 ```
-model$ (ModelType)  ──►  shapes$ (CamShape[])  ──►  gcode$ (string)  ──►  paths$
+model$ (ModelType)  ──►  shapes$ (CamShape[])  ──►  program$ (Program)  ──►  paths$
    ▲                          │                          │
  form edits                 (viewer)                download / model metadata
 ```
 
 1. **`model$`** is the single source of truth: a `BehaviorSubject<ModelType>` persisted to `localStorage` under key `model` (debounced, and on `pagehide`). Pipelines consume `ModelStore.changes$`, which drops value-equal models and is shared — don't add side effects to it per subscriber. `ModelType = { shapes, tools, operations }`; each operation references a tool (`toolId`) and a shape (`shapeId`). Older projects nested operations inside tools — `migrateModel()` in `model-editor/model.ts` upgrades them and must be applied to every model that's loaded (localStorage and `.nc` metadata).
 2. **`generateShapesFromModel`** turns each shape into a `CamShape[]` observable. Each shape is rasterized to an SVG string (`createSvgFromShape`) and sent to the worker's `importSvg`, *except* `boolean` shapes, which combine two other shapes' outputs, and `text` shapes, which go to the worker's `importText` (Google Fonts fetched from Fontsource/jsDelivr at a pinned version, parsed with opentype.js; URLs in `src/cam/font-source.ts`). Transforms are then chained: each transform's output feeds the next transform's input.
-3. **`generateGcodeFromOperations`** walks `operations` in order, resolves the referenced tool by `toolId` and shape by `shapeId`, runs the operation (`routePocketHole` / `flatOutline` / `routeProfile` / `routeVCarve` / `routeVCarveClearing`) in the worker, and emits a `Program` (the operations' `GCodeBuilder`s + G-code options); `buildProgram` writes it out. The preview's G-code has no project in it: only on download is the current model gzip+base64 encoded (`src/app/store.ts`) and embedded as a `; model=` comment so a `.nc` file can be re-loaded to restore the project. So edits that don't change toolpaths (renames, hiding) don't rebuild the G-code.
+3. **`generateGcodeFromOperations`** walks `operations` in order, resolves the referenced tool by `toolId` and shape by `shapeId`, runs the operation (`routePocketHole` / `flatOutline` / `routeProfile` / `routeVCarve` / `routeVCarveClearing`) in the worker, and emits a `Program` (the operations' `GCodeBuilder`s + G-code options); `buildProgram` writes it out. The preview never writes G-code: `programPaths` walks the program into `CamPath[]`, and `reuseUnchangedPaths` (`pipeline/preview.ts`) keeps unchanged paths' identity so the viewer only redraws what changed. Only on download is the current model gzip+base64 encoded (`src/app/store.ts`) and embedded as a `; model=` comment so a `.nc` file can be re-loaded to restore the project. So edits that don't change toolpaths (renames, hiding) don't rebuild the G-code.
 
 A key pattern in both `generate*` functions: a `scan` operator keeps a per-id list of long-lived inner pipelines. On each model emission, existing entries are **mutated in place** (push new params into their `BehaviorSubject`s) rather than rebuilt, so heavy worker computations only re-run when their specific inputs actually change. New ids create new pipelines; this is intentional incremental memoization — preserve it when editing.
 
@@ -63,8 +63,7 @@ The editor UI is **entirely generated from ngx-formly field configs** — there 
 ### CAM / G-code (`src/cam/`)
 
 - `types.ts` — the shared geometry vocabulary: `CamPoint`, `CamPolygon`, `CamShape` (polygons + `sourceShapeId`), `CamPath`.
-- `gcode-builder.ts` — fluent `GCodeBuilder` that records abstract instructions (travel/carve/plunge/feedrate/…) and renders them to G-code text with `.build()`. Builders are immutably `clone`d and `concat`ed. `addModelMetadata` embeds the project; `goToSafeHeight().stopProgram()` finalizes.
-- `gcode-viewer.ts` — `gcodeToPaths` parses built G-code back into `CamPath[]` for the toolpath preview.
+- `gcode-builder.ts` — fluent `GCodeBuilder` that records abstract instructions (travel/carve/plunge/feedrate/…) and renders them to G-code text with `.build()`, or straight to preview `CamPath[]` with `.toPaths()` (same walk, no text written or parsed). Builders are immutably `clone`d and `concat`ed. `addModelMetadata` embeds the project; `goToSafeHeight().stopProgram()` finalizes.
 - `clipper.ts` — thin async wrappers over clipper2-wasm, lazily initialized via `lazy()`.
 
 ### Viewer (`src/app/viewer/viewer.component.ts`)

@@ -12,7 +12,7 @@ import {
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
-import { CamShape } from '../../cam/types';
+import { CamPath, CamShape } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
 import { geometrySettings } from './geometry-settings';
 import { OperationInputs, operationInputs } from './operation-inputs';
@@ -147,19 +147,24 @@ function createOperationEntry(
  * The program's G-code: the embedded project (when given, as from
  * `getModelMetadata`), then each operation's G-code.
  */
-export function buildProgram(
-  { builders, options }: Program,
+export function buildProgram(program: Program, modelMetadata?: string): string {
+  return wholeProgram(program, modelMetadata).build(program.options);
+}
+
+/** The program's moves as paths for the preview, without writing G-code. */
+export function programPaths(program: Program): CamPath[] {
+  return wholeProgram(program).toPaths(program.options);
+}
+
+function wholeProgram(
+  { builders }: Program,
   modelMetadata?: string,
-): string {
+): GCodeBuilder {
   const meta = new GCodeBuilder();
   if (modelMetadata !== undefined) {
     meta.addModelMetadata(modelMetadata);
   }
   const result = [meta, ...builders].reduce((a, b) => a.concat(b));
   // The final retract belongs to no operation.
-  return result
-    .sourceOperationId('')
-    .goToSafeHeight()
-    .stopProgram()
-    .build(options);
+  return result.sourceOperationId('').goToSafeHeight().stopProgram();
 }

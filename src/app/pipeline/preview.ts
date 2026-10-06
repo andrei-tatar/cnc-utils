@@ -1,7 +1,13 @@
-import { distinctUntilChanged, map, Observable } from 'rxjs';
-import { Highlight } from '../../cam/types';
+import {
+  distinctUntilChanged,
+  map,
+  MonoTypeOperatorFunction,
+  Observable,
+  scan,
+} from 'rxjs';
+import { CamPath, CamPoint3, Highlight } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
-import { distinctJson } from './operators';
+import { distinctItems, distinctJson } from './operators';
 import { vCarveSource } from './vcarve-source';
 
 /** Shapes toggled off in the editor (hidden in the preview only). */
@@ -44,4 +50,49 @@ export function highlightFromModel(
     }),
     distinctJson(),
   );
+}
+
+/**
+ * Hands back the previous emission's path object for every path that hasn't
+ * changed, so the viewer (which matches paths by identity) keeps its meshes
+ * and only redraws what an edit actually changed.
+ *
+ * Paths are matched by operation, type, shape and their position among
+ * those, so re-routing one operation doesn't shift the others' matches.
+ */
+export function reuseUnchangedPaths(): MonoTypeOperatorFunction<CamPath[]> {
+  return (paths$) =>
+    paths$.pipe(
+      scan(
+        ({ byKey: previous }, paths) => {
+          const byKey = new Map<string, CamPath>();
+          const seen = new Map<string, number>();
+          const result = paths.map((path) => {
+            const group = `${path.sourceOperationId ?? ''}|${path.type}|${path.sourceShapeId}`;
+            const n = seen.get(group) ?? 0;
+            seen.set(group, n + 1);
+            const key = `${group}|${n}`;
+            const old = previous.get(key);
+            const kept =
+              old && samePoints(old.points, path.points) ? old : path;
+            byKey.set(key, kept);
+            return kept;
+          });
+          return { byKey, paths: result };
+        },
+        { byKey: new Map<string, CamPath>(), paths: [] as CamPath[] },
+      ),
+      map(({ paths }) => paths),
+      distinctItems(),
+    );
+}
+
+function samePoints(a: CamPoint3[], b: CamPoint3[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].x !== b[i].x || a[i].y !== b[i].y || a[i].z !== b[i].z) {
+      return false;
+    }
+  }
+  return true;
 }

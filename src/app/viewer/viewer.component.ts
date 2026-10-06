@@ -491,47 +491,46 @@ export class ViewerComponent implements OnInit, OnDestroy {
         switchMap((paths$) => paths$),
         scan(
           (ctx, shapes) =>
-            shapes.map((shape) => {
-              const existing = ctx.find((c) => c.shape === shape);
-              if (existing) {
-                return existing;
-              }
+            new Map(
+              shapes.map((shape) => {
+                const existing = ctx.get(shape);
+                if (existing) {
+                  return [shape, existing] as const;
+                }
 
-              const isHighlighted$ = this.highlight$.pipe(
-                map(
-                  (h) =>
-                    (!h.shapes.length && !h.operations.length) ||
-                    h.shapes.includes(shape.sourceShapeId),
-                ),
-                distinctUntilChanged(),
-              );
-
-              return {
-                shape,
-                draw$: this.drawShape({
-                  shape,
-                  scene: this.content,
-                  material,
-                  materialHighlight,
-                  nullMaterial,
-                  highlight$: isHighlighted$,
-                  hidden$: this.hiddenShapes$.pipe(
-                    map((hidden) => hidden.includes(shape.sourceShapeId)),
-                    distinctUntilChanged(),
+                const isHighlighted$ = this.highlight$.pipe(
+                  map(
+                    (h) =>
+                      (!h.shapes.length && !h.operations.length) ||
+                      h.shapes.includes(shape.sourceShapeId),
                   ),
-                }).pipe(
-                  share({
-                    resetOnRefCountZero: () => timer(0),
-                  }),
-                ),
-              };
-            }),
-          [] as Array<{
-            shape: CamShape;
-            draw$: Observable<never>;
-          }>,
+                  distinctUntilChanged(),
+                );
+
+                return [
+                  shape,
+                  this.drawShape({
+                    shape,
+                    scene: this.content,
+                    material,
+                    materialHighlight,
+                    nullMaterial,
+                    highlight$: isHighlighted$,
+                    hidden$: this.hiddenShapes$.pipe(
+                      map((hidden) => hidden.includes(shape.sourceShapeId)),
+                      distinctUntilChanged(),
+                    ),
+                  }).pipe(
+                    share({
+                      resetOnRefCountZero: () => timer(0),
+                    }),
+                  ),
+                ] as const;
+              }),
+            ),
+          new Map<CamShape, Observable<never>>(),
         ),
-        switchMap((all) => merge(...all.map((a) => a.draw$))),
+        switchMap((all) => merge(...all.values())),
         takeUntil(this.destroy$),
       )
       .subscribe();
@@ -542,54 +541,54 @@ export class ViewerComponent implements OnInit, OnDestroy {
         tap((paths) => this.updateDeepest(paths)),
         scan(
           (ctx, paths) =>
-            paths.map((path) => {
-              const existing = ctx.find((c) => c.path === path);
-              if (existing) {
-                return existing;
-              }
+            new Map(
+              paths.map((path) => {
+                const existing = ctx.get(path);
+                if (existing) {
+                  return [path, existing] as const;
+                }
 
-              const isHighlighted$ = this.highlight$.pipe(
-                map((h) =>
-                  h.operations.length
-                    ? !!path.sourceOperationId &&
-                      h.operations.includes(path.sourceOperationId)
-                    : !h.shapes.length || h.shapes.includes(path.sourceShapeId),
-                ),
-                distinctUntilChanged(),
-              );
+                const isHighlighted$ = this.highlight$.pipe(
+                  map((h) =>
+                    h.operations.length
+                      ? !!path.sourceOperationId &&
+                        h.operations.includes(path.sourceOperationId)
+                      : !h.shapes.length ||
+                        h.shapes.includes(path.sourceShapeId),
+                  ),
+                  distinctUntilChanged(),
+                );
 
-              return {
-                path,
-                draw$: this.drawPath({
+                return [
                   path,
-                  scene: this.content,
-                  material:
-                    path.type === 'travel'
-                      ? pathTravelMaterial
-                      : pathCarveMaterial,
-                  materialHighlight:
-                    path.type === 'travel'
-                      ? highlightPathTravelMaterial
-                      : highlightPathCarveMaterial,
-                  arrowMaterial:
-                    path.type === 'travel'
-                      ? arrowTravelMaterial
-                      : arrowCarveMaterial,
-                  colorByDepth: path.type === 'carve',
-                  highlight$: isHighlighted$,
-                }).pipe(
-                  share({
-                    resetOnRefCountZero: () => timer(0),
-                  }),
-                ),
-              };
-            }),
-          [] as Array<{
-            path: CamPath;
-            draw$: Observable<never>;
-          }>,
+                  this.drawPath({
+                    path,
+                    scene: this.content,
+                    material:
+                      path.type === 'travel'
+                        ? pathTravelMaterial
+                        : pathCarveMaterial,
+                    materialHighlight:
+                      path.type === 'travel'
+                        ? highlightPathTravelMaterial
+                        : highlightPathCarveMaterial,
+                    arrowMaterial:
+                      path.type === 'travel'
+                        ? arrowTravelMaterial
+                        : arrowCarveMaterial,
+                    colorByDepth: path.type === 'carve',
+                    highlight$: isHighlighted$,
+                  }).pipe(
+                    share({
+                      resetOnRefCountZero: () => timer(0),
+                    }),
+                  ),
+                ] as const;
+              }),
+            ),
+          new Map<CamPath, Observable<never>>(),
         ),
-        switchMap((all) => merge(...all.map((a) => a.draw$))),
+        switchMap((all) => merge(...all.values())),
         takeUntil(this.destroy$),
       )
       .subscribe();

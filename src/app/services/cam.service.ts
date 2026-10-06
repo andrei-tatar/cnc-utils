@@ -8,14 +8,18 @@ import {
   Subject,
   withLatestFrom,
 } from 'rxjs';
-import { gcodeToPaths } from '../../cam/gcode-viewer';
 import { CamPath, CamShape, Highlight } from '../../cam/types';
 import {
   buildProgram,
   generateGcodeFromOperations,
   Program,
+  programPaths,
 } from '../pipeline/gcode';
-import { hiddenShapeIds, highlightFromModel } from '../pipeline/preview';
+import {
+  hiddenShapeIds,
+  highlightFromModel,
+  reuseUnchangedPaths,
+} from '../pipeline/preview';
 import { generateShapesFromModel } from '../pipeline/shapes';
 import { downloadFile } from '../project-file';
 import { getModelMetadata } from '../store';
@@ -43,17 +47,13 @@ export class CamService {
   ).pipe(share({ connector: () => new ReplaySubject(1) }));
 
   /**
-   * The G-code for the preview. The project is only embedded on download,
-   * so edits that don't change the toolpaths (renaming, hiding) don't
-   * rebuild it.
+   * The toolpaths for the preview, straight from the program (no G-code is
+   * written for it). Unchanged paths keep their identity across edits, so
+   * the viewer only redraws what changed.
    */
-  readonly gcode$: Observable<string> = this.program$.pipe(
-    map((program) => buildProgram(program)),
-    share({ connector: () => new ReplaySubject(1) }),
-  );
-
-  readonly paths$: Observable<CamPath[]> = this.gcode$.pipe(
-    map((gcode) => gcodeToPaths(gcode)),
+  readonly paths$: Observable<CamPath[]> = this.program$.pipe(
+    map((program) => programPaths(program)),
+    reuseUnchangedPaths(),
   );
 
   readonly hiddenShapes$: Observable<string[]> = hiddenShapeIds(
