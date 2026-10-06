@@ -121,6 +121,7 @@ function route({
         sharpCornerAngle: op.sharpCornerAngle ?? 150,
         beyondCone,
         mode: op.mode ?? 'both',
+        rampAngle,
       });
 
     case 'v-carve-clear':

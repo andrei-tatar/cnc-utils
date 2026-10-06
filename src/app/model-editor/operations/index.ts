@@ -229,6 +229,7 @@ export const field: FormlyFieldConfig = {
       operationFeedsAndSpeeds([
         PocketDefinition.type,
         ProfileDefinition.type,
+        VCarveDefinition.type,
         VCarveClearDefinition.type,
       ]),
     ],

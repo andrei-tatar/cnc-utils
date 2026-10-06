@@ -15,6 +15,19 @@ import {
   nestContours,
   pointInPolygon,
 } from '../../cam/polygon-nesting';
+import { enterCut } from '../../cam/ramp';
+
+/**
+ * Gets the bit down to `to` at the start of `path` (from safe height):
+ * plunging, or ramping down from `from` (where the material starts).
+ */
+type Enter = (
+  path: CamPoint[],
+  close: boolean,
+  from: number,
+  to: number,
+  floor?: (along: number) => number,
+) => void;
 
 /**
  * V-carve by successive inward offsets. A V-bit whose center sits `d` inside
@@ -47,6 +60,8 @@ export async function routeVCarve(
     beyondCone?: boolean;
     /** Which part of the shape to carve. */
     mode?: ShapePart;
+    /** Ramp down into each cut at this angle (degrees) instead of plunging. */
+    rampAngle?: number | null;
     /** How precisely to work (see GeometrySettings). */
     geometry?: GeometrySettings;
   },
@@ -63,6 +78,36 @@ export async function routeVCarve(
 
   const depthAt = (inset: number) =>
     -(options.startDepth + Math.min(maxDepth, (inset - tipRadius) / tan));
+  const top = -options.startDepth;
+  // How far down the level `fromInset` in already cleared above a contour
+  // `inset` in: its cone's flank rises 1/tan per mm out from the flat tip.
+  const clearedAbove = (inset: number, fromInset: number) =>
+    Math.min(
+      top,
+      depthAt(fromInset) + Math.max(0, inset - fromInset - tipRadius) / tan,
+    );
+
+  const enter: Enter = (path, close, from, to, floor) => {
+    builder.goToSafeHeight();
+    // Whether a ramp is worth it depends on how wide the cut it starts is:
+    // the cone's width at the depth it goes down, not the bit's full width.
+    const width = Math.min(
+      options.toolSize,
+      2 * (tipRadius + Math.max(0, from - to) * tan),
+    );
+    enterCut(
+      builder,
+      path,
+      close,
+      from,
+      to,
+      options.rampAngle ?? null,
+      width,
+      Infinity,
+      undefined,
+      floor,
+    );
+  };
 
   let position: CamPoint = { x: 0, y: 0 };
 
@@ -82,7 +127,7 @@ export async function routeVCarve(
         ? polyline.points
         : [...polyline.points].reverse();
 
-    cutPath(builder, points, depthAt(maxInset));
+    cutPath(builder, points, top, depthAt(maxInset), enter);
     position = points[points.length - 1];
   }
 
@@ -109,6 +154,8 @@ export async function routeVCarve(
       geometry,
       depthAt,
       keepAt,
+      enter,
+      top,
       position,
       // Cutting into corners is how a single pass works: only how sharp a
       // corner must be applies.
@@ -156,6 +203,8 @@ export async function routeVCarve(
         depthAt,
         corners,
         keepAt(inset),
+        enter,
+        clearedAbove(inset, fromInset),
       );
       position = contour[0];
     }
@@ -196,6 +245,8 @@ export async function routeVCarve(
           depthAt,
           corners,
           keepAt(inset + collapse.inset),
+          enter,
+          clearedAbove(inset + collapse.inset, inset),
         );
         position = contour[0];
       }
@@ -219,6 +270,8 @@ async function carveSinglePass(
   geometry: { tipRadius: number; maxInset: number },
   depthAt: (inset: number) => number,
   keepAt: (inset: number) => ((p: CamPoint) => boolean) | null,
+  enter: Enter,
+  top: number,
   position: CamPoint,
   sharpCornerAngle: number,
 ) {
@@ -278,9 +331,17 @@ async function carveSinglePass(
     const [taken] = runs.splice(best, 1);
     const run = reversed ? taken.reverse() : taken;
     if (bestDistance > 1e-6) {
-      builder.goToSafeHeight();
-      builder.travelTo(run[0].x, run[0].y);
-      builder.plunge(z(run[0].d));
+      // The depth changes along the run: a ramp must not go below it.
+      enter(
+        run,
+        false,
+        top,
+        z(run[0].d),
+        depthAlong(
+          run,
+          run.map((p) => z(p.d)),
+        ),
+      );
     }
     for (const p of run.slice(1)) {
       builder.carveTo(p.x, p.y, z(p.d));
@@ -301,11 +362,34 @@ async function carveSinglePass(
         depthAt,
         null,
         keepAt(maxInset),
+        enter,
+        // The axis isn't cut where it's this wide: nothing above is cleared.
+        top,
       );
       position = contour[0];
     }
   }
   return position;
+}
+
+/**
+ * The depth at each distance along a run, from its points' depths (straight
+ * between them, as the bit moves).
+ */
+function depthAlong(points: CamPoint[], depths: number[]) {
+  const along = [0];
+  for (let i = 1; i < points.length; i++) {
+    along.push(along[i - 1] + getDistance(points[i - 1], points[i]));
+  }
+  return (distance: number) => {
+    const i = along.findIndex((a) => a >= distance);
+    if (i <= 0) {
+      return i === 0 ? depths[0] : depths[depths.length - 1];
+    }
+    const span = along[i] - along[i - 1];
+    const t = span > 0 ? (distance - along[i - 1]) / span : 0;
+    return depths[i - 1] + (depths[i] - depths[i - 1]) * t;
+  };
 }
 
 /** Where the distance crosses `d` between two axis points. */
@@ -425,10 +509,14 @@ function orderByProximity(contours: CamPoint[][], start: CamPoint) {
   return ordered;
 }
 
-function cutPath(builder: GCodeBuilder, points: CamPoint[], depth: number) {
-  builder.goToSafeHeight();
-  builder.travelTo(points[0].x, points[0].y);
-  builder.plunge(depth);
+function cutPath(
+  builder: GCodeBuilder,
+  points: CamPoint[],
+  from: number,
+  depth: number,
+  enter: Enter,
+) {
+  enter(points, false, from, depth);
   for (let i = 1; i < points.length; i++) {
     builder.carveTo(points[i].x, points[i].y);
   }
@@ -439,7 +527,8 @@ function cutPath(builder: GCodeBuilder, points: CamPoint[], depth: number) {
  * corner, run out along the bisector to where the previous level (`fromInset`)
  * had that corner, rising to its depth, and come back. The contour must have
  * the region on its left (see `groupComponents`). With `keep`, only the parts
- * of the contour where it holds are cut.
+ * of the contour where it holds are cut. Each cut starts with `enter`, from
+ * `from`: how far down the material above it is already cleared.
  */
 function cutContour(
   builder: GCodeBuilder,
@@ -448,7 +537,9 @@ function cutContour(
   fromInset: number,
   depthAt: (inset: number) => number,
   corners: CornerOptions | null,
-  keep: ((p: CamPoint) => boolean) | null = null,
+  keep: ((p: CamPoint) => boolean) | null,
+  enter: Enter,
+  from: number,
 ) {
   const kept = contour.map((p) => !keep || keep(p));
   const n = contour.length;
@@ -463,10 +554,21 @@ function cutContour(
   kept.push(...kept.splice(0, first));
 
   const depth = depthAt(inset);
-  const startAt = (p: CamPoint) => {
-    builder.goToSafeHeight();
-    builder.travelTo(p.x, p.y);
-    builder.plunge(depth);
+  // The kept stretch from vertex `i` on (after `start`, where it comes back
+  // in): what a ramp into it can go along.
+  const stretch = (start: CamPoint | null, i: number) => {
+    const points = start ? [start] : [];
+    for (let k = 0; k < n && kept[(i + k) % n]; k++) {
+      points.push(contour[(i + k) % n]);
+    }
+    return points;
+  };
+  const startAt = (start: CamPoint | null, i: number) => {
+    if (kept.every(Boolean)) {
+      enter(contour, true, from, depth);
+    } else {
+      enter(stretch(start, i), false, from, depth);
+    }
   };
   // How far the edge from kept `a` towards dropped `b` stays kept.
   const lastKept = (a: CamPoint, b: CamPoint) => {
@@ -488,10 +590,9 @@ function cutContour(
   };
 
   if (kept[n - 1]) {
-    startAt(contour[0]);
+    startAt(null, 0);
   } else {
-    const entry = lastKept(contour[0], contour[n - 1]);
-    startAt(entry);
+    startAt(lastKept(contour[0], contour[n - 1]), 0);
     builder.carveTo(contour[0].x, contour[0].y);
   }
 
@@ -503,7 +604,7 @@ function cutContour(
     if (!kept[i]) {
       // Resume where the edge to the next kept point comes back in.
       if (nextKept) {
-        startAt(lastKept(next, vertex));
+        startAt(lastKept(next, vertex), (i + 1) % n);
         builder.carveTo(next.x, next.y);
       }
       continue;

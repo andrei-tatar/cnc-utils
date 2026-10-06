@@ -19,6 +19,10 @@ const EPS = 1e-6;
  * shallower than `angle`. The first move is where to plunge down to `from`.
  * Empty when there's nothing to ramp (no depth to go down, no angle or no
  * path to ramp along).
+ *
+ * `floor` (open paths only) is the lowest the bit may go at each distance
+ * along the path, for a cut whose depth varies (a v-carve rising towards a
+ * corner): the ramp then never goes below the cut itself.
  */
 export function rampMoves(
   points: CamPoint[],
@@ -27,6 +31,7 @@ export function rampMoves(
   to: number,
   angle: number,
   maxLength = Infinity,
+  floor?: (along: number) => number,
 ): CamPoint3[] {
   const drop = from - to;
   const tan = Math.tan((angle * Math.PI) / 180);
@@ -35,7 +40,7 @@ export function rampMoves(
   }
   const length = drop / tan;
   if (!close) {
-    return zigZagRamp(points, from, to, length);
+    return zigZagRamp(points, from, to, length, floor);
   }
   if (length <= maxLength) {
     // Straight along the end of the loop, from `length` back to points[0].
@@ -75,6 +80,8 @@ export type Resume = { point: CamPoint; down: boolean };
  * A ramp that wouldn't take the tool at least its radius away from where it
  * would plunge hardly helps (a short stretch between tabs, a loop smaller
  * than the tool), so it plunges instead.
+ *
+ * `floor`: see rampMoves (fresh entries only).
  */
 export function enterCut(
   builder: GCodeBuilder,
@@ -86,6 +93,7 @@ export function enterCut(
   toolSize: number,
   maxLength = Infinity,
   resume?: Resume,
+  floor?: (along: number) => number,
 ): CamPoint[] {
   const ramps =
     !!rampAngle &&
@@ -95,7 +103,7 @@ export function enterCut(
 
   if (!resume) {
     const ramp = ramps
-      ? rampMoves(points, close, from, to, rampAngle!, maxLength)
+      ? rampMoves(points, close, from, to, rampAngle!, maxLength, floor)
       : [];
     if (!ramp.length) {
       builder.travelTo(points[0].x, points[0].y);
@@ -287,6 +295,7 @@ function zigZagRamp(
   from: number,
   to: number,
   length: number,
+  floor?: (along: number) => number,
 ): CamPoint3[] {
   const available = pathLength(points, false);
   if (available < EPS) {
@@ -318,12 +327,13 @@ function zigZagRamp(
 
   const moves: CamPoint3[] = [{ x: out[0].x, y: out[0].y, z: from }];
   let traveled = 0;
-  const visit = (point: CamPoint, distance: number) => {
+  const visit = (point: CamPoint & { along: number }, distance: number) => {
     traveled += distance;
+    const z = from - ((from - to) * traveled) / total;
     moves.push({
       x: point.x,
       y: point.y,
-      z: from - ((from - to) * traveled) / total,
+      z: floor ? Math.max(z, floor(point.along)) : z,
     });
   };
   for (let trip = 0; trip < trips; trip++) {

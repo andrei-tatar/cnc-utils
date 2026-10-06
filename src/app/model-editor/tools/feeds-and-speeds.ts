@@ -87,7 +87,7 @@ export const toolFeedsAndSpeeds: FormlyFieldConfig = {
         max: 45,
         label: 'ramp angle',
         description:
-          '° below horizontal; pockets and clearings go round each loop down to the next depth, profiles along the end of the loop (clear of tabs)',
+          '° below horizontal; pockets and clearings go round each loop down to the next depth, profiles along the end of the loop (clear of tabs), v-carves along each groove into the depth it needs',
         required: true,
       },
       expressions: {

@@ -24,7 +24,7 @@ export type ToolType = {
   spindleSpeed?: number | null;
   /**
    * Ramp down into cuts along the toolpath instead of plunging (pocket,
-   * profile and v-carve clearing).
+   * profile, v-carve and v-carve clearing).
    */
   ramp?: boolean;
   /** Degrees below horizontal. */
