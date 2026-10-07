@@ -200,7 +200,9 @@ export async function routeVCarve(
     let level = levels.get(inset);
     if (!level) {
       level = insetContours(region, inset - shift).then((contours) =>
-        contours.map(mergeClosePoints).filter((c) => c.length > 2),
+        contours
+          .map((c) => simplifyContour(c, precision()))
+          .filter((c) => c.length > 2),
       );
       levels.set(inset, level);
     }
@@ -1112,37 +1114,57 @@ function unit(x: number, y: number): CamPoint | null {
 }
 
 /**
- * The closed contour with each run of points within two precision steps of
- * its first merged into one. Rounding to the precision turns the short
- * round joins an offset puts at a curve's flattened corners into steps of
- * a precision or two, at 0°, 45° or 90°: a zigzag on every corner.
+ * The closed contour without the points that lie within `epsilon` of the
+ * line between those kept around them (Ramer–Douglas–Peucker): the points
+ * kept don't move, and the path stays within `epsilon` of where it was.
+ * Rounding to the precision turns the short round joins an offset puts at a
+ * flattened curve's corners into steps of a precision or so, at 0°, 45° or
+ * 90°: a zigzag on every corner, which this straightens.
  */
-function mergeClosePoints(contour: CamPoint[]): CamPoint[] {
-  const reach = 2 * precision() + 1e-9;
-  const runs: CamPoint[][] = [];
-  for (const p of contour) {
-    const run = runs[runs.length - 1];
-    if (run && getDistance(run[0], p) <= reach) {
-      run.push(p);
-    } else {
-      runs.push([p]);
+function simplifyContour(contour: CamPoint[], epsilon: number): CamPoint[] {
+  const n = contour.length;
+  if (n < 4) {
+    return contour;
+  }
+  // Split the loop at its first point and the point furthest from it.
+  let far = 0;
+  contour.forEach((p, i) => {
+    if (getDistance(p, contour[0]) > getDistance(contour[far], contour[0])) {
+      far = i;
+    }
+  });
+  const keep = contour.map((_, i) => i === 0 || i === far);
+  const spans: [number, number][] = [
+    [0, far],
+    [far, n],
+  ];
+  while (spans.length) {
+    const [from, to] = spans.pop()!;
+    let worst = -1;
+    let worstDistance = epsilon;
+    for (let i = from + 1; i < to; i++) {
+      const d = segmentDistance(contour[i], contour[from], contour[to % n]);
+      if (d > worstDistance) {
+        worst = i;
+        worstDistance = d;
+      }
+    }
+    if (worst >= 0) {
+      keep[worst] = true;
+      spans.push([from, worst], [worst, to]);
     }
   }
-  // The contour is closed: its last run may carry on into its first.
-  if (
-    runs.length > 1 &&
-    getDistance(runs[0][0], runs[runs.length - 1][0]) <= reach
-  ) {
-    runs[0].push(...runs.pop()!);
-  }
-  return runs.map((run) =>
-    run.length === 1
-      ? run[0]
-      : {
-          x: run.reduce((sum, p) => sum + p.x, 0) / run.length,
-          y: run.reduce((sum, p) => sum + p.y, 0) / run.length,
-        },
-  );
+  return contour.filter((_, i) => keep[i]);
+}
+
+function segmentDistance(p: CamPoint, a: CamPoint, b: CamPoint) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length2 = dx * dx + dy * dy;
+  const t = length2
+    ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2))
+    : 0;
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
