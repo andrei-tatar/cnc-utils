@@ -64,7 +64,7 @@ describe('placeShapes', () => {
       polygons: [
         {
           close: true,
-          points: [
+          vertices: [
             { x: 5, y: 5 },
             { x: 105, y: 5 },
             { x: 105, y: 55 },
@@ -79,7 +79,32 @@ describe('placeShapes', () => {
     const box = shapesBox(part)!;
     const [placed] = placeShapes(part, box, false, { x: 20, y: 30 }, 'n');
     expect(placed.sourceShapeId).toBe('n');
-    expect(placed.polygons[0].points[0]).toEqual({ x: 20, y: 30 });
+    expect(placed.polygons[0].vertices[0]).toEqual({ x: 20, y: 30 });
+  });
+
+  it('counts arcs in the box and keeps them', () => {
+    // A circle of radius 10 round (0, 0).
+    const circle: CamShape[] = [
+      {
+        sourceShapeId: 'c',
+        polygons: [
+          {
+            close: true,
+            vertices: [
+              { x: -10, y: 0, bulge: 1 },
+              { x: 10, y: 0, bulge: 1 },
+            ],
+          },
+        ],
+      },
+    ];
+    const box = shapesBox(circle)!;
+    expect(box).toEqual({ minX: -10, minY: -10, maxX: 10, maxY: 10 });
+    const [placed] = placeShapes(circle, box, true, { x: 0, y: 0 }, 'n');
+    expect(placed.polygons[0].vertices).toEqual([
+      { x: 10, y: 0, bulge: 1 },
+      { x: 10, y: 20, bulge: 1 },
+    ]);
   });
 
   it('turns it a quarter turn into the same spot', () => {

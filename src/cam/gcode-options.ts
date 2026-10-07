@@ -54,11 +54,15 @@ export type GcodeOptions = {
    */
   optimizeTravel: boolean;
   /**
-   * Max distance (mm) between a curve (circle, arc, SVG, text) and the
-   * polygon that stands in for it.
+   * Max distance (mm) between a curve and what stands in for it: arcs
+   * fitted to SVG and text curves (Béziers, ellipses), lines for arcs where
+   * only points will do (the preview, a non-uniform scale).
    */
   curveTolerance: number;
-  /** Decimal places for geometry (Clipper offsets and booleans). */
+  /**
+   * Decimal places of the geometry's precision: the smallest distance told
+   * apart (see `precision()` in geometry.ts).
+   */
   geometryDecimals: number;
   /** Rapid (G0) speed, mm/min: only for estimating how long a job takes. */
   rapidRate: number;

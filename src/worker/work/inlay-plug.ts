@@ -1,4 +1,5 @@
 import { CamShape } from '../../cam/types';
+import { reversePolygon, transformPolygon } from '../../cam/arcs';
 import { combine, regionShape, shapeRegion } from './regions';
 import { getBoundingBox } from './shape-transforms';
 
@@ -35,17 +36,21 @@ export async function inlayPlugShape(
   if (!design.length) return [];
   const box = getBoundingBox(regionShape(design, sourceShapeId));
   const middle = box.x + box.width / 2;
+  // Reversed, so outlines keep turning the same way after the flip.
   const mirrored = design.map((contour) =>
-    contour.map((p) => ({ x: 2 * middle - p.x, y: p.y })).reverse(),
+    reversePolygon(transformPolygon(contour, [-1, 0, 0, 1, 2 * middle, 0])),
   );
   const m = Math.max(0, plug.margin);
   const blank = [
-    [
-      { x: box.x - m, y: box.y - m },
-      { x: box.x + box.width + m, y: box.y - m },
-      { x: box.x + box.width + m, y: box.y + box.height + m },
-      { x: box.x - m, y: box.y + box.height + m },
-    ],
+    {
+      close: true,
+      vertices: [
+        { x: box.x - m, y: box.y - m },
+        { x: box.x + box.width + m, y: box.y - m },
+        { x: box.x + box.width + m, y: box.y + box.height + m },
+        { x: box.x - m, y: box.y + box.height + m },
+      ],
+    },
   ];
   return regionShape(
     await combine(blank, mirrored, 'difference'),

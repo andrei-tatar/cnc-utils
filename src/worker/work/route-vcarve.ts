@@ -7,26 +7,52 @@ import {
   ShapePart,
   vCarveGeometry,
 } from '../../cam/vcarve-geometry';
-import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
+import {
+  CamPoint,
+  CamPoint3,
+  CamPolygon,
+  CamShape,
+  CamVertex,
+} from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { AxisPoint, medialAxis } from '../../cam/medial-axis';
-import { GeometrySettings, precision, useGeometry } from '../../cam/geometry';
-import { getDistance } from '../../util';
 import {
-  distanceToBoundary,
-  nestContours,
-  pointInPolygon,
-} from '../../cam/polygon-nesting';
+  curveTolerance,
+  GeometrySettings,
+  precision,
+  useGeometry,
+} from '../../cam/geometry';
+import { getDistance } from '../../util';
+import { insidePolygons, nestPolygons } from '../../cam/polygon-nesting';
+import {
+  bulgeOf,
+  distanceToPolygons,
+  pointAlong,
+  polygonPoints,
+  polygonsBounds,
+  reversePolygon,
+  segmentLength,
+  signedArea,
+  sweepOf,
+  tangentAt,
+} from '../../cam/arcs';
 import { enterCut } from '../../cam/ramp';
 import { travelOrder } from '../../cam/travel-order';
 import { clearedAtMaxDepth, ClearingTool } from './route-vcarve-clearing';
+
+/**
+ * A closed contour of lines and arcs: each vertex's bulge shapes the segment
+ * to the next (see `src/cam/arcs.ts`). Levels come from the geometry kernel
+ * exact, so the passes follow arcs as arcs.
+ */
+type Loop = CamVertex[];
 
 /**
  * Gets the bit down to `to` at the start of `path` (from safe height):
  * plunging, or ramping down from `from` (where the material starts).
  */
 type Enter = (
-  path: CamPoint[],
+  path: CamVertex[],
   close: boolean,
   from: number,
   to: number,
@@ -157,8 +183,8 @@ export async function routeVCarve(
       ? []
       : input
           .flatMap((s) => s.polygons)
-          .filter((p) => !p.close && p.points.length > 1)
-          .map((p) => p.points);
+          .filter((p) => !p.close && p.vertices.length > 1)
+          .map((p) => p.vertices);
   const openPaths = optimizeTravel
     ? travelOrder(
         openPolylines.map((points) => {
@@ -167,7 +193,10 @@ export async function routeVCarve(
         }),
         position,
       ).map(({ index, start }) =>
-        start ? [...openPolylines[index]].reverse() : openPolylines[index],
+        start
+          ? reversePolygon({ vertices: openPolylines[index], close: false })
+              .vertices
+          : openPolylines[index],
       )
     : openPolylines;
 
@@ -178,8 +207,7 @@ export async function routeVCarve(
 
   const closed = input
     .flatMap((s) => s.polygons)
-    .filter((p) => p.close && p.points.length > 2)
-    .map((p) => p.points);
+    .filter((p) => p.close && p.vertices.length > 1);
 
   if (!closed.length || maxDepth <= 0) {
     return builder;
@@ -190,20 +218,13 @@ export async function routeVCarve(
   // grown by `shift` for a plug.
   const area = shift > 0 ? await inflate(region, shift) : region;
   // Each level `inset` in, offset from the region itself (grown by what's
-  // left of `shift`, for a plug) rather than from the level above: every
-  // offset rounds to the precision, and offsetting offsets compounds that
-  // into wiggles, whose kinks (kept sharp, as convex corners are) the bit
-  // then runs out into. It also keeps the corners sharp where a plug's area
-  // wraps round the design.
-  const levels = new Map<number, Promise<CamPoint[][]>>();
+  // left of `shift`, for a plug): exact, and it keeps the corners sharp
+  // where a plug's area wraps round the design.
+  const levels = new Map<number, Promise<Loop[]>>();
   const levelAt = (inset: number) => {
     let level = levels.get(inset);
     if (!level) {
-      level = insetContours(region, inset - shift).then((contours) =>
-        contours
-          .map((c) => simplifyContour(c, precision()))
-          .filter((c) => c.length > 2),
-      );
+      level = insetContours(region, inset - shift).then(loopsOf);
       levels.set(inset, level);
     }
     return level;
@@ -215,14 +236,17 @@ export async function routeVCarve(
     const near = (await levelAt(inset)).filter((c) =>
       overlaps(bounds([c]), box),
     );
-    return near.length ? combine(near, contours, 'intersection') : [];
+    return near.length
+      ? loopsOf(
+          await combine(polygonsOf(near), polygonsOf(contours), 'intersection'),
+        )
+      : [];
   };
-  // Within a step of the island (where it collapses): offsetting it adds
-  // only one rounding.
-  const withinStep: Inside = (contours, fromInset, inset) =>
+  // Within a step of the island (where it collapses): offsetting it.
+  const withinStep: Inside = async (contours, fromInset, inset) =>
     fromInset < shift
       ? inside(contours, fromInset, inset)
-      : insetContours(contours, inset - fromInset);
+      : loopsOf(await insetContours(polygonsOf(contours), inset - fromInset));
 
   // "Holes only" makes the same cuts as "outlines minus holes" but keeps just
   // the parts growing out from the holes.
@@ -234,7 +258,7 @@ export async function routeVCarve(
       builder,
       region,
       shift,
-      () => inside(area, 0, maxInset),
+      () => inside(loopsOf(area), 0, maxInset),
       geometry,
       depthAt,
       keepAt,
@@ -269,14 +293,14 @@ export async function routeVCarve(
         )
       : [];
   const uncut = cleared.length
-    ? (p: CamPoint) => !insideRegion(p, cleared)
+    ? (p: CamPoint) => !insidePolygons(p, cleared)
     : null;
   const flatBottom = (inset: number) =>
     !!uncut && inset > maxInset + precision();
   // A long edge can cross what's cleared between its ends: give the
   // flat bottom's contours a point either side of every crossing, so
   // their points tell what to cut.
-  const crossings = (inset: number, contours: CamPoint[][]) =>
+  const crossings = (inset: number, contours: Loop[]) =>
     flatBottom(inset)
       ? contours.map((c) => splitWhereChanges(c, uncut!, stepover / 2))
       : contours;
@@ -308,7 +332,9 @@ export async function routeVCarve(
     clearedAbove(inset, flatBottom(inset) ? maxInset : fromInset);
 
   const firstInset = tipRadius + stepFrom(tipRadius);
-  const firstLevel = groupComponents(await inside(area, 0, firstInset));
+  const firstLevel = groupComponents(
+    await inside(loopsOf(area), 0, firstInset),
+  );
 
   // Depth-first over the inset tree: each island is carved all the way down
   // before moving on, which keeps travel short and lets every island get its
@@ -397,7 +423,9 @@ export async function routeVCarve(
     // Anywhere the bit's centre is at least the max-depth inset in, it's
     // clear of the walls at the bottom. "Holes only" leaves the outlines'
     // flat bottom alone: no moves across it.
-    const bottom = await inside(area, 0, maxInset - 2 * precision());
+    const bottom = polygonsOf(
+      await inside(loopsOf(area), 0, maxInset - 2 * precision()),
+    );
     const link = (a: CamPoint, b: CamPoint) =>
       options.mode !== 'holes' &&
       getDistance(a, b) <= LINK_DISTANCE &&
@@ -433,10 +461,10 @@ export async function routeVCarve(
  */
 async function carveSinglePass(
   builder: GCodeBuilder,
-  region: CamPoint[][],
+  region: CamPolygon[],
   shift: number,
   /** The contours at the max depth. */
-  deepest: () => Promise<CamPoint[][]>,
+  deepest: () => Promise<Loop[]>,
   geometry: { tipRadius: number; maxInset: number },
   depthAt: (inset: number) => number,
   keepAt: (inset: number) => ((p: CamPoint) => boolean) | null,
@@ -490,7 +518,7 @@ async function carveSinglePass(
  */
 async function carveAxis(
   builder: GCodeBuilder,
-  region: CamPoint[][],
+  region: CamPolygon[],
   shift: number,
   geometry: { tipRadius: number; maxInset: number },
   depthAt: (inset: number) => number,
@@ -507,8 +535,9 @@ async function carveAxis(
   // The parts of the axis to cut: narrow enough (ending exactly at the max
   // depth inset), and on the holes' side for "holes only".
   const runs: AxisPoint[][] = [];
+  // (On the outline's points, arcs within the curve tolerance.)
   for (const regionAxis of medialAxis(
-    region,
+    region.map((p) => polygonPoints(p, curveTolerance())),
     Math.max(0.1, 5 * precision()),
     sharpCornerAngle,
   )) {
@@ -563,7 +592,7 @@ async function carveAxis(
     if (bestDistance > 1e-6) {
       // The depth changes along the run: a ramp must not go below it.
       enter(
-        run,
+        run.map(({ x, y }) => ({ x, y })),
         false,
         top,
         z(run[0].d),
@@ -608,24 +637,34 @@ function crossing(a: AxisPoint, b: AxisPoint, d: number): AxisPoint {
 }
 
 /** Where cuts go: a GCodeBuilder, or a recorder of pieces. */
-type Carver = { carveTo(x: number, y: number, z?: number): unknown };
+type Carver = {
+  carveTo(x: number, y: number, z?: number): unknown;
+  arcTo(x: number, y: number, bulge: number, z?: number): unknown;
+};
+
+/** A point of a recorded cut, and the arc (if any) arriving there. */
+type PiecePoint = CamPoint3 & { arc?: number };
 
 /** A cut kept for later: how it was entered, and where it goes. */
 type Piece = {
   close: boolean;
   /** How far down the material above it is cleared. */
   from: number;
-  points: CamPoint3[];
+  points: PiecePoint[];
 };
 
 /** Records cuts as pieces instead of making them. */
 function recorder(pieces: Piece[]): { carver: Carver; enter: Enter } {
+  const add = (x: number, y: number, z: number | undefined, arc: number) => {
+    const points = pieces[pieces.length - 1].points;
+    const point: PiecePoint = { x, y, z: z ?? points[points.length - 1].z };
+    if (arc) point.arc = arc;
+    points.push(point);
+  };
   return {
     carver: {
-      carveTo(x, y, z) {
-        const points = pieces[pieces.length - 1].points;
-        points.push({ x, y, z: z ?? points[points.length - 1].z });
-      },
+      carveTo: (x, y, z) => add(x, y, z, 0),
+      arcTo: (x, y, bulge, z) => add(x, y, z, bulge),
     },
     enter(path, close, from, to) {
       pieces.push({
@@ -672,10 +711,19 @@ function cutPieces(
     if (at && Math.abs(at.z - start.z) < 1e-6 && link(at, start)) {
       builder.carveTo(start.x, start.y, start.z);
     } else {
-      enter(points, piece.close, piece.from, start.z);
+      // The path to ramp along: each vertex's bulge is the arc on from it.
+      const path = points.map((p, i) => {
+        const arc = points[i + 1]?.arc;
+        return arc ? { x: p.x, y: p.y, bulge: arc } : { x: p.x, y: p.y };
+      });
+      enter(path, piece.close, piece.from, start.z);
     }
     for (const p of points.slice(1)) {
-      builder.carveTo(p.x, p.y, p.z);
+      if (p.arc) {
+        builder.arcTo(p.x, p.y, p.arc, p.z);
+      } else {
+        builder.carveTo(p.x, p.y, p.z);
+      }
     }
     at = points[points.length - 1];
   }
@@ -684,19 +732,30 @@ function cutPieces(
 
 /**
  * The piece's points from point `k` on: an open piece reversed when that's
- * its end, a loop going once round back to it.
+ * its end (each arc then arriving the other way), a loop going once round
+ * back to it.
  */
-function startingFrom(piece: Piece, k: number): CamPoint3[] {
+function startingFrom(piece: Piece, k: number): PiecePoint[] {
   const { points } = piece;
   if (!piece.close) {
-    return k === 0 ? points : [...points].reverse();
+    if (k === 0) return points;
+    const m = points.length - 1;
+    return points.map((_, i) => {
+      const p = points[m - i];
+      const arc = i > 0 ? -(points[m - i + 1].arc ?? 0) : 0;
+      const point: PiecePoint = { x: p.x, y: p.y, z: p.z };
+      if (arc) point.arc = arc;
+      return point;
+    });
   }
   const first = points[0];
   const last = points[points.length - 1];
-  const loop =
-    points.length > 1 && getDistance(first, last) < 1e-9 && first.z === last.z
-      ? points.slice(0, -1)
-      : points;
+  const closesItself =
+    points.length > 1 && getDistance(first, last) < 1e-9 && first.z === last.z;
+  // The first point takes the arc that arrives back at it.
+  const loop = closesItself
+    ? [{ ...first, arc: last.arc }, ...points.slice(1, -1)]
+    : points;
   const rotated = [
     ...loop.slice(k % loop.length),
     ...loop.slice(0, k % loop.length),
@@ -705,12 +764,12 @@ function startingFrom(piece: Piece, k: number): CamPoint3[] {
 }
 
 /** Whether the segment from `a` to `b` stays inside `region`. */
-function segmentInside(a: CamPoint, b: CamPoint, region: CamPoint[][]) {
+function segmentInside(a: CamPoint, b: CamPoint, region: CamPolygon[]) {
   const samples = Math.max(1, Math.ceil(getDistance(a, b) / 0.05));
   for (let k = 0; k <= samples; k++) {
     const t = k / samples;
     const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    if (!insideRegion(p, region)) {
+    if (!insidePolygons(p, region)) {
       return false;
     }
   }
@@ -718,7 +777,7 @@ function segmentInside(a: CamPoint, b: CamPoint, region: CamPoint[][]) {
 }
 
 type Component = {
-  contours: CamPoint[][];
+  contours: Loop[];
   inset: number;
   /** Inset of the level this one was offset from (where corner runs end). */
   fromInset: number;
@@ -726,10 +785,10 @@ type Component = {
 
 /** The contours `inset` in, within the island `contours` (`fromInset` in). */
 type Inside = (
-  contours: CamPoint[][],
+  contours: Loop[],
   fromInset: number,
   inset: number,
-) => Promise<CamPoint[][]>;
+) => Promise<Loop[]>;
 
 type CornerOptions = {
   /** Corners with an interior angle up to this (radians) get sharpened. */
@@ -737,20 +796,20 @@ type CornerOptions = {
   depthAt: (inset: number) => number;
   maxInset: number;
   /** The original outline, used to make sure a corner run never gouges it. */
-  boundary: CamPoint[][];
+  boundary: CamPolygon[];
   /** How far outside `boundary` the insets count from (an inlay plug's). */
   shift: number;
 };
 
 async function findCollapse(
-  contours: CamPoint[][],
+  contours: Loop[],
   fromInset: number,
   step: number,
   inside: Inside,
 ) {
   let lo = 0;
   let hi = step;
-  let found: CamPoint[][] | null = null;
+  let found: Loop[] | null = null;
 
   while (hi - lo > precision()) {
     const mid = (lo + hi) / 2;
@@ -771,23 +830,24 @@ async function findCollapse(
  * A contour nested inside an odd number of others is a hole. Contours come
  * back oriented with the region on their left.
  */
-function groupComponents(contours: CamPoint[][]): CamPoint[][][] {
+function groupComponents(contours: Loop[]): Loop[][] {
   // Orient every contour so the material to remove lies on its left:
   // outlines counter-clockwise, holes clockwise.
-  const orient = (contour: CamPoint[], counterClockwise: boolean) =>
-    signedArea(contour) > 0 === counterClockwise
-      ? contour
-      : [...contour].reverse();
+  const orient = (polygon: CamPolygon, counterClockwise: boolean) =>
+    (signedArea(polygon) > 0 === counterClockwise
+      ? polygon
+      : reversePolygon(polygon)
+    ).vertices;
 
-  return nestContours(contours).map(({ outer, holes }) => [
+  return nestPolygons(polygonsOf(contours)).map(({ outer, holes }) => [
     orient(outer, true),
     ...holes.map((hole) => orient(hole, false)),
   ]);
 }
 
-function orderComponents(components: CamPoint[][][], start: CamPoint) {
+function orderComponents(components: Loop[][], start: CamPoint) {
   const remaining = [...components];
-  const ordered: CamPoint[][][] = [];
+  const ordered: Loop[][] = [];
   let position = start;
 
   while (remaining.length) {
@@ -814,9 +874,9 @@ function orderComponents(components: CamPoint[][][], start: CamPoint) {
  * Greedy nearest-neighbour ordering; each loop is rotated to start at the
  * vertex closest to where the previous one ended.
  */
-function orderByProximity(contours: CamPoint[][], start: CamPoint) {
+function orderByProximity(contours: Loop[], start: CamPoint) {
   const remaining = [...contours];
-  const ordered: CamPoint[][] = [];
+  const ordered: Loop[] = [];
   let position = start;
 
   while (remaining.length) {
@@ -844,14 +904,14 @@ function orderByProximity(contours: CamPoint[][], start: CamPoint) {
 
 function cutPath(
   builder: GCodeBuilder,
-  points: CamPoint[],
+  points: CamVertex[],
   from: number,
   depth: number,
   enter: Enter,
 ) {
   enter(points, false, from, depth);
   for (let i = 1; i < points.length; i++) {
-    builder.carveTo(points[i].x, points[i].y);
+    builder.arcTo(points[i].x, points[i].y, bulgeOf(points[i - 1]));
   }
 }
 
@@ -860,12 +920,13 @@ function cutPath(
  * corner, run out along the bisector to where the previous level (`fromInset`)
  * had that corner, rising to its depth, and come back. The contour must have
  * the region on its left (see `groupComponents`). With `keep`, only the parts
- * of the contour where it holds are cut. Each cut starts with `enter`, from
- * `from`: how far down the material above it is already cleared.
+ * of the contour where it holds are cut (tested at the vertices; an edge is
+ * cut where it changes, an arc into a shorter arc). Each cut starts with
+ * `enter`, from `from`: how far down the material above it is cleared.
  */
 function cutContour(
   builder: Carver,
-  contour: CamPoint[],
+  contour: Loop,
   inset: number,
   fromInset: number,
   depthAt: (inset: number) => number,
@@ -887,46 +948,63 @@ function cutContour(
   kept.push(...kept.splice(0, first));
 
   const depth = depthAt(inset);
+  const segment = (i: number) => {
+    const a = contour[i];
+    const b = contour[(i + 1) % n];
+    return { a, b, bulge: bulgeOf(a) };
+  };
+  // The vertex starting the part of segment i from t0 to t1.
+  const part = (i: number, t0: number, t1: number): CamVertex => {
+    const { a, b, bulge } = segment(i);
+    const p = pointAlong(a, b, bulge, t0);
+    const partial = partBulge(bulge, t0, t1);
+    return partial ? { ...p, bulge: partial } : p;
+  };
   // The kept stretch from vertex `i` on (after `start`, where it comes back
   // in): what a ramp into it can go along.
-  const stretch = (start: CamPoint | null, i: number) => {
-    const points = start ? [start] : [];
+  const stretch = (start: CamVertex | null, i: number) => {
+    const points: CamVertex[] = start ? [start] : [];
     for (let k = 0; k < n && kept[(i + k) % n]; k++) {
       points.push(contour[(i + k) % n]);
     }
     return points;
   };
-  const startAt = (start: CamPoint | null, i: number) => {
+  const startAt = (start: CamVertex | null, i: number) => {
     if (kept.every(Boolean)) {
       enter(contour, true, from, depth);
     } else {
       enter(stretch(start, i), false, from, depth);
     }
   };
-  // How far the edge from kept `a` towards dropped `b` stays kept.
-  const lastKept = (a: CamPoint, b: CamPoint) => {
-    const at = (t: number) => ({
-      x: a.x + (b.x - a.x) * t,
-      y: a.y + (b.y - a.y) * t,
-    });
+  // How far (0 to 1) along segment i it stays kept: from its start, or
+  // (`fromEnd`) back from its end.
+  const lastKept = (i: number, fromEnd: boolean) => {
+    const { a, b, bulge } = segment(i);
+    const length = segmentLength(a, b, bulge);
     let lo = 0;
     let hi = 1;
-    while ((hi - lo) * getDistance(a, b) > precision()) {
+    while ((hi - lo) * length > precision()) {
       const mid = (lo + hi) / 2;
-      if (keep!(at(mid))) {
+      if (keep!(pointAlong(a, b, bulge, fromEnd ? 1 - mid : mid))) {
         lo = mid;
       } else {
         hi = mid;
       }
     }
-    return at(lo);
+    return fromEnd ? 1 - lo : lo;
   };
+  const arcTo = (to: CamPoint, bulge: number, z?: number) =>
+    bulge
+      ? builder.arcTo(to.x, to.y, bulge, z)
+      : builder.carveTo(to.x, to.y, z);
 
   if (kept[n - 1]) {
     startAt(null, 0);
   } else {
-    startAt(lastKept(contour[0], contour[n - 1]), 0);
-    builder.carveTo(contour[0].x, contour[0].y);
+    const t = lastKept(n - 1, true);
+    const start = part(n - 1, t, 1);
+    startAt(start, 0);
+    arcTo(contour[0], bulgeOf(start));
   }
 
   for (let i = 0; i < n; i++) {
@@ -937,17 +1015,19 @@ function cutContour(
     if (!kept[i]) {
       // Resume where the edge to the next kept point comes back in.
       if (nextKept) {
-        startAt(lastKept(next, vertex), (i + 1) % n);
-        builder.carveTo(next.x, next.y);
+        const t = lastKept(i, true);
+        const start = part(i, t, 1);
+        startAt(start, (i + 1) % n);
+        arcTo(next, bulgeOf(start));
       }
       continue;
     }
 
     const run = corners
       ? cornerRun(
-          neighbour(contour, i, -1),
+          direction(contour, i, -1),
           vertex,
-          neighbour(contour, i, 1),
+          direction(contour, i, 1),
           inset,
           fromInset,
           corners,
@@ -961,33 +1041,44 @@ function cutContour(
       builder.carveTo(vertex.x, vertex.y, depth);
     }
 
-    const end = nextKept ? next : lastKept(vertex, next);
-    builder.carveTo(end.x, end.y);
+    if (nextKept) {
+      arcTo(next, bulgeOf(vertex));
+    } else {
+      const t = lastKept(i, false);
+      arcTo(
+        pointAlong(vertex, next, bulgeOf(vertex), t),
+        partBulge(bulgeOf(vertex), 0, t),
+      );
+    }
   }
 }
 
+/** Bulge of the part of a segment from t0 to t1 (0 to 1 along it). */
+function partBulge(bulge: number, t0: number, t1: number): number {
+  return bulge ? Math.tan(((t1 - t0) * sweepOf(bulge)) / 4) : 0;
+}
+
 /**
- * The closed contour with points added where `test` changes along its edges
- * (sampled every `spacing`): one on each side of the change, `precision()`
- * apart.
+ * The closed contour with vertices added where `test` changes along its
+ * segments (sampled every `spacing`): one on each side of the change,
+ * `precision()` apart, arcs cut into shorter arcs.
  */
 function splitWhereChanges(
-  contour: CamPoint[],
+  contour: Loop,
   test: (p: CamPoint) => boolean,
   spacing: number,
-): CamPoint[] {
-  const result: CamPoint[] = [];
+): Loop {
+  const result: Loop = [];
   const n = contour.length;
   for (let i = 0; i < n; i++) {
     const a = contour[i];
     const b = contour[(i + 1) % n];
-    result.push(a);
-    const length = getDistance(a, b);
-    const at = (t: number) => ({
-      x: a.x + (b.x - a.x) * t,
-      y: a.y + (b.y - a.y) * t,
-    });
+    const bulge = bulgeOf(a);
+    const length = segmentLength(a, b, bulge);
+    const at = (t: number) => pointAlong(a, b, bulge, t);
     const samples = Math.ceil(length / Math.max(precision(), spacing));
+    // Where along the segment to cut it.
+    const cuts: number[] = [];
     let lastT = 0;
     let last = test(a);
     for (let k = 1; k <= samples; k++) {
@@ -1004,11 +1095,17 @@ function splitWhereChanges(
             hi = mid;
           }
         }
-        if (lo > 0) result.push(at(lo));
-        if (hi < 1) result.push(at(hi));
+        if (lo > 0) cuts.push(lo);
+        if (hi < 1) cuts.push(hi);
       }
       lastT = t;
       last = value;
+    }
+    const ts = [0, ...cuts, 1];
+    for (let k = 0; k < ts.length - 1; k++) {
+      const p = k ? at(ts[k]) : { x: a.x, y: a.y };
+      const partial = partBulge(bulge, ts[k], ts[k + 1]);
+      result.push(partial ? { ...p, bulge: partial } : p);
     }
   }
   return result;
@@ -1020,9 +1117,11 @@ function splitWhereChanges(
  * edges. Null when the corner isn't sharp or the run would cut the outline.
  */
 function cornerRun(
-  prev: CamPoint,
+  /** Unit direction from the vertex back along the edge before it. */
+  a: CamPoint,
   vertex: CamPoint,
-  next: CamPoint,
+  /** Unit direction from the vertex along the edge after it. */
+  b: CamPoint,
   inset: number,
   fromInset: number,
   corners: CornerOptions,
@@ -1031,16 +1130,8 @@ function cornerRun(
     return null;
   }
 
-  const a = unit(prev.x - vertex.x, prev.y - vertex.y);
-  const b = unit(next.x - vertex.x, next.y - vertex.y);
-  if (!a || !b) {
-    return null;
-  }
-
   // Region on the left: a left turn is a convex corner of the region.
-  const turn =
-    (vertex.x - prev.x) * (next.y - vertex.y) -
-    (vertex.y - prev.y) * (next.x - vertex.x);
+  const turn = -a.x * b.y + a.y * b.x;
   const angle = Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y)));
   if (turn <= 0 || angle > corners.maxAngle) {
     return null;
@@ -1075,11 +1166,11 @@ function cornerRun(
   const isValid = samples.every(
     (t) =>
       Math.abs(
-        distanceToBoundary(at(t), corners.boundary) - (t - corners.shift),
+        distanceToPolygons(at(t), corners.boundary) - (t - corners.shift),
       ) <=
         3 * precision() &&
       (t - corners.shift <= 3 * precision() ||
-        insideRegion(at(t), corners.boundary)),
+        insidePolygons(at(t), corners.boundary)),
   );
   if (!isValid) {
     return null;
@@ -1094,18 +1185,33 @@ function cornerRun(
 }
 
 /**
- * The nearest vertex in `direction` at least a few precision steps away, so
- * micro-edges from coordinate rounding don't fake (or hide) a sharp corner.
+ * Unit direction from vertex i along its edges: back along the one before it
+ * (`side` -1), or on along the one after (1) — their tangents at the vertex.
+ * Past segments a few precision steps short (or less), towards the first
+ * vertex that far: tiny segments don't fake (or hide) a sharp corner.
  */
-function neighbour(contour: CamPoint[], i: number, direction: 1 | -1) {
+function direction(contour: Loop, i: number, side: 1 | -1): CamPoint {
   const n = contour.length;
-  for (let k = 1; k < n; k++) {
-    const candidate = contour[(i + direction * k + n * k) % n];
-    if (getDistance(contour[i], candidate) >= 5 * precision()) {
-      return candidate;
+  const vertex = contour[i];
+  const j = (i + side + n) % n;
+  const [a, b] = side === 1 ? [vertex, contour[j]] : [contour[j], vertex];
+  const bulge = bulgeOf(a);
+  if (segmentLength(a, b, bulge) >= 5 * precision()) {
+    const t = tangentAt(a, b, bulge, side === 1 ? 0 : 1);
+    return side === 1 ? t : { x: -t.x, y: -t.y };
+  }
+  for (let k = 2; k < n; k++) {
+    const candidate = contour[(i + side * k + n * k) % n];
+    const d = getDistance(vertex, candidate);
+    if (d >= 5 * precision()) {
+      return {
+        x: (candidate.x - vertex.x) / d,
+        y: (candidate.y - vertex.y) / d,
+      };
     }
   }
-  return contour[(i + direction + n) % n];
+  const d = getDistance(vertex, contour[j]) || 1;
+  return { x: (contour[j].x - vertex.x) / d, y: (contour[j].y - vertex.y) / d };
 }
 
 function unit(x: number, y: number): CamPoint | null {
@@ -1113,78 +1219,10 @@ function unit(x: number, y: number): CamPoint | null {
   return length > 1e-9 ? { x: x / length, y: y / length } : null;
 }
 
-/**
- * The closed contour without the points that lie within `epsilon` of the
- * line between those kept around them (Ramer–Douglas–Peucker): the points
- * kept don't move, and the path stays within `epsilon` of where it was.
- * Rounding to the precision turns the short round joins an offset puts at a
- * flattened curve's corners into steps of a precision or so, at 0°, 45° or
- * 90°: a zigzag on every corner, which this straightens.
- */
-function simplifyContour(contour: CamPoint[], epsilon: number): CamPoint[] {
-  const n = contour.length;
-  if (n < 4) {
-    return contour;
-  }
-  // Split the loop at its first point and the point furthest from it.
-  let far = 0;
-  contour.forEach((p, i) => {
-    if (getDistance(p, contour[0]) > getDistance(contour[far], contour[0])) {
-      far = i;
-    }
-  });
-  const keep = contour.map((_, i) => i === 0 || i === far);
-  const spans: [number, number][] = [
-    [0, far],
-    [far, n],
-  ];
-  while (spans.length) {
-    const [from, to] = spans.pop()!;
-    let worst = -1;
-    let worstDistance = epsilon;
-    for (let i = from + 1; i < to; i++) {
-      const d = segmentDistance(contour[i], contour[from], contour[to % n]);
-      if (d > worstDistance) {
-        worst = i;
-        worstDistance = d;
-      }
-    }
-    if (worst >= 0) {
-      keep[worst] = true;
-      spans.push([from, worst], [worst, to]);
-    }
-  }
-  return contour.filter((_, i) => keep[i]);
-}
-
-function segmentDistance(p: CamPoint, a: CamPoint, b: CamPoint) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const length2 = dx * dx + dy * dy;
-  const t = length2
-    ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2))
-    : 0;
-  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
-}
-
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
-function bounds(contours: CamPoint[][]): Bounds {
-  const box = {
-    minX: Infinity,
-    minY: Infinity,
-    maxX: -Infinity,
-    maxY: -Infinity,
-  };
-  for (const contour of contours) {
-    for (const { x, y } of contour) {
-      box.minX = Math.min(box.minX, x);
-      box.minY = Math.min(box.minY, y);
-      box.maxX = Math.max(box.maxX, x);
-      box.maxY = Math.max(box.maxY, y);
-    }
-  }
-  return box;
+function bounds(contours: Loop[]): Bounds {
+  return polygonsBounds(polygonsOf(contours));
 }
 
 function overlaps(a: Bounds, b: Bounds) {
@@ -1193,16 +1231,10 @@ function overlaps(a: Bounds, b: Bounds) {
   );
 }
 
-function insideRegion(point: CamPoint, region: CamPoint[][]) {
-  return region.filter((c) => pointInPolygon(point, c)).length % 2 === 1;
+function loopsOf(polygons: CamPolygon[]): Loop[] {
+  return polygons.map((p) => p.vertices);
 }
 
-function signedArea(points: CamPoint[]): number {
-  let area = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    area += a.x * b.y - b.x * a.y;
-  }
-  return area / 2;
+function polygonsOf(loops: Loop[]): CamPolygon[] {
+  return loops.map((vertices) => ({ vertices, close: true }));
 }

@@ -1,5 +1,5 @@
-import { containingContours } from './polygon-nesting';
-import { CamPoint } from './types';
+import { containingPolygons } from './polygon-nesting';
+import { CamPoint, CamPolygon } from './types';
 import { getDistance } from '../util';
 
 /** Something to cut, as far as the travel between cuts goes. */
@@ -84,11 +84,9 @@ export function travelLength(
  * For each path, the paths that lie inside it (closed paths only have an
  * inside): cutting those first keeps a part held until its outline frees it.
  */
-export function insideFirst(
-  paths: { points: CamPoint[]; close: boolean }[],
-): number[][] {
+export function insideFirst(paths: CamPolygon[]): number[][] {
   const after: number[][] = paths.map(() => []);
-  containingContours(paths.map((p) => p.points)).forEach((outer, i) => {
+  containingPolygons(paths).forEach((outer, i) => {
     for (const j of outer) {
       if (paths[j].close) {
         after[j].push(i);

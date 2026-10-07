@@ -1,4 +1,6 @@
+import { distanceToPolygons, hasArcs, polygonPoints } from './arcs';
 import { findCorners } from './corners';
+import { insidePolygons } from './polygon-nesting';
 import { StockOptions } from './stock';
 import { CamPath, CamPoint, CamPolygon, CamShape } from './types';
 
@@ -53,7 +55,7 @@ export type JobCheckInput = {
    * The outlines of the parts cut out (by outside profiles): rounded corners
    * only matter on them. Empty: everything counts.
    */
-  parts?: CamPoint[][];
+  parts?: CamPolygon[];
 };
 
 /**
@@ -168,36 +170,43 @@ export function checkJob(input: JobCheckInput): JobWarning[] {
 export function sharpCorners(
   shape: CamShape[],
   kind: 'convex' | 'concave',
-  parts: CamPoint[][] = [],
+  parts: CamPolygon[] = [],
 ): number {
   const polygons = shape
     .flatMap((s) => s.polygons)
-    .filter((p) => p.close && p.points.length > 2);
+    .filter((p) => p.close && (p.vertices.length > 2 || hasArcs(p)));
   return findCorners(polygons)
     .flatMap((p) => p.corners)
     .filter(
       (c) =>
         c.angle < SHARP &&
         c.convex === (kind === 'convex') &&
-        (!parts.length || parts.some((part) => insidePolygon(c.point, part))),
+        (!parts.length ||
+          parts.some(
+            // On a part's outline counts (its own corners are).
+            (part) =>
+              insidePolygons(c.point, [part]) ||
+              distanceToPolygons(c.point, [part]) < 1e-6,
+          )),
     ).length;
 }
 
 /**
  * Whether a bit of `radius` moving along `points` touches any of the
- * closed `polygons` (comes within its radius of an edge, or is inside).
+ * closed `polygons` (comes within its radius of an edge, or is inside;
+ * arcs are taken as lines within 0.01 mm).
  */
 export function pathHits(
   points: CamPoint[],
   polygons: CamPolygon[],
   radius: number,
 ): boolean {
-  const closed = polygons.filter((p) => p.close && p.points.length > 2);
+  const closed = polygons
+    .filter((p) => p.close)
+    .map((p) => polygonPoints(p))
+    .filter((ps) => ps.length > 2);
   if (!closed.length || !points.length) return false;
-  const box = boundsOf(
-    closed.flatMap((p) => p.points),
-    radius,
-  );
+  const box = boundsOf(closed.flat(), radius);
   const pathBox = boundsOf(points, 0);
   if (
     pathBox.maxX < box.minX ||
@@ -218,9 +227,8 @@ export function pathHits(
     ) {
       continue;
     }
-    for (const polygon of closed) {
-      if (insidePolygon(a, polygon.points)) return true;
-      const ps = polygon.points;
+    for (const ps of closed) {
+      if (insidePolygon(a, ps)) return true;
       for (let k = 0; k < ps.length; k++) {
         const c = ps[k];
         const d = ps[(k + 1) % ps.length];

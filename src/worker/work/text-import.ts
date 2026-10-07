@@ -1,12 +1,12 @@
 import type { Font, Glyph } from 'opentype.js';
-import { clipperBooleanOperation, makePaths } from '../../cam/clipper';
-import { CamPoint, CamShape } from '../../cam/types';
+import { CamPoint, CamPolygon, CamShape, CamVertex } from '../../cam/types';
 import {
   curveTolerance,
-  decimals,
   GeometrySettings,
   useGeometry,
 } from '../../cam/geometry';
+import { cubic, fitBiarcs, quadratic } from '../../cam/biarc';
+import { normalize } from '../../cam/kernel';
 import {
   FontRef,
   fontFileUrl,
@@ -119,7 +119,7 @@ function layout(
   params: TextParameters,
   lines: string[],
   fonts: LoadedFonts,
-): CamPoint[][] {
+): CamPolygon[] {
   const { primary } = fonts;
   const unitsPerEm = primary.unitsPerEm;
 
@@ -153,7 +153,7 @@ function layout(
   });
 
   const blockWidth = Math.max(...laidOut.map((l) => l.width));
-  const contours: CamPoint[][] = [];
+  const contours: CamPolygon[] = [];
 
   laidOut.forEach(({ placed, width }, index) => {
     const baseline = (laidOut.length - 1 - index) * lineHeight;
@@ -168,9 +168,7 @@ function layout(
       // getPath is y-down around the baseline; flip into the y-up world.
       const path = glyph.getPath(offset + x, 0, emSize);
       contours.push(
-        ...flatten(path.commands).map((contour) =>
-          contour.map((p) => ({ x: p.x, y: baseline - p.y })),
-        ),
+        ...outlines(path.commands, (x, y) => ({ x, y: baseline - y })),
       );
     }
   });
@@ -189,76 +187,73 @@ function findGlyph(fonts: LoadedFonts, char: string) {
   return { glyph: fonts.primary.charToGlyph(char), font: fonts.primary };
 }
 
-/** Turn path commands into closed polylines, flattening curves adaptively. */
-function flatten(commands: any[]): CamPoint[][] {
-  const contours: CamPoint[][] = [];
-  let current: CamPoint[] = [];
+/**
+ * Path commands as closed outlines of lines and arcs, curves fitted with
+ * arcs within the curve tolerance. `at` maps the commands' coordinates.
+ */
+function outlines(
+  commands: any[],
+  at: (x: number, y: number) => CamPoint,
+): CamPolygon[] {
+  const contours: CamPolygon[] = [];
+  let vertices: CamVertex[] = [];
+  let start: CamPoint = { x: 0, y: 0 };
   let pen: CamPoint = { x: 0, y: 0 };
+  const tolerance = curveTolerance();
 
   const close = () => {
-    if (current.length > 2) {
-      contours.push(current);
+    // Back to the start in a line, unless the last segment got there.
+    if (
+      vertices.length &&
+      Math.hypot(pen.x - start.x, pen.y - start.y) > 1e-9
+    ) {
+      vertices.push({ x: pen.x, y: pen.y });
     }
-    current = [];
+    if (
+      vertices.length > 2 ||
+      (vertices.length > 1 && vertices.some((v) => v.bulge))
+    ) {
+      contours.push({ vertices, close: true });
+    }
+    vertices = [];
   };
 
   for (const c of commands) {
     switch (c.type) {
       case 'M':
         close();
-        pen = { x: c.x, y: c.y };
-        current.push(pen);
+        start = pen = at(c.x, c.y);
         break;
-      case 'L':
-        pen = { x: c.x, y: c.y };
-        current.push(pen);
-        break;
-      case 'Q': {
-        const p1 = { x: c.x1, y: c.y1 };
-        const p2 = { x: c.x, y: c.y };
-        const d = deviation(pen, p1, p2);
-        const n = Math.max(1, Math.ceil(Math.sqrt(d / (4 * curveTolerance()))));
-        for (let i = 1; i <= n; i++) {
-          const t = i / n;
-          const u = 1 - t;
-          current.push({
-            x: u * u * pen.x + 2 * u * t * p1.x + t * t * p2.x,
-            y: u * u * pen.y + 2 * u * t * p1.y + t * t * p2.y,
-          });
+      case 'L': {
+        const to = at(c.x, c.y);
+        if (Math.hypot(to.x - pen.x, to.y - pen.y) > 1e-9) {
+          vertices.push({ x: pen.x, y: pen.y });
         }
-        pen = p2;
+        pen = to;
+        break;
+      }
+      case 'Q': {
+        const to = at(c.x, c.y);
+        vertices.push(
+          ...fitBiarcs(quadratic(pen, at(c.x1, c.y1), to), tolerance),
+        );
+        pen = to;
         break;
       }
       case 'C': {
-        const p1 = { x: c.x1, y: c.y1 };
-        const p2 = { x: c.x2, y: c.y2 };
-        const p3 = { x: c.x, y: c.y };
-        const d = Math.max(deviation(pen, p1, p2), deviation(p1, p2, p3));
-        const n = Math.max(
-          1,
-          Math.ceil(Math.sqrt((3 * d) / (4 * curveTolerance()))),
+        const to = at(c.x, c.y);
+        vertices.push(
+          ...fitBiarcs(
+            cubic(pen, at(c.x1, c.y1), at(c.x2, c.y2), to),
+            tolerance,
+          ),
         );
-        for (let i = 1; i <= n; i++) {
-          const t = i / n;
-          const u = 1 - t;
-          current.push({
-            x:
-              u * u * u * pen.x +
-              3 * u * u * t * p1.x +
-              3 * u * t * t * p2.x +
-              t * t * t * p3.x,
-            y:
-              u * u * u * pen.y +
-              3 * u * u * t * p1.y +
-              3 * u * t * t * p2.y +
-              t * t * t * p3.y,
-          });
-        }
-        pen = p3;
+        pen = to;
         break;
       }
       case 'Z':
         close();
+        pen = start;
         break;
     }
   }
@@ -267,46 +262,16 @@ function flatten(commands: any[]): CamPoint[][] {
   return contours;
 }
 
-/** |a - 2b + c|: how far a curve bends away from its chord. */
-function deviation(a: CamPoint, b: CamPoint, c: CamPoint) {
-  return Math.hypot(a.x - 2 * b.x + c.x, a.y - 2 * b.y + c.y);
-}
-
 /**
  * Many Google fonts are drawn with overlapping contours (and tight letter
  * spacing makes neighbours touch). A non-zero union merges those into clean
  * outlines with proper holes.
  */
-async function unionContours(contours: CamPoint[][]) {
+async function unionContours(contours: CamPolygon[]): Promise<CamPolygon[]> {
   if (!contours.length) {
     return [];
   }
-  const paths = await makePaths(contours);
-  const empty = await makePaths([]);
-  const result = await clipperBooleanOperation(
-    paths,
-    empty,
-    'union',
-    'non-zero',
-    decimals(),
-  );
-  paths.delete();
-  empty.delete();
-
-  const polygons = [];
-  const size = result.size();
-  for (let i = 0; i < size; i++) {
-    const path = result.get(i);
-    const points: CamPoint[] = [];
-    for (let j = 0; j < path.size(); j++) {
-      const point = path.get(j);
-      points.push({ x: point.x, y: point.y });
-    }
-    polygons.push({ points, close: true });
-  }
-  result.delete();
-
-  return polygons;
+  return normalize(contours, 'non-zero');
 }
 
 const jsonCache = new Map<string, Promise<any>>();

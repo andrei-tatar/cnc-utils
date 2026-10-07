@@ -5,7 +5,14 @@ import {
   roundCorners,
 } from '../../cam/corners';
 import { curveTolerance } from '../../cam/geometry';
-import { containingContours, signedArea2 } from '../../cam/polygon-nesting';
+import { containingPolygons } from '../../cam/polygon-nesting';
+import {
+  arcOf,
+  forEachSegment,
+  polygonsBounds,
+  reversePolygon,
+  transformPolygon,
+} from '../../cam/arcs';
 import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
 import type { ModelType as PolarParameters } from '../../app/model-editor/transforms/transform-polar';
 import type { ModelType as FitParameters } from '../../app/model-editor/transforms/transform-fit';
@@ -15,21 +22,11 @@ import type { ModelType as CornersParameters } from '../../app/model-editor/tran
 
 export type Box = { x: number; y: number; width: number; height: number };
 
+/** The shapes' bounding box, arcs included. */
 export function getBoundingBox(input: CamShape[]): Box {
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (const shape of input) {
-    for (const poly of shape.polygons) {
-      for (const point of poly.points) {
-        if (point.x < minX) minX = point.x;
-        if (point.y < minY) minY = point.y;
-        if (point.x > maxX) maxX = point.x;
-        if (point.y > maxY) maxY = point.y;
-      }
-    }
-  }
+  const { minX, minY, maxX, maxY } = polygonsBounds(
+    input.flatMap((s) => s.polygons),
+  );
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
@@ -59,10 +56,10 @@ export function transformShapes(input: CamShape[], m: Affine): CamShape[] {
   return input.map((shape) => {
     const moved: CamShape = {
       sourceShapeId: shape.sourceShapeId,
-      polygons: shape.polygons.map((poly) => ({
-        close: poly.close,
-        points: poly.points.map((p) => applyAffine(m, p)),
-      })),
+      // Arcs stay arcs unless the map stretches them into ellipses.
+      polygons: shape.polygons.map((poly) =>
+        transformPolygon(poly, m, curveTolerance()),
+      ),
     };
     if (shape.tabs) {
       moved.tabs = shape.tabs.map((tab) => ({
@@ -184,33 +181,43 @@ export function mirrorCopy(input: CamShape[], t: MirrorParameters): CamShape[] {
   // Reversed, so outlines keep turning the same way after the flip.
   const mirrored = transformShapes(input, matrix).map((shape) => ({
     ...shape,
-    polygons: shape.polygons.map((p) => ({
-      close: p.close,
-      points: [...p.points].reverse(),
-    })),
+    polygons: shape.polygons.map((p) => reversePolygon(p)),
   }));
   return t.mirrorKeepOriginal ? [...input, ...mirrored] : mirrored;
 }
 
-/** The centre of an outline (by area), or of the points' bounding box. */
-export function centerOf(points: CamPoint[], close: boolean): CamPoint {
-  if (close && points.length > 2) {
-    let a2 = 0;
-    let cx = 0;
-    let cy = 0;
-    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-      const f = points[j].x * points[i].y - points[i].x * points[j].y;
-      a2 += f;
-      cx += (points[j].x + points[i].x) * f;
-      cy += (points[j].y + points[i].y) * f;
-    }
-    if (Math.abs(a2) > 1e-12) {
-      return { x: cx / (3 * a2), y: cy / (3 * a2) };
+/**
+ * The centre of an outline (by area: the polygon of its vertices, plus the
+ * circular segment between each arc and its chord), or of its bounding box.
+ */
+export function centerOf(polygon: CamPolygon): CamPoint {
+  if (polygon.close && polygon.vertices.length > 1) {
+    let area = 0;
+    let mx = 0;
+    let my = 0;
+    forEachSegment(polygon, (a, b, bulge) => {
+      const f = (a.x * b.y - b.x * a.y) / 2;
+      area += f;
+      mx += ((a.x + b.x) / 3) * f;
+      my += ((a.y + b.y) / 3) * f;
+      if (bulge) {
+        const { center, radius, start, sweep } = arcOf(a, b, bulge);
+        const segment = ((radius * radius) / 2) * (sweep - Math.sin(sweep));
+        // The segment's centroid lies on the arc's bisector.
+        const d =
+          (4 * radius * Math.sin(sweep / 2) ** 3) /
+          (3 * (sweep - Math.sin(sweep)));
+        const mid = start + sweep / 2;
+        area += segment;
+        mx += (center.x + d * Math.cos(mid)) * segment;
+        my += (center.y + d * Math.sin(mid)) * segment;
+      }
+    });
+    if (Math.abs(area) > 1e-12) {
+      return { x: mx / area, y: my / area };
     }
   }
-  const box = getBoundingBox([
-    { sourceShapeId: '', polygons: [{ points, close }] },
-  ]);
+  const box = getBoundingBox([{ sourceShapeId: '', polygons: [polygon] }]);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
@@ -219,20 +226,20 @@ export function centerMarks(
   t: CentersParameters,
 ): CamShape[] {
   const all = input.flatMap((s) => s.polygons);
-  const closed = all.filter((p) => p.close && p.points.length > 2);
-  const parents = containingContours(closed.map((p) => p.points));
+  const closed = all.filter((p) => p.close && p.vertices.length > 1);
+  const parents = containingPolygons(closed);
   const holes = new Set(closed.filter((_, i) => parents[i].length % 2 === 1));
 
   return input.map((shape) => {
     const marks = shape.polygons
       .filter(
-        (p) => p.points.length && (t.centersOf === 'all' || !holes.has(p)),
+        (p) => p.vertices.length && (t.centersOf === 'all' || !holes.has(p)),
       )
       .map((p): CamPolygon => {
-        const center = centerOf(p.points, p.close);
+        const center = centerOf(p);
         return t.centersRadius > 0
-          ? circlePolygon(center, t.centersRadius, curveTolerance())
-          : { points: [center], close: false };
+          ? circlePolygon(center, t.centersRadius)
+          : { vertices: [center], close: false };
       });
     return {
       sourceShapeId: shape.sourceShapeId,
@@ -256,18 +263,7 @@ export function shapeCorners(
   return input.map((shape) => ({
     sourceShapeId: shape.sourceShapeId,
     polygons: shape.polygons.map(() =>
-      roundCorners(
-        analysed[k++],
-        t.cornerMode,
-        t.cornerSize,
-        selection,
-        curveTolerance(),
-      ),
+      roundCorners(analysed[k++], t.cornerMode, t.cornerSize, selection),
     ),
   }));
-}
-
-/** Whether the polygon's points run counter-clockwise (Y up). */
-export function isCounterClockwise(points: CamPoint[]) {
-  return signedArea2(points) > 0;
 }

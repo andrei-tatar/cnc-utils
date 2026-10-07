@@ -2,13 +2,14 @@ import { CamShape } from '../../cam/types';
 import { boreHoles, routeHelix } from './route-helix';
 import { drillPositions, routeDrill } from './route-drill';
 import { pointLength } from '../../app/model-editor/operations/operation-drill';
+import { circlePolygon } from '../../cam/corners';
 
 const points: CamShape[] = [
   {
     sourceShapeId: 's',
     polygons: [
-      { points: [{ x: 30, y: 0 }], close: false },
-      { points: [{ x: 10, y: 0 }], close: false },
+      { vertices: [{ x: 30, y: 0 }], close: false },
+      { vertices: [{ x: 10, y: 0 }], close: false },
     ],
   },
 ];
@@ -45,8 +46,8 @@ describe('drilling', () => {
       {
         sourceShapeId: 's',
         polygons: [
-          { points: circle(5, 5, 4), close: true },
-          { points: circle(5, 5, 1), close: true },
+          { vertices: circle(5, 5, 4), close: true },
+          { vertices: circle(5, 5, 1), close: true },
         ],
       },
     ];
@@ -98,7 +99,7 @@ describe('helical boring', () => {
   const hole: CamShape[] = [
     {
       sourceShapeId: 's',
-      polygons: [{ points: circle(0, 0, 10), close: true }],
+      polygons: [{ vertices: circle(0, 0, 10), close: true }],
     },
   ];
   const options = {
@@ -162,6 +163,20 @@ describe('helical boring', () => {
     expect(gcode.match(/^G1 X/gm)?.length ?? 0).toBeLessThanOrEqual(2);
   });
 
+  it('finds round holes drawn with arcs', () => {
+    const arcs: CamShape[] = [
+      {
+        sourceShapeId: 's',
+        polygons: [circlePolygon({ x: 3, y: -2 }, 5)],
+      },
+    ];
+    const [bore, ...rest] = boreHoles(arcs);
+    expect(rest.length).toBe(0);
+    expect(bore.center.x).toBeCloseTo(3, 9);
+    expect(bore.center.y).toBeCloseTo(-2, 9);
+    expect(bore.radius).toBeCloseTo(5, 9);
+  });
+
   it('leaves out shapes that aren’t round', () => {
     const square: CamShape[] = [
       {
@@ -169,7 +184,7 @@ describe('helical boring', () => {
         polygons: [
           {
             close: true,
-            points: [
+            vertices: [
               { x: 0, y: 0 },
               { x: 10, y: 0 },
               { x: 10, y: 10 },
@@ -186,7 +201,7 @@ describe('helical boring', () => {
     const wide: CamShape[] = [
       {
         sourceShapeId: 's',
-        polygons: [{ points: circle(0, 0, 7), close: true }],
+        polygons: [{ vertices: circle(0, 0, 7), close: true }],
       },
     ];
     const gcode = (

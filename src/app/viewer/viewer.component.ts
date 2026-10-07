@@ -75,10 +75,12 @@ import {
   visiblePlaneBounds,
 } from './helpers/grid-labels';
 import { DirectionArrows } from './helpers/direction-arrows';
-import { nestContours } from '../../cam/polygon-nesting';
+import { nestPolygons } from '../../cam/polygon-nesting';
+import { hasArcs, polygonPoints } from '../../cam/arcs';
 import {
   CamPath,
   CamPoint,
+  CamPolygon,
   CamShape,
   CamTab,
   Highlight,
@@ -97,6 +99,8 @@ const MEASURE_MATERIAL = new LineBasicMaterial({
 
 /** Half the size of the cross marking a single point, in mm. */
 const POINT_MARK_SIZE = 1;
+/** Outlines' arcs are drawn as lines straying no further than this (mm). */
+const ARC_TOLERANCE = 0.01;
 
 /**
  * How much fitting frames across X and Y (mm) when the content has next to
@@ -784,7 +788,9 @@ export class ViewerComponent implements OnInit, OnDestroy {
       )
       .subscribe((shapes) => {
         this.snapPoints = shapes.flatMap((shape) =>
-          shape.polygons.flatMap((polygon) => polygon.points),
+          shape.polygons.flatMap((polygon) =>
+            polygon.vertices.map(({ x, y }) => ({ x, y })),
+          ),
         );
       });
 
@@ -1493,16 +1499,17 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
             // Fill each outline with its holes cut out, rather than filling
             // every closed polygon (which paints holes over as solid).
-            const closed = o.shape.polygons
-              .filter((poly) => poly.close && poly.points.length > 2)
-              .map((poly) => poly.points);
-            for (const { outer, holes } of nestContours(closed)) {
-              const shape = new Shape(
-                outer.map(({ x, y }) => new Vector2(x, y)),
+            const closed = o.shape.polygons.filter(
+              (poly) =>
+                poly.close && (poly.vertices.length > 2 || hasArcs(poly)),
+            );
+            const vectors = (poly: CamPolygon) =>
+              polygonPoints(poly, ARC_TOLERANCE).map(
+                ({ x, y }) => new Vector2(x, y),
               );
-              shape.holes = holes.map(
-                (hole) => new Path(hole.map(({ x, y }) => new Vector2(x, y))),
-              );
+            for (const { outer, holes } of nestPolygons(closed)) {
+              const shape = new Shape(vectors(outer));
+              shape.holes = holes.map((hole) => new Path(vectors(hole)));
               const geometry = new ShapeGeometry(shape);
               const mesh = new Mesh(geometry, o.material);
               sceneItems.push(mesh);
@@ -1518,7 +1525,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             // (centre marks, drill points) as small crosses.
             const segments: number[] = [];
             for (const poly of o.shape.polygons) {
-              const points = poly.points;
+              const points = polygonPoints(poly, ARC_TOLERANCE);
               if (points.length === 1) {
                 const { x, y } = points[0];
                 const r = POINT_MARK_SIZE;

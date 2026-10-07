@@ -32,21 +32,18 @@ export function hingeCupLayout({
 }
 
 /** A hinge cup's holes as polygons: circles, and points for unsized screws. */
-export function hingeCupPolygons(
-  hinge: HingeCup,
-  curveTolerance: number,
-): CamPolygon[] {
+export function hingeCupPolygons(hinge: HingeCup): CamPolygon[] {
   const { cup, screws } = hingeCupLayout(hinge);
   const polygons: CamPolygon[] = [];
   if (hinge.parts !== 'screws' && hinge.cupDiameter > 0) {
-    polygons.push(circlePolygon(cup, hinge.cupDiameter / 2, curveTolerance));
+    polygons.push(circlePolygon(cup, hinge.cupDiameter / 2));
   }
   if (hinge.parts !== 'cup') {
     for (const screw of screws) {
       polygons.push(
         hinge.screwDiameter > 0
-          ? circlePolygon(screw, hinge.screwDiameter / 2, curveTolerance)
-          : { points: [screw], close: false },
+          ? circlePolygon(screw, hinge.screwDiameter / 2)
+          : { vertices: [screw], close: false },
       );
     }
   }

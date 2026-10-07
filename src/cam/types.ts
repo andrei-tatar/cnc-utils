@@ -3,8 +3,16 @@ import type { Observable } from 'rxjs';
 export type CamPoint = { x: number; y: number };
 export type CamPoint3 = { x: number; y: number; z: number };
 
+/**
+ * A polygon's vertex. With a `bulge`, the segment to the next vertex is a
+ * circular arc: `tan(sweep / 4)`, positive counter-clockwise (see
+ * `src/cam/arcs.ts`); without, a straight line.
+ */
+export type CamVertex = { x: number; y: number; bulge?: number };
+
+/** Lines and arcs, closed or open (see CamVertex). */
 export type CamPolygon = {
-  points: CamPoint[];
+  vertices: CamVertex[];
   close: boolean;
 };
 

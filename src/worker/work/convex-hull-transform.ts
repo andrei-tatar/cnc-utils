@@ -1,4 +1,9 @@
 import { CamPolygon, CamShape } from '../../cam/types';
+import { fromPoints, polygonPoints } from '../../cam/arcs';
+import { curveTolerance } from '../../cam/geometry';
+
+/** A polygon's points, arcs within the curve tolerance. */
+const pointsOf = (p: CamPolygon) => polygonPoints(p, curveTolerance());
 
 export async function applyConvexHull(
   input: CamShape[],
@@ -8,32 +13,22 @@ export async function applyConvexHull(
   },
 ): Promise<CamShape[]> {
   if (options.mergeAllShapes) {
-    const allPoints = input.flatMap((s) => s.polygons).flatMap((p) => p.points);
+    const allPoints = input.flatMap((s) => s.polygons).flatMap(pointsOf);
     return [
       {
         sourceShapeId: input?.[0]?.sourceShapeId ?? '',
-        polygons: [
-          {
-            close: true,
-            points: convexhull.makeHull(allPoints),
-          },
-        ],
+        polygons: [fromPoints(convexhull.makeHull(allPoints), true)],
       },
     ];
   }
 
   return input.map((shape) => {
     if (options.atShapeLevel) {
-      const allPoints = shape.polygons.flatMap((p) => p.points);
+      const allPoints = shape.polygons.flatMap(pointsOf);
       const hullPoints = convexhull.makeHull(allPoints);
       return {
         sourceShapeId: shape.sourceShapeId,
-        polygons: [
-          {
-            close: true,
-            points: hullPoints,
-          },
-        ],
+        polygons: [fromPoints(hullPoints, true)],
       };
     }
 
@@ -44,10 +39,7 @@ export async function applyConvexHull(
           return poly;
         }
 
-        return {
-          close: poly.close,
-          points: convexhull.makeHull(poly.points),
-        } as CamPolygon;
+        return fromPoints(convexhull.makeHull(pointsOf(poly)), true);
       }),
     };
   });

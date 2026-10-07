@@ -35,8 +35,8 @@ export function pointPattern(
   }
   const polygons = points.map((point) =>
     t.holeDiameter > 0
-      ? circlePolygon(point, t.holeDiameter / 2, geometry.curveTolerance)
-      : { points: [point], close: false },
+      ? circlePolygon(point, t.holeDiameter / 2)
+      : { vertices: [point], close: false },
   );
   return [{ sourceShapeId: shapeId, polygons }];
 }
@@ -49,16 +49,13 @@ export function hingeCup(
 ): CamShape[] {
   const system =
     t.hingeSystem === 'custom' ? null : HINGE_SYSTEMS[t.hingeSystem];
-  const polygons = hingeCupPolygons(
-    {
-      cupDiameter: t.hingeCupDiameter ?? 35,
-      boring: t.hingeBoring ?? 5,
-      screwSpacing: system?.spacing ?? t.hingeScrewSpacing ?? 45,
-      screwOffset: system?.offset ?? t.hingeScrewOffset ?? 9.5,
-      screwDiameter: t.hingeScrewDiameter ?? 0,
-      parts: t.hingeParts ?? 'both',
-    },
-    geometry.curveTolerance,
-  ).filter((p) => p.points.every((q) => Number.isFinite(q.x + q.y)));
+  const polygons = hingeCupPolygons({
+    cupDiameter: t.hingeCupDiameter ?? 35,
+    boring: t.hingeBoring ?? 5,
+    screwSpacing: system?.spacing ?? t.hingeScrewSpacing ?? 45,
+    screwOffset: system?.offset ?? t.hingeScrewOffset ?? 9.5,
+    screwDiameter: t.hingeScrewDiameter ?? 0,
+    parts: t.hingeParts ?? 'both',
+  }).filter((p) => p.vertices.every((q) => Number.isFinite(q.x + q.y)));
   return polygons.length ? [{ sourceShapeId: shapeId, polygons }] : [];
 }

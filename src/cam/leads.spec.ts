@@ -1,4 +1,5 @@
-import { signedArea, withLeads } from './leads';
+import { withLeads } from './leads';
+import { fromPoints, signedArea } from './arcs';
 import { CamPoint } from './types';
 
 describe('withLeads', () => {
@@ -22,6 +23,10 @@ describe('withLeads', () => {
     expect(last.y).toBeCloseTo(-2);
     expect(path).toContain(square[0]);
     expect(path.every((p) => p.y <= 10 + 1e-9)).toBeTrue();
+    // The leads are quarter arcs bending away from the part (clockwise
+    // here, the waste on the right of a counter-clockwise loop).
+    expect(first.bulge).toBeCloseTo(-Math.tan(Math.PI / 8));
+    expect(path[path.length - 2].bulge).toBeCloseTo(-Math.tan(Math.PI / 8));
   });
 
   it('arcs in from the inside of an inside profile', () => {
@@ -32,7 +37,7 @@ describe('withLeads', () => {
 
   it('follows the loop whichever way it goes round', () => {
     const clockwise = [square[0], ...square.slice(1).reverse()];
-    expect(signedArea(clockwise)).toBeLessThan(0);
+    expect(signedArea(fromPoints(clockwise, true))).toBeLessThan(0);
     const path = withLeads(clockwise, 'outside', 2);
     expect(path[0].x).toBeCloseTo(7);
     expect(path[0].y).toBeCloseTo(-2);

@@ -1,4 +1,4 @@
-import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
+import { CamPoint, CamPolygon, CamShape, CamVertex } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GeometrySettings, precision, useGeometry } from '../../cam/geometry';
 import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
@@ -6,7 +6,15 @@ import { enterCut, Resume } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 import { insideFirst, TravelStop, travelOrder } from '../../cam/travel-order';
-import { signedArea, withLeads } from '../../cam/leads';
+import { withLeads } from '../../cam/leads';
+import {
+  bulgeOf,
+  pointAlong,
+  reversePolygon,
+  segmentLength,
+  signedArea,
+  sweepOf,
+} from '../../cam/arcs';
 
 export async function routeProfile(
   input: CamShape[],
@@ -42,15 +50,11 @@ export async function routeProfile(
 
   const closed = input
     .flatMap((s) => s.polygons)
-    .filter((p) => p.close && p.points.length > 2)
-    .map((p) => p.points);
+    .filter((p) => p.close && p.vertices.length > 1);
   if (options.mode === 'contours') {
     // Holes ignored: profile the filled outer outlines (and any open paths).
     const open = input.flatMap((s) => s.polygons).filter((p) => !p.close);
-    const filled = (await filledOutlines(closed)).map((points): CamPolygon => ({
-      points,
-      close: true,
-    }));
+    const filled = await filledOutlines(closed);
     input = [{ sourceShapeId, polygons: [...filled, ...open] }];
   }
 
@@ -100,7 +104,7 @@ export async function routeProfile(
 /** The paths to profile `input` on, oriented and in the order to cut them. */
 async function profilePaths(
   input: CamShape[],
-  closed: CamPoint[][],
+  closed: CamPolygon[],
   options: {
     toolSize: number;
     side: 'outside' | 'inside' | 'on-line';
@@ -145,22 +149,11 @@ async function profilePaths(
   const polygons = offsetInput
     .flatMap((s) => s.polygons)
     .filter(
-      (p) => p.points.length >= 2 && (options.mode !== 'holes' || p.close),
+      (p) => p.vertices.length >= 2 && (options.mode !== 'holes' || p.close),
     )
     .flatMap((p) =>
       // Orient first, so pieces of a loop keep its direction.
-      keptStretches(
-        {
-          ...p,
-          points: orientPath(
-            p.points,
-            p.close,
-            options.side,
-            options.direction,
-          ),
-        },
-        keep,
-      ),
+      keptStretches(orientPath(p, options.side, options.direction), keep),
     );
 
   return options.optimizeTravel === false
@@ -191,8 +184,8 @@ function cutPasses(
   leads: boolean,
 ) {
   const rampAngle = options.rampAngle ?? null;
-  if (leads && polygon.close && polygon.points.length > 2) {
-    const path = withLeads(polygon.points, options.side, options.leadIn!);
+  if (leads && polygon.close && polygon.vertices.length > 1) {
+    const path = withLeads(polygon.vertices, options.side, options.leadIn!);
     let level = from;
     for (const depth of levels) {
       carvePass(builder, path, false, level, depth, {
@@ -204,7 +197,7 @@ function cutPasses(
     return;
   }
 
-  let points = polygon.points;
+  let points = polygon.vertices;
   // When ramping, each pass carries on from where the one before ended,
   // without lifting: round a loop, or back along an open path.
   let resume: Resume | undefined;
@@ -221,7 +214,9 @@ function cutPasses(
     );
     if (rampAngle) {
       // Open paths end at the far end: go back the other way.
-      points = polygon.close ? cut : [...cut].reverse();
+      points = polygon.close
+        ? cut
+        : reversePolygon({ vertices: cut, close: false }).vertices;
       resume = { point: points[0], down: true };
     }
     level = depth;
@@ -246,12 +241,12 @@ function travelOrdered(
   // Ramped passes along an open path go back and forth: after an even
   // number of them the tool is back at the start.
   const endsWhereStarted = !!options.rampAngle && options.steps % 2 === 0;
-  const stops = polygons.map(({ points, close }, i): TravelStop => {
+  const stops = polygons.map(({ vertices, close }, i): TravelStop => {
     if (close) {
-      return { starts: points, after: after[i] };
+      return { starts: vertices, after: after[i] };
     }
-    const first = points[0];
-    const last = points[points.length - 1];
+    const first = vertices[0];
+    const last = vertices[vertices.length - 1];
     const starts = options.reversible ? [first, last] : [first];
     return {
       starts,
@@ -261,58 +256,75 @@ function travelOrdered(
     };
   });
   return travelOrder(stops, { x: 0, y: 0 }).map(({ index, start }) => {
-    const { points, close } = polygons[index];
+    const polygon = polygons[index];
     if (!start) {
-      return polygons[index];
+      return polygon;
     }
-    return {
-      close,
-      points: close
-        ? [...points.slice(start), ...points.slice(0, start)]
-        : [...points].reverse(),
-    };
+    const { vertices, close } = polygon;
+    return close
+      ? {
+          close,
+          vertices: [...vertices.slice(start), ...vertices.slice(0, start)],
+        }
+      : reversePolygon(polygon);
   });
 }
 
 /**
  * The parts of `polygon` where `keep` holds, as open paths that start and end
  * where it stops holding (the whole polygon when it holds everywhere).
+ * Tested at the vertices; where it changes between two, the edge is split
+ * where it does (arcs into shorter arcs).
  */
 function keptStretches(
   polygon: CamPolygon,
   keep: ((p: CamPoint) => boolean) | null,
 ): CamPolygon[] {
-  const { points, close } = polygon;
-  const kept = points.map((p) => !keep || keep(p));
+  const { vertices, close } = polygon;
+  const kept = vertices.map((p) => !keep || keep(p));
   if (kept.every(Boolean)) {
     return [polygon];
   }
   if (!kept.some(Boolean)) {
     return [];
   }
-  const n = points.length;
+  const n = vertices.length;
   // Loops start where a kept stretch begins.
   const first = close
     ? kept.findIndex((k, i) => k && !kept[(i - 1 + n) % n])
     : 0;
 
-  // How far the edge from kept `a` towards dropped `b` stays kept.
-  const lastKept = (a: CamPoint, b: CamPoint) => {
-    const at = (t: number) => ({
-      x: a.x + (b.x - a.x) * t,
-      y: a.y + (b.y - a.y) * t,
-    });
+  // How far (0 to 1) along segment i, from `fromStart` its start or its
+  // end, it stays kept.
+  const lastKept = (i: number, fromStart: boolean): number => {
+    const a = vertices[i];
+    const b = vertices[(i + 1) % n];
+    const bulge = bulgeOf(a);
+    const length = segmentLength(a, b, bulge);
     let lo = 0;
     let hi = 1;
-    while ((hi - lo) * getDistance(a, b) > precision()) {
+    while ((hi - lo) * length > precision()) {
       const mid = (lo + hi) / 2;
-      if (keep!(at(mid))) {
+      if (keep!(pointAlong(a, b, bulge, fromStart ? mid : 1 - mid))) {
         lo = mid;
       } else {
         hi = mid;
       }
     }
-    return at(lo);
+    return fromStart ? lo : 1 - lo;
+  };
+  // The vertex starting the part of segment i from t0 to t1.
+  const part = (i: number, t0: number, t1: number): CamVertex => {
+    const a = vertices[i];
+    const b = vertices[(i + 1) % n];
+    const bulge = bulgeOf(a);
+    const p = pointAlong(a, b, bulge, t0);
+    const partial = bulge ? Math.tan(((t1 - t0) * sweepOf(bulge)) / 4) : 0;
+    return partial ? { ...p, bulge: partial } : p;
+  };
+  const endOf = (i: number, t: number): CamVertex => {
+    const a = vertices[i];
+    return pointAlong(a, vertices[(i + 1) % n], bulgeOf(a), t);
   };
 
   const order = close
@@ -320,26 +332,36 @@ function keptStretches(
     : [...Array(n).keys()];
   const stretches: CamPolygon[] = [];
   // A loop's first stretch starts where the edge into it comes back in.
-  let current: CamPoint[] | null = close
-    ? [lastKept(points[first], points[(first - 1 + n) % n])]
-    : null;
+  let current: CamVertex[] | null = null;
+  if (close) {
+    const into = (first - 1 + n) % n;
+    const t = lastKept(into, false);
+    current = [part(into, t, 1)];
+  }
   for (let k = 0; k < order.length; k++) {
     const i = order[k];
     const hasNext = close || k < order.length - 1;
     const j = close ? order[(k + 1) % n] : order[k + 1];
     if (kept[i]) {
       current ??= [];
-      current.push(points[i]);
       if (hasNext && !kept[j]) {
-        current.push(lastKept(points[i], points[j]));
+        // Out along part of segment i.
+        const t = lastKept(i, true);
+        current.push(part(i, 0, t), endOf(i, t));
+      } else {
+        current.push(vertices[i]);
       }
     } else if (hasNext && kept[j] && k < order.length - 1) {
       // (The edge back into the first stretch was handled at the start.)
-      current = [lastKept(points[j], points[i])];
+      const t = lastKept(i, false);
+      current = [part(i, t, 1)];
     }
     if (current && (!hasNext || !kept[j])) {
       if (current.length > 1) {
-        stretches.push({ points: current, close: false });
+        // An open path: its last vertex starts no segment.
+        const last = current[current.length - 1];
+        current[current.length - 1] = { x: last.x, y: last.y };
+        stretches.push({ vertices: current, close: false });
       }
       current = null;
     }
@@ -354,34 +376,33 @@ function keptStretches(
  * Only closed loops have a meaningful winding.
  */
 function orientPath(
-  points: CamPoint[],
-  close: boolean,
+  polygon: CamPolygon,
   side: 'outside' | 'inside' | 'on-line',
   direction: 'climb' | 'conventional',
-): CamPoint[] {
-  if (!close) {
-    return points;
+): CamPolygon {
+  if (!polygon.close) {
+    return polygon;
   }
 
   const wantCounterClockwise =
     direction === 'climb' ? side === 'inside' : side !== 'inside';
 
-  const isCounterClockwise = signedArea(points) > 0;
+  const isCounterClockwise = signedArea(polygon) > 0;
   return isCounterClockwise === wantCounterClockwise
-    ? points
-    : [...points].reverse();
+    ? polygon
+    : reversePolygon(polygon);
 }
 
 /** One pass along `points` at `depth`; returns the path as it was cut. */
 function carvePass(
   builder: GCodeBuilder,
-  points: CamPoint[],
+  points: CamVertex[],
   close: boolean,
   from: number,
   depth: number,
   options: { rampAngle: number | null; toolSize: number },
   resume?: Resume,
-): CamPoint[] {
+): CamVertex[] {
   if (!resume?.down) {
     builder.goToSafeHeight();
   }
@@ -396,10 +417,11 @@ function carvePass(
     Infinity,
     resume,
   );
-  // Vertices the tool visits in order; a closed loop returns to its start.
+  // Vertices the tool visits in order (along the arc each one's bulge
+  // shapes); a closed loop returns to its start.
   const loop = close ? [...points, points[0]] : points;
   for (let i = 1; i < loop.length; i++) {
-    builder.carveTo(loop[i].x, loop[i].y);
+    builder.arcTo(loop[i].x, loop[i].y, bulgeOf(loop[i - 1]));
   }
   return points;
 }

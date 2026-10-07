@@ -1,12 +1,8 @@
-import type { PathsD } from 'clipper2-wasm/dist/clipper2z';
-import {
-  clipperBooleanOperation,
-  clipperInflateRaw,
-  makePaths,
-} from './clipper';
-import { CamPoint } from './types';
-import { distanceToBoundary, pointInPolygon } from './polygon-nesting';
-import { decimals, precision } from './geometry';
+import { CamPoint, CamPolygon } from './types';
+import { booleanOperation, normalize, offsetRegion } from './kernel';
+import { distanceToPolygons, reversePolygon, signedArea } from './arcs';
+import { containingPolygons } from './polygon-nesting';
+import { precision } from './geometry';
 
 /**
  * Which part of a shape an operation (v-carve, profile) works on:
@@ -19,13 +15,10 @@ export type ShapePart = 'both' | 'holes' | 'contours';
 
 /**
  * How much further than its offset a point on a cut must be from the outer
- * outlines to count as coming from a hole, in precision steps (Clipper
- * rounds offsets).
+ * outlines to count as coming from a hole, in precision steps (where an
+ * offset meets an outline's own, they're the same distance away).
  */
 const HOLE_SIDE_TOLERANCE = 5;
-// Irrelevant with round joins.
-const MITER_LIMIT = 2;
-const ARC_TOLERANCE = 0;
 
 /**
  * The V-groove's shape for a given bit and settings: the walls at depth `h`
@@ -71,21 +64,21 @@ export function vCarveGeometry(options: {
 }
 
 /**
- * The area a v-carve works in for `mode` (see ShapePart), as normalized
- * contours. "Holes only" works in the same area as "both" and picks its cuts
+ * The area a v-carve works in for `mode` (see ShapePart), as a clean
+ * region. "Holes only" works in the same area as "both" and picks its cuts
  * from there.
  */
 export async function carveRegion(
-  closed: CamPoint[][],
+  closed: CamPolygon[],
   mode: ShapePart = 'both',
-): Promise<CamPoint[][]> {
+): Promise<CamPolygon[]> {
   return mode === 'contours'
     ? filledOutlines(closed)
     : normalizedRegion(closed);
 }
 
 /** The holes in the shape (inside an outline, but not in the shape). */
-export async function holeAreas(closed: CamPoint[][]): Promise<CamPoint[][]> {
+export async function holeAreas(closed: CamPolygon[]): Promise<CamPolygon[]> {
   return subtractRegions(
     await filledOutlines(closed),
     await normalizedRegion(closed),
@@ -93,18 +86,11 @@ export async function holeAreas(closed: CamPoint[][]): Promise<CamPoint[][]> {
 }
 
 /** The part of region `a` outside region `b`. */
-export async function subtractRegions(
-  a: CamPoint[][],
-  b: CamPoint[][],
-): Promise<CamPoint[][]> {
-  const pa = await makePaths(a);
-  const pb = await makePaths(b);
-  const result = toPoints(
-    await clipperBooleanOperation(pa, pb, 'difference', 'non-zero', decimals()),
-  );
-  pa.delete();
-  pb.delete();
-  return result;
+export function subtractRegions(
+  a: CamPolygon[],
+  b: CamPolygon[],
+): Promise<CamPolygon[]> {
+  return booleanOperation(a, b, 'difference', 'non-zero');
 }
 
 /**
@@ -112,109 +98,41 @@ export async function subtractRegions(
  * nearest edge came from a hole, i.e. it is further than that from the outer
  * outlines. Where cuts from a hole meet cuts from an outline, that's halfway.
  */
-export async function holeSide(closed: CamPoint[][]) {
+export async function holeSide(closed: CamPolygon[]) {
   const outlines = await filledOutlines(closed);
   return (offset: number) => (p: CamPoint) =>
-    distanceToBoundary(p, outlines) >
+    distanceToPolygons(p, outlines) >
     Math.abs(offset) + HOLE_SIDE_TOLERANCE * precision();
 }
 
-/** Inside any outer outline (a path not nested in any other), holes ignored. */
-export function filledOutlines(closed: CamPoint[][]): Promise<CamPoint[][]> {
-  const outers = closed.filter(
-    (contour, i) =>
-      !closed.some((other, j) => j !== i && pointInPolygon(contour[0], other)),
-  );
-  return unionAll(outers);
-}
-
-/** Union of filled outlines, whatever their winding. */
-async function unionAll(contours: CamPoint[][]): Promise<CamPoint[][]> {
+/** Inside any outer outline (a polygon not nested in any other), holes ignored. */
+export function filledOutlines(closed: CamPolygon[]): Promise<CamPolygon[]> {
+  const parents = containingPolygons(closed);
+  const outers = closed.filter((_, i) => !parents[i].length);
   // Same winding for all, so overlapping outlines merge under non-zero.
-  const oriented = contours.map((c) =>
-    signedArea(c) < 0 ? [...c].reverse() : c,
+  return normalize(
+    outers.map((p) => (signedArea(p) < 0 ? reversePolygon(p) : p)),
+    'non-zero',
   );
-  const paths = await makePaths(oriented);
-  const empty = await makePaths([]);
-  const result = toPoints(
-    await clipperBooleanOperation(
-      paths,
-      empty,
-      'union',
-      'non-zero',
-      decimals(),
-    ),
-  );
-  paths.delete();
-  empty.delete();
-  return result;
-}
-
-function signedArea(points: CamPoint[]): number {
-  let area = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    area += a.x * b.y - b.x * a.y;
-  }
-  return area / 2;
 }
 
 /**
- * Union closed contours with even-odd filling, which normalizes winding so
- * holes (e.g. the counter of an "O") are recognized regardless of how the
- * source SVG oriented its subpaths.
+ * Closed polygons as a clean region under even-odd filling, so holes (e.g.
+ * the counter of an "O") are recognized whatever way the source oriented
+ * them.
  */
-export async function normalizedRegion(
-  closed: CamPoint[][],
-): Promise<CamPoint[][]> {
-  const raw = await makePaths(closed);
-  const empty = await makePaths([]);
-  const region = toPoints(
-    await clipperBooleanOperation(raw, empty, 'union', 'even-odd', decimals()),
-  );
-  raw.delete();
-  empty.delete();
-  return region;
+export function normalizedRegion(closed: CamPolygon[]): Promise<CamPolygon[]> {
+  return normalize(closed, 'even-odd');
 }
 
-export async function insetContours(
-  contours: CamPoint[][],
+/**
+ * A clean region shrunk by `inset` (grown when negative). Round joins keep
+ * reflex corners exactly `inset` away from the outline; convex corners stay
+ * sharp, which is what drives the bit into them.
+ */
+export function insetContours(
+  region: CamPolygon[],
   inset: number,
-): Promise<CamPoint[][]> {
-  const paths = await makePaths(contours);
-  // Round joins keep reflex corners exactly `inset` away from the outline;
-  // convex corners stay sharp, which is what drives the bit into them.
-  const inflated = await clipperInflateRaw(
-    paths,
-    -inset,
-    'round',
-    'polygon',
-    MITER_LIMIT,
-    decimals(),
-    ARC_TOLERANCE,
-  );
-  paths.delete();
-
-  return toPoints(inflated);
-}
-
-export function toPoints(paths: PathsD): CamPoint[][] {
-  const result: CamPoint[][] = [];
-  const pathsSize = paths.size();
-  for (let i = 0; i < pathsSize; i++) {
-    const path = paths.get(i);
-    const points: CamPoint[] = [];
-    const pathSize = path.size();
-    for (let j = 0; j < pathSize; j++) {
-      const point = path.get(j);
-      points.push({ x: point.x, y: point.y });
-    }
-    if (points.length > 2) {
-      result.push(points);
-    }
-  }
-  paths.delete();
-
-  return result;
+): Promise<CamPolygon[]> {
+  return offsetRegion(region, -inset);
 }

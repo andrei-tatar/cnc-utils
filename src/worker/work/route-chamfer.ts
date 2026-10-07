@@ -2,7 +2,8 @@ import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { enterCut } from '../../cam/ramp';
 import { travelOrder } from '../../cam/travel-order';
-import { CamPoint, CamShape } from '../../cam/types';
+import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
+import { bulgeOf } from '../../cam/arcs';
 import { inflate, orientContours, shapeRegion } from './regions';
 
 export type ChamferOptions = {
@@ -72,7 +73,9 @@ export async function routeChamfer(
     // `path` is the material grown (part) or the opening shrunk (hole).
     const loops = orientContours(path, materialOnRight === (outward === 1));
     const ordered =
-      options.optimizeTravel === false ? loops : loopsInTravelOrder(loops, at);
+      options.optimizeTravel === false
+        ? loops.map((l) => l.vertices)
+        : loopsInTravelOrder(loops, at);
     for (const loop of ordered) {
       builder.goToSafeHeight();
       const points = enterCut(
@@ -84,10 +87,15 @@ export async function routeChamfer(
         options.rampAngle ?? null,
         options.toolSize,
       );
-      for (const p of points.slice(1)) {
-        builder.carveTo(p.x, p.y, -depth);
+      for (let i = 1; i < points.length; i++) {
+        builder.arcTo(points[i].x, points[i].y, bulgeOf(points[i - 1]), -depth);
       }
-      builder.carveTo(points[0].x, points[0].y, -depth);
+      builder.arcTo(
+        points[0].x,
+        points[0].y,
+        bulgeOf(points[points.length - 1]),
+        -depth,
+      );
       at = points[0];
     }
   }
@@ -96,12 +104,12 @@ export async function routeChamfer(
 }
 
 /** The loops in the order that keeps travel short, each from its best start. */
-function loopsInTravelOrder(loops: CamPoint[][], from: CamPoint) {
+function loopsInTravelOrder(loops: CamPolygon[], from: CamPoint) {
   return travelOrder(
-    loops.map((starts) => ({ starts })),
+    loops.map(({ vertices }) => ({ starts: vertices })),
     from,
   ).map(({ index, start }) => [
-    ...loops[index].slice(start),
-    ...loops[index].slice(0, start),
+    ...loops[index].vertices.slice(start),
+    ...loops[index].vertices.slice(0, start),
   ]);
 }

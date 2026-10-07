@@ -1,106 +1,50 @@
 import {
-  clipperBooleanOperation,
-  ClipperClipType,
-  clipperInflateRaw,
-  makePaths,
-} from '../../cam/clipper';
-import { decimals } from '../../cam/geometry';
-import { containingContours, signedArea2 } from '../../cam/polygon-nesting';
-import { CamPoint, CamShape } from '../../cam/types';
-import { toPoints } from '../../cam/vcarve-geometry';
+  BooleanOp,
+  booleanOperation,
+  inflatePaths,
+  normalize,
+  offsetRegion,
+} from '../../cam/kernel';
+import { reversePolygon, signedArea, windingNumber } from '../../cam/arcs';
+import { CamPolygon, CamShape } from '../../cam/types';
 
 /**
- * Filled areas as closed contours (outlines and holes), worked on with
- * Clipper. Contours are taken by even-odd nesting, as pockets see them.
+ * Filled areas as closed polygons of lines and arcs (outlines and holes),
+ * worked on with the geometry kernel. What the kernel returns is clean:
+ * outlines counter-clockwise, holes clockwise, none crossing another.
  */
-export type Region = CamPoint[][];
+export type Region = CamPolygon[];
 
-/** The closed polygons of `input`, as one cleaned-up region. */
+/** The closed polygons of `input`, as one clean region (even-odd). */
 export function shapeRegion(input: CamShape[]): Promise<Region> {
   return regionOf(
     input
       .flatMap((s) => s.polygons)
-      .filter((p) => p.close && p.points.length > 2)
-      .map((p) => p.points),
+      .filter((p) => p.close && p.vertices.length > 1),
   );
 }
 
-export async function regionOf(contours: CamPoint[][]): Promise<Region> {
-  if (!contours.length) return [];
-  const subject = await makePaths(contours);
-  const none = await makePaths([]);
-  const result = await clipperBooleanOperation(
-    subject,
-    none,
-    'union',
-    'even-odd',
-    decimals(),
-  );
-  subject.delete();
-  none.delete();
-  return toPoints(result);
+/** Closed polygons as a clean region, nested ones taken as holes. */
+export async function regionOf(polygons: CamPolygon[]): Promise<Region> {
+  if (!polygons.length) return [];
+  return normalize(polygons, 'even-odd');
 }
 
-/** The region grown (or, negative, shrunk) by `delta` mm, rounding corners. */
+/**
+ * The region grown (or, negative, shrunk) by `delta` mm, rounding corners:
+ * every point of the result exactly `|delta|` from the region's edge.
+ */
 export async function inflate(region: Region, delta: number): Promise<Region> {
   if (!region.length) return [];
-  if (delta === 0) return region;
-  const paths = await makePaths(region);
-  const result = await clipperInflateRaw(
-    paths,
-    delta,
-    'round',
-    'polygon',
-    2,
-    decimals(),
-    0,
-  );
-  paths.delete();
-  return toPoints(result);
+  return offsetRegion(region, delta);
 }
 
 export async function combine(
   a: Region,
   b: Region,
-  type: ClipperClipType,
+  type: BooleanOp,
 ): Promise<Region> {
-  const subject = await makePaths(a);
-  const clip = await makePaths(b);
-  const result = await clipperBooleanOperation(
-    subject,
-    clip,
-    type,
-    'non-zero',
-    decimals(),
-  );
-  subject.delete();
-  clip.delete();
-  return toPoints(result);
-}
-
-/** What a round tool of `radius` cuts moving along `lines`. */
-export async function sweptArea(
-  lines: CamPoint[][],
-  radius: number,
-): Promise<Region> {
-  if (!lines.length || !(radius > 0)) return [];
-  // A lone point (a plunge) as a line too short to matter.
-  const paths = await makePaths(
-    lines.map((line) =>
-      line.length > 1 ? line : [line[0], { x: line[0].x + 1e-6, y: line[0].y }],
-    ),
-  );
-  const result = await clipperInflateRaw(
-    paths,
-    radius,
-    'round',
-    'round',
-    2,
-    decimals(),
-    0,
-  );
-  paths.delete();
-  return toPoints(result);
+  return booleanOperation(a, b, type, 'non-zero');
 }
 
 /** What a round tool of `radius` can reach of the region: an opening. */
@@ -108,28 +52,39 @@ export async function reachable(region: Region, radius: number) {
   return inflate(await inflate(region, -radius), radius);
 }
 
+/** What a round tool of `radius` cuts moving along `lines` (open paths). */
+export async function sweptArea(
+  lines: CamPolygon[],
+  radius: number,
+): Promise<Region> {
+  if (!lines.length || !(radius > 0)) return [];
+  return inflatePaths(
+    lines.map((l) => ({ ...l, close: false })),
+    radius,
+    'round',
+    'round',
+  );
+}
+
 /**
  * The region's contours, each turned so the filled side is on the right of
- * the direction of travel (or on the left).
+ * the direction of travel (or on the left): a contour nested in an odd
+ * number of others is a hole.
  */
 export function orientContours(region: Region, filledOnRight: boolean) {
-  const parents = containingContours(region);
-  return region.map((contour, i) => {
-    const isHole = parents[i].length % 2 === 1;
+  return region.map((polygon, i) => {
+    const probe = polygon.vertices[0];
+    const depth = region.filter(
+      (other, j) => j !== i && windingNumber(probe, [other]) !== 0,
+    ).length;
+    const isHole = depth % 2 === 1;
     // Counter-clockwise has the inside on the left.
-    const insideOnLeft = signedArea2(contour) > 0;
+    const insideOnLeft = signedArea(polygon) > 0;
     const filledOnLeft = insideOnLeft !== isHole;
-    return filledOnLeft === filledOnRight ? [...contour].reverse() : contour;
+    return filledOnLeft === filledOnRight ? reversePolygon(polygon) : polygon;
   });
 }
 
 export function regionShape(region: Region, sourceShapeId: string): CamShape[] {
-  return region.length
-    ? [
-        {
-          sourceShapeId,
-          polygons: region.map((points) => ({ points, close: true })),
-        },
-      ]
-    : [];
+  return region.length ? [{ sourceShapeId, polygons: region }] : [];
 }

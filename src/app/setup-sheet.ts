@@ -1,6 +1,7 @@
 import { BoxAnchor, GcodeOptions } from '../cam/gcode-options';
 import { StockOptions } from '../cam/stock';
-import { CamPath, CamPoint, CamShape } from '../cam/types';
+import { arcOf, forEachSegment, polygonsBounds } from '../cam/arcs';
+import { CamPath, CamPoint, CamPolygon, CamShape } from '../cam/types';
 
 /** What goes on the setup sheet. */
 export type SetupSheetData = {
@@ -197,7 +198,16 @@ ${
 function drawing(data: SetupSheetData, color: Map<string, string>): string {
   const { stock, zero } = data;
   const points: CamPoint[] = [
-    ...data.shapes.flatMap((s) => s.polygons.flatMap((p) => p.points)),
+    ...data.shapes.flatMap((s) =>
+      s.polygons.flatMap((p) => {
+        // Arcs included.
+        const box = polygonsBounds([p]);
+        return [
+          { x: box.minX, y: box.minY },
+          { x: box.maxX, y: box.maxY },
+        ];
+      }),
+    ),
     ...data.paths.filter((p) => p.type === 'carve').flatMap((p) => p.points),
     { x: zero.x, y: zero.y },
   ];
@@ -222,6 +232,22 @@ function drawing(data: SetupSheetData, color: Map<string, string>): string {
   const pt = (p: CamPoint) => `${round(p.x)},${round(-p.y)}`;
   const line = (ps: CamPoint[], close: boolean) =>
     ps.length ? `M${ps.map(pt).join('L')}${close ? 'Z' : ''}` : '';
+  // Lines and arcs; with Y flipped, a counter-clockwise arc turns the
+  // negative way in SVG's terms (sweep flag 0).
+  const outline = (polygon: CamPolygon) => {
+    const { vertices, close } = polygon;
+    let d = `M${pt(vertices[0])}`;
+    forEachSegment(polygon, (a, b, bulge, i) => {
+      if (bulge) {
+        const r = round(arcOf(a, b, bulge).radius);
+        d += `A${r},${r} 0 ${Math.abs(bulge) > 1 ? 1 : 0},${bulge > 0 ? 0 : 1} ${pt(b)}`;
+      } else if (!close || i < vertices.length - 1) {
+        // "Z" draws the closing line.
+        d += `L${pt(b)}`;
+      }
+    });
+    return close ? `${d}Z` : d;
+  };
 
   const parts: string[] = [];
   if (stock.enabled) {
@@ -231,8 +257,8 @@ function drawing(data: SetupSheetData, color: Map<string, string>): string {
   }
   const outlines = data.shapes
     .flatMap((s) => s.polygons)
-    .filter((p) => p.points.length > 1)
-    .map((p) => line(p.points, p.close))
+    .filter((p) => p.vertices.length > 1)
+    .map(outline)
     .join('');
   parts.push(
     `<path d="${outlines}" fill="none" stroke="#a1a1aa" stroke-width="${stroke}"/>`,

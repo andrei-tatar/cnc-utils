@@ -1,11 +1,12 @@
-import { makePath, simplifyPath } from '../../cam/clipper';
+import { simplifyPoints } from '../../cam/simplify';
+import { fromPoints } from '../../cam/arcs';
 import {
   curveTolerance,
   GeometrySettings,
   useGeometry,
 } from '../../cam/geometry';
 import { traceContours } from '../../cam/marching-squares';
-import { signedArea2 } from '../../cam/polygon-nesting';
+import { containingContours, signedArea2 } from '../../cam/polygon-nesting';
 import { CamPoint, CamShape } from '../../cam/types';
 
 export type TraceParameters = {
@@ -68,26 +69,24 @@ export async function traceBitmap(
   );
 
   const tolerance = Math.max(params.smoothing, curveTolerance());
-  const polygons: CamShape['polygons'] = [];
+  const kept: CamPoint[][] = [];
   for (const loop of loops) {
     if (Math.abs(signedArea2(loop)) / 2 < params.minArea) continue;
-    const points = await simplified(loop, tolerance);
+    const points = simplifyPoints(loop, tolerance, true);
     if (points.length > 2) {
-      polygons.push({ points, close: true });
+      kept.push(points);
     }
   }
+  // Outlines counter-clockwise and holes clockwise (by nesting), so every
+  // reading of the shape agrees which areas are traced.
+  const parents = containingContours(kept);
+  const polygons = kept.map((points, i) => {
+    const hole = parents[i].length % 2 === 1;
+    const counterClockwise = signedArea2(points) > 0;
+    return fromPoints(
+      counterClockwise === hole ? [...points].reverse() : points,
+      true,
+    );
+  });
   return polygons.length ? [{ sourceShapeId: sourceId, polygons }] : [];
-}
-
-async function simplified(points: CamPoint[], tolerance: number) {
-  const path = await makePath(points);
-  const result = await simplifyPath(path, tolerance, true);
-  const simple: CamPoint[] = [];
-  for (let i = 0; i < result.size(); i++) {
-    const p = result.get(i);
-    simple.push({ x: p.x, y: p.y });
-  }
-  result.delete();
-  path.delete();
-  return simple;
 }

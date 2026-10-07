@@ -1,4 +1,5 @@
 import { CamPoint, CamShape } from '../../cam/types';
+import { polygonsBounds } from '../../cam/arcs';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { applyTransform } from './apply-transform';
@@ -32,7 +33,6 @@ export async function flatOutline(
       endType: 'polygon',
       joinType: 'round',
       miterLimit: 2,
-      // 0: automatic, fine arcs (newer Clipper takes a coarse tolerance literally).
       arcTolerance: 0,
     });
   }
@@ -58,12 +58,10 @@ export async function flatOutline(
     return [x, y];
   }
 
-  let minNormal = Infinity,
-    maxNormal = -Infinity;
-  for (const p of input.flatMap((i) => i.polygons.flatMap((p) => p.points))) {
-    minNormal = Math.min(minNormal, p[normalAxis]);
-    maxNormal = Math.max(maxNormal, p[normalAxis]);
-  }
+  // Across the passes: the shapes' extent, arcs included.
+  const extent = polygonsBounds(input.flatMap((i) => i.polygons));
+  let minNormal = normalAxis === 'x' ? extent.minX : extent.minY;
+  let maxNormal = normalAxis === 'x' ? extent.maxX : extent.maxY;
 
   const idealStepSize = options.toolSize * options.toolEngagement;
   let normalStepSize = idealStepSize;
@@ -93,7 +91,7 @@ export async function flatOutline(
         polygons: [
           {
             close: true,
-            points: [
+            vertices: [
               getPoint(normal - options.toolSize / 2, -DISTANCE),
               getPoint(normal + options.toolSize / 2, -DISTANCE),
               getPoint(normal + options.toolSize / 2, DISTANCE),
@@ -118,11 +116,9 @@ export async function flatOutline(
       continue;
     }
 
-    const intersectionPoints = intersectionPolygons.flatMap((p) => p.points);
-
-    const alongAxisCoords = intersectionPoints.map((p) => p[alongAxis]);
-    let minAlongAxis = Math.min(...alongAxisCoords);
-    let maxAlongAxis = Math.max(...alongAxisCoords);
+    const along = polygonsBounds(intersectionPolygons);
+    let minAlongAxis = alongAxis === 'x' ? along.minX : along.minY;
+    let maxAlongAxis = alongAxis === 'x' ? along.maxX : along.maxY;
 
     if (Math.abs(minAlongAxis - maxAlongAxis) < idealStepSize) {
       minAlongAxis -= idealStepSize / 2;

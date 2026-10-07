@@ -58,14 +58,14 @@ describe('travel order', () => {
     const outer = square(50, 0, 10);
     const hole = square(50, 0, 2);
     const paths = [
-      { points: outer, close: true },
-      { points: hole, close: true },
+      { vertices: outer, close: true },
+      { vertices: hole, close: true },
     ];
     const after = insideFirst(paths);
     expect(after).toEqual([[1], []]);
 
     const stops: TravelStop[] = paths.map((p, i) => ({
-      starts: p.points,
+      starts: p.vertices,
       after: after[i],
     }));
     // The outline is nearer, but the hole goes first.
@@ -76,11 +76,14 @@ describe('travel order', () => {
     // A row of parts, each with a hole: every hole must stay before its
     // part.
     const paths = [0, 1, 2, 3, 4].flatMap((k) => [
-      { points: square(k * 30, 0, 10), close: true },
-      { points: square(k * 30, 0, 2), close: true },
+      { vertices: square(k * 30, 0, 10), close: true },
+      { vertices: square(k * 30, 0, 2), close: true },
     ]);
     const after = insideFirst(paths);
-    const stops = paths.map((p, i) => ({ starts: p.points, after: after[i] }));
+    const stops = paths.map((p, i) => ({
+      starts: p.vertices,
+      after: after[i],
+    }));
     const order = travelOrder(stops, { x: 200, y: 0 }).map((l) => l.index);
     expect([...order].sort((a, b) => a - b)).toEqual([...paths.keys()]);
     for (let part = 0; part < paths.length; part += 2) {

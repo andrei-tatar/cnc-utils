@@ -45,7 +45,8 @@ import { CutListRow, cutListCsv } from '../cut-list';
 import { nestLayout } from '../pipeline/nest';
 import { shapeLabel } from '../model-editor/shapes/describe';
 import { borrowedShapeId } from '../model-editor/operations/describe';
-import { nestContours } from '../../cam/polygon-nesting';
+import { nestPolygons } from '../../cam/polygon-nesting';
+import { hasArcs, polygonsBounds } from '../../cam/arcs';
 import { JobWarning } from '../../cam/job-checks';
 import type { Heightmap } from '../../cam/simulate';
 import { simulationInput } from '../pipeline/simulation';
@@ -393,17 +394,16 @@ export class CamService implements ShapeExporter {
         if (!shapeId || seen.has(shapeId)) continue;
         seen.add(shapeId);
         const shapes = await resultOf(shapeId);
-        const outlines = nestContours(
+        const outlines = nestPolygons(
           shapes
             .flatMap((s) => s.polygons)
-            .filter((p) => p.close && p.points.length > 2)
-            .map((p) => p.points),
+            .filter((p) => p.close && (p.vertices.length > 2 || hasArcs(p))),
         );
         outlines.forEach(({ outer }, k) => {
-          const xs = outer.map((p) => p.x);
-          const ys = outer.map((p) => p.y);
-          const w = Math.max(...xs) - Math.min(...xs);
-          const h = Math.max(...ys) - Math.min(...ys);
+          // Arcs included.
+          const box = polygonsBounds([outer]);
+          const w = box.maxX - box.minX;
+          const h = box.maxY - box.minY;
           rows.push({
             part: label(shapeId),
             copy: k + 1,
@@ -440,8 +440,8 @@ export class CamService implements ShapeExporter {
       combineLatest([this.shapes.byId(shapeId), this.model$]),
     );
     const options = resolveGcodeOptions(model.gcode);
-    // Points as close as the geometry is kept (Clipper rounds it), the curve
-    // between them as close as the polygons follow the original curves.
+    // Points as close as the geometry's precision, the curve between them as
+    // close as the shapes follow the original curves.
     const points = Math.max(0.005, 10 ** -options.geometryDecimals);
     const svg = shapesToSvg(
       shapes,

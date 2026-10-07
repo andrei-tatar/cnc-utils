@@ -27,7 +27,7 @@ describe('setup sheet', () => {
           sourceShapeId: 's',
           polygons: [
             {
-              points: [
+              vertices: [
                 { x: 0, y: 0 },
                 { x: 10, y: 0 },
                 { x: 10, y: 10 },

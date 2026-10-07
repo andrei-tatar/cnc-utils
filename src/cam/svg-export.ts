@@ -1,5 +1,14 @@
 import { ArcTolerance, fitArcs } from './arc-fit';
-import { CamPoint, CamPolygon, CamShape } from './types';
+import {
+  Affine,
+  arcOf,
+  bulgeOf,
+  forEachSegment,
+  hasArcs,
+  polygonsBounds,
+  transformPolygon,
+} from './arcs';
+import { CamPoint, CamPolygon, CamShape, CamVertex } from './types';
 
 /** A piece of an exported outline, from where the previous one ended. */
 export type OutlineSegment =
@@ -26,50 +35,43 @@ const STROKE_WIDTH = 0.1;
 
 /**
  * The shapes as an SVG document in millimetres (1 user unit = 1 mm, Y up
- * as in the design), for a laser cutter or another program. Runs of points
- * that follow a circle become arcs and other smooth runs cubic Béziers,
- * within `tolerance` of the points.
+ * as in the design), for a laser cutter or another program. The polygons'
+ * arcs are written as they are; runs of points that follow a circle become
+ * arcs and other smooth runs cubic Béziers, within `tolerance` of the
+ * points.
  */
 export function shapesToSvg(
   shapes: CamShape[],
   tolerance: ArcTolerance,
   title?: string,
 ): string {
-  const polygons = shapes.flatMap((s) => s.polygons);
-  const all = polygons.flatMap((p) => p.points);
-  const dots = polygons.filter((p) => p.points.length === 1);
-  if (!all.length) {
+  const polygons = shapes
+    .flatMap((s) => s.polygons)
+    .filter((p) => p.vertices.length);
+  const dots = polygons.filter((p) => p.vertices.length === 1);
+  if (!polygons.length) {
     return svgDocument(0, 0, '', title);
   }
 
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const p of all) {
-    minX = Math.min(minX, p.x);
-    maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y);
-    maxY = Math.max(maxY, p.y);
-  }
+  const { minX, maxX, minY, maxY } = polygonsBounds(polygons);
   const pad = MARGIN + (dots.length ? POINT_RADIUS : 0);
-  // SVG's Y points down: flip, with the drawing's corner at the margin.
+  // SVG's Y points down: flip, with the drawing's corner at the margin
+  // (the flip turns arcs the other way round).
+  const flip: Affine = [1, 0, 0, -1, pad - minX, maxY + pad];
   const place = (p: CamPoint): CamPoint => ({
     x: p.x - minX + pad,
     y: maxY - p.y + pad,
   });
 
   const outlines = polygons
-    .filter((p) => p.points.length > 1)
-    .map((p) =>
-      fitOutline({ ...p, points: p.points.map(place) }, tolerance, true),
-    );
+    .filter((p) => p.vertices.length > 1)
+    .map((p) => fitOutline(transformPolygon(p, flip), tolerance, true));
   const body = [
     outlines.length
       ? `<path d="${pathData(outlines)}" fill="none" stroke="#000" stroke-width="${STROKE_WIDTH}"/>`
       : '',
     ...dots.map((p) => {
-      const at = place(p.points[0]);
+      const at = place(p.vertices[0]);
       return `<circle cx="${mm(units(at.x))}" cy="${mm(units(at.y))}" r="${POINT_RADIUS}" fill="none" stroke="#000" stroke-width="${STROKE_WIDTH}"/>`;
     }),
   ]
@@ -97,17 +99,74 @@ function svgDocument(
 }
 
 /**
- * A polygon as lines, arcs and Béziers. Corners are kept; between them,
- * arcs are used where they make a shorter path than Béziers alone (with
- * `arcs` on).
+ * A polygon as lines, arcs and Béziers. Its own arcs are kept as they are;
+ * the runs of lines between them are fitted: corners are kept, and between
+ * them arcs are used where they make a shorter path than Béziers alone
+ * (with `arcs` on).
  */
 export function fitOutline(
   polygon: CamPolygon,
   tolerance: ArcTolerance,
   arcs = true,
 ): Outline {
-  let points = withoutRepeats(polygon.points);
-  const close = polygon.close && points.length > 2;
+  if (!hasArcs(polygon)) {
+    return fitPoints(polygon.vertices, polygon.close, tolerance, arcs);
+  }
+  let vertices = withoutRepeatedVertices(polygon.vertices, polygon.close);
+  if (vertices.length < 2) {
+    return { start: vertices[0], segments: [], close: false };
+  }
+  const close = polygon.close;
+  if (close) {
+    // Start where an arc does, so no run of lines is cut in two.
+    const first = Math.max(
+      0,
+      vertices.findIndex((v) => bulgeOf(v)),
+    );
+    vertices = [...vertices.slice(first), ...vertices.slice(0, first)];
+  }
+
+  const segments: OutlineSegment[] = [];
+  let run: CamPoint[] = [vertices[0]];
+  const flush = () => {
+    if (run.length > 1) {
+      segments.push(...fitPoints(run, false, tolerance, arcs).segments);
+    }
+  };
+  forEachSegment({ vertices, close }, (a, b, bulge) => {
+    if (!bulge) {
+      run.push(b);
+      return;
+    }
+    flush();
+    // The points are in SVG's coordinates already (see `pathData`).
+    segments.push({
+      type: 'arc',
+      to: { x: b.x, y: b.y },
+      center: arcOf(a, b, bulge).center,
+      clockwise: bulge < 0,
+    });
+    run = [b];
+  });
+  flush();
+
+  // The closing line is drawn by the path's "z".
+  const end = segments[segments.length - 1];
+  if (close && end?.type === 'line' && segments.length > 1) {
+    segments.pop();
+  }
+  return { start: { x: vertices[0].x, y: vertices[0].y }, segments, close };
+}
+
+/** `fitOutline` for a polygon of points only. */
+function fitPoints(
+  polygonPoints: CamPoint[],
+  polygonClose: boolean,
+  tolerance: ArcTolerance,
+  arcs: boolean,
+): Outline {
+  let points = withoutRepeats(polygonPoints.map(({ x, y }) => ({ x, y })));
+  const close = polygonClose && points.length > 2;
   if (close && same(points[0], points[points.length - 1])) {
     points = points.slice(0, -1);
   }
@@ -585,6 +644,33 @@ function escapeXml(text: string): string {
 
 function withoutRepeats(points: CamPoint[]): CamPoint[] {
   return points.filter((p, i) => i === 0 || !same(p, points[i - 1]));
+}
+
+/**
+ * The vertices without zero-length segments (the later vertex's bulge goes
+ * on), a closed polygon's repeated first vertex left out.
+ */
+function withoutRepeatedVertices(
+  vertices: CamVertex[],
+  close: boolean,
+): CamVertex[] {
+  const result: CamVertex[] = [];
+  for (const v of vertices) {
+    const last = result[result.length - 1];
+    if (last && same(v, last)) {
+      result[result.length - 1] = v;
+    } else {
+      result.push(v);
+    }
+  }
+  if (
+    close &&
+    result.length > 1 &&
+    same(result[0], result[result.length - 1])
+  ) {
+    result.pop();
+  }
+  return result;
 }
 
 function same(a: CamPoint, b: CamPoint): boolean {

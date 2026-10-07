@@ -1,6 +1,7 @@
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
-import { containingContours } from '../../cam/polygon-nesting';
+import { containingPolygons } from '../../cam/polygon-nesting';
+import { isArea } from '../../cam/arcs';
 import { CamPoint, CamShape } from '../../cam/types';
 import { orderPoints } from '../../cam/travel-order';
 import { centerOf } from './shape-transforms';
@@ -44,15 +45,15 @@ export function drillPositions(
   optimizeTravel = true,
 ): CamPoint[] {
   const polygons = input.flatMap((s) => s.polygons);
-  const points = polygons
-    .filter((p) => p.points.length === 1)
-    .map((p) => p.points[0]);
+  const points: CamPoint[] = polygons
+    .filter((p) => p.vertices.length === 1)
+    .map((p) => ({ x: p.vertices[0].x, y: p.vertices[0].y }));
   if (drillAt === 'centers') {
-    const closed = polygons.filter((p) => p.close && p.points.length > 2);
-    const parents = containingContours(closed.map((p) => p.points));
+    const closed = polygons.filter(isArea);
+    const parents = containingPolygons(closed);
     closed.forEach((p, i) => {
       if (parents[i].length % 2 === 0) {
-        points.push(centerOf(p.points, true));
+        points.push(centerOf(p));
       }
     });
   }

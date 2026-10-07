@@ -1,8 +1,14 @@
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
 import type { Curve, Path, Vector2 } from 'three';
-import { CamPoint, CamShape } from '../../cam/types';
+import { CamPoint, CamShape, CamVertex } from '../../cam/types';
 import { lazy, pointsEqual } from '../../util';
-import { makePath, simplifyPath } from '../../cam/clipper';
+import {
+  circularArc,
+  cubic,
+  fitBiarcs,
+  ParametricCurve,
+  quadratic,
+} from '../../cam/biarc';
 import {
   curveTolerance,
   GeometrySettings,
@@ -53,12 +59,6 @@ function elementsByTagNames(root: any, selectors: string): any[] {
 
 const svgLoader = new SVGLoader();
 
-/**
- * The tightest curve radius (mm) sampled finely enough to stay within the
- * curve tolerance; tighter bends are only a little over it.
- */
-const MIN_RADIUS = 0.5;
-
 export async function importSvg(
   svgText: string,
   sourceId: string,
@@ -78,17 +78,20 @@ export async function importSvg(
     shapes.push(camShape);
 
     for (const shape of path.subPaths) {
-      const points = curvePoints(shape);
-      if (points.length < 2) {
+      const outline = pathVertices(shape);
+      if (!outline) {
         continue;
       }
-      const closedPolygon =
-        shape.autoClose || pointsEqual(points[0], points[points.length - 1]);
-
-      camShape.polygons.push({
-        points: await simplified(points, closedPolygon),
-        close: closedPolygon,
-      });
+      const { vertices, start, end } = outline;
+      const close = shape.autoClose || pointsEqual(start, end);
+      if (!close || !pointsEqual(start, end)) {
+        vertices.push({ x: end.x, y: end.y });
+      }
+      const merged = withoutRepeats(vertices, close);
+      if (merged.length < 2 && !(close && merged.some((v) => v.bulge))) {
+        continue;
+      }
+      camShape.polygons.push({ vertices: merged, close });
     }
   }
 
@@ -96,44 +99,110 @@ export async function importSvg(
 }
 
 /**
- * Points along a path, close enough together that the polyline stays within
- * the curve tolerance (for bends down to MIN_RADIUS): a chord of length `s`
- * on radius `r` is `s² / 8r` off the arc.
+ * A path's segments as lines and arcs: circular arcs as they are, other
+ * curves (Béziers, ellipses) fitted with arcs within the curve tolerance.
+ * Vertices from each segment's start (the path's end not included).
  */
-function curvePoints(path: Path): CamPoint[] {
-  const spacing = Math.sqrt(8 * MIN_RADIUS * curveTolerance());
-  const points: CamPoint[] = [];
-  for (const curve of path.curves as Curve<Vector2>[]) {
-    const isLine = (curve as any).isLineCurve;
-    const divisions = isLine
-      ? 1
-      : Math.max(8, Math.ceil(curve.getLength() / spacing));
-    const curvePoints = curve.getPoints(divisions);
-    // Each curve starts where the previous one ended.
-    for (const p of points.length ? curvePoints.slice(1) : curvePoints) {
-      points.push({ x: p.x, y: p.y });
-    }
+function pathVertices(
+  path: Path,
+): { vertices: CamVertex[]; start: CamPoint; end: CamPoint } | null {
+  const curves = path.curves as Curve<Vector2>[];
+  if (!curves.length) {
+    return null;
   }
-  return points;
+  const vertices: CamVertex[] = [];
+  for (const curve of curves) {
+    vertices.push(...curveVertices(curve));
+  }
+  const first = curves[0].getPoint(0);
+  const last = curves[curves.length - 1].getPoint(1);
+  return {
+    vertices,
+    start: { x: first.x, y: first.y },
+    end: { x: last.x, y: last.y },
+  };
 }
 
-/** Drop points that are within the curve tolerance of the line. */
-async function simplified(
-  points: CamPoint[],
-  closed: boolean,
-): Promise<CamPoint[]> {
-  if (points.length < 3) {
-    return points;
+function curveVertices(curve: Curve<Vector2>): CamVertex[] {
+  const c = curve as any;
+  const tolerance = curveTolerance();
+  if (c.isLineCurve) {
+    return [{ x: c.v1.x, y: c.v1.y }];
   }
-  const path = await makePath(points);
-  const result = await simplifyPath(path, curveTolerance(), closed);
-  const size = result.size();
-  const simple: CamPoint[] = [];
-  for (let i = 0; i < size; i++) {
-    const point = result.get(i);
-    simple.push({ x: point.x, y: point.y });
+  if (c.isQuadraticBezierCurve) {
+    return fitBiarcs(quadratic(c.v0, c.v1, c.v2), tolerance);
   }
-  result.delete();
-  path.delete();
-  return simple;
+  if (c.isCubicBezierCurve) {
+    return fitBiarcs(cubic(c.v0, c.v1, c.v2, c.v3), tolerance);
+  }
+  if (c.isEllipseCurve) {
+    const sweep = ellipseSweep(c);
+    const rx = Math.abs(c.xRadius);
+    const ry = Math.abs(c.yRadius);
+    if (Math.abs(rx - ry) <= 1e-9 * Math.max(rx, ry, 1)) {
+      if (!sweep || !rx) return [];
+      return circularArc(
+        { x: c.aX, y: c.aY },
+        rx,
+        c.aStartAngle + (c.aRotation ?? 0),
+        sweep,
+      );
+    }
+  }
+  // Anything else (ellipses, splines): fitted from its points.
+  return fitBiarcs(threeCurve(curve), tolerance);
+}
+
+/** The sweep of three's EllipseCurve, as its getPoint works it out. */
+function ellipseSweep(c: {
+  aStartAngle: number;
+  aEndAngle: number;
+  aClockwise: boolean;
+}): number {
+  const twoPi = Math.PI * 2;
+  let delta = c.aEndAngle - c.aStartAngle;
+  const samePoints = Math.abs(delta) < Number.EPSILON;
+  while (delta < 0) delta += twoPi;
+  while (delta > twoPi) delta -= twoPi;
+  if (delta < Number.EPSILON) {
+    delta = samePoints ? 0 : twoPi;
+  }
+  if (c.aClockwise && !samePoints) {
+    delta = delta === twoPi ? -twoPi : delta - twoPi;
+  }
+  return delta;
+}
+
+function threeCurve(curve: Curve<Vector2>): ParametricCurve {
+  return {
+    point: (t) => {
+      const p = curve.getPoint(t);
+      return { x: p.x, y: p.y };
+    },
+    tangent: (t) => {
+      const p = curve.getTangent(t);
+      return { x: p.x, y: p.y };
+    },
+  };
+}
+
+/** Consecutive vertices at the same place merged (the later's bulge kept). */
+function withoutRepeats(vertices: CamVertex[], close: boolean): CamVertex[] {
+  const out: CamVertex[] = [];
+  for (const v of vertices) {
+    const last = out[out.length - 1];
+    if (last && Math.hypot(v.x - last.x, v.y - last.y) < 1e-9) {
+      out[out.length - 1] = v;
+    } else {
+      out.push(v);
+    }
+  }
+  if (close && out.length > 1) {
+    const first = out[0];
+    const last = out[out.length - 1];
+    if (Math.hypot(first.x - last.x, first.y - last.y) < 1e-9) {
+      out.pop();
+    }
+  }
+  return out;
 }

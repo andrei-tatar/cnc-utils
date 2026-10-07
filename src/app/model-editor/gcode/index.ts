@@ -217,7 +217,7 @@ export const field: FormlyFieldConfig = {
       props: {
         label: 'curve precision',
         description:
-          'mm: how closely circles, arcs, SVG and text curves are followed; smaller is smoother but slower',
+          'mm: how closely SVG and text curves (fitted with arcs) and anything stretched into an ellipse are followed; circles and arcs are exact; smaller is smoother but slower',
         min: 0.001,
         max: 1,
         required: true,
@@ -230,7 +230,7 @@ export const field: FormlyFieldConfig = {
       props: {
         label: 'geometry precision',
         description:
-          'what offsets, pockets and shape booleans are rounded to; finer is slower',
+          'the smallest distance told apart: where cuts are split, edges found and points merged; finer is slower',
         required: true,
         options: [
           { value: 1, label: '0.1 mm' },

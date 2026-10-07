@@ -31,8 +31,8 @@
                 "input": "public"
               },
               {
-                "glob": "clipper2z.wasm",
-                "input": "node_modules/clipper2-wasm/dist/es"
+                "glob": "cnc-kernel.wasm",
+                "input": "kernel/dist"
               },
               {
                 "glob": "{*.nc,index.json}",
@@ -96,6 +96,10 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "cnc-kernel.wasm",
+                "input": "kernel/dist"
               },
               {
                 "glob": "{*.nc,index.json}",
