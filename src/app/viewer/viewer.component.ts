@@ -1,8 +1,10 @@
 import {
   Component,
   ElementRef,
+  EventEmitter,
   HostListener,
   Input,
+  Output,
   OnDestroy,
   OnInit,
   ViewChild,
@@ -36,6 +38,10 @@ import {
   Object3D,
   Plane,
   Raycaster,
+  AmbientLight,
+  DirectionalLight,
+  MeshLambertMaterial,
+  DoubleSide,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
@@ -79,6 +85,7 @@ import {
 } from '../../cam/types';
 import { StockView, TimeSummary } from '../services/cam.service';
 import { JobWarning } from '../../cam/job-checks';
+import type { Heightmap } from '../../cam/simulate';
 
 /** The measuring line, drawn over everything. */
 const MEASURE_MATERIAL = new LineBasicMaterial({
@@ -139,6 +146,20 @@ const EMPTY_VIEW_SIZE = 400;
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path
             d="M1.5 10.5 10.5 1.5l4 4-9 9zM4 8l1.5 1.5M6 6l2 2M8 4l1.5 1.5M10 2l2 2"
+          />
+        </svg>
+      </button>
+      <button
+        type="button"
+        title="Simulate: show the material left after cutting (S)"
+        aria-label="Simulate"
+        [class.active]="simulating"
+        [attr.aria-pressed]="simulating"
+        (click)="toggleSimulate()"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M1.5 6.5 8 3l6.5 3.5v4L8 14l-6.5-3.5zM1.5 6.5 8 10l6.5-3.5M8 10v4M5 8.2v-2M11 8.2v-2"
           />
         </svg>
       </button>
@@ -466,6 +487,18 @@ export class ViewerComponent implements OnInit, OnDestroy {
   noteCount = 0;
   showWarnings = false;
 
+  /** What's left of the stock after cutting, while simulating. */
+  @Input()
+  set simulation(value: Heightmap | null) {
+    this.simulation$.next(value);
+  }
+  private simulation$ = new BehaviorSubject<Heightmap | null>(null);
+  /** Simulating: asks for the material left, and shows it. */
+  simulating = false;
+  @Output() simulateChange = new EventEmitter<boolean>();
+  /** The toolpaths, hidden while the simulated material is shown. */
+  private pathsGroup = new Group();
+
   /** Shapes marked as clamps: drawn in red. */
   @Input()
   set clampShapes(value: string[] | null) {
@@ -558,6 +591,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
     scene.add(grid);
     scene.add(this.content);
     scene.add(this.measureGroup);
+    this.content.add(this.pathsGroup);
+    this.drawSimulation(scene);
 
     // Axis arrows of a constant on-screen size (scaled per frame below).
     const origin = new Vector3(0, 0, 0);
@@ -835,7 +870,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                     paths,
                     draw$: this.drawPaths({
                       paths,
-                      scene: this.content,
+                      scene: this.pathsGroup,
                       material: travel ? pathTravelMaterial : pathCarveMaterial,
                       materialHighlight: travel
                         ? highlightPathTravelMaterial
@@ -1098,9 +1133,84 @@ export class ViewerComponent implements OnInit, OnDestroy {
       this.viewFromTop();
     } else if (event.key === 'm' || event.key === 'M') {
       this.toggleMeasure();
+    } else if (event.key === 's' || event.key === 'S') {
+      this.toggleSimulate();
     } else if (event.key === 'Escape' && this.measuring) {
       this.toggleMeasure();
     }
+  }
+
+  /** Shows or hides the material left after cutting. */
+  toggleSimulate() {
+    this.simulating = !this.simulating;
+    this.simulateChange.emit(this.simulating);
+  }
+
+  /**
+   * The simulated material as a lit surface (wood-coloured, darker where
+   * it's cut deeper), in place of the toolpaths while it's shown.
+   */
+  private drawSimulation(scene: Scene) {
+    scene.add(new AmbientLight('#ffffff', 1.6));
+    const sun = new DirectionalLight('#ffffff', 1.8);
+    sun.position.set(-0.5, -0.8, 1.2);
+    scene.add(sun);
+    // Pulled towards the camera, so the grid (on the same Z0) stays behind
+    // the uncut surface instead of flickering through it.
+    const material = new MeshLambertMaterial({
+      vertexColors: true,
+      side: DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    const surface = new Group();
+    this.content.add(surface);
+    const top = new Color('#e2c08f');
+    const floor = new Color('#7a4a22');
+    const color = new Color();
+
+    this.simulation$.pipe(takeUntil(this.destroy$)).subscribe((map) => {
+      surface.children.forEach((child) => (child as Mesh).geometry.dispose());
+      surface.clear();
+      this.pathsGroup.visible = !map;
+      if (map) {
+        const { nx, ny, cell, minX, minY, heights } = map;
+        const positions = new Float32Array(nx * ny * 3);
+        const colors = new Float32Array(nx * ny * 3);
+        const depth = Math.min(-1e-6, map.bottom - map.top);
+        for (let j = 0; j < ny; j++) {
+          for (let i = 0; i < nx; i++) {
+            const k = j * nx + i;
+            const z = heights[k];
+            positions.set(
+              [minX + (i + 0.5) * cell, minY + (j + 0.5) * cell, z],
+              k * 3,
+            );
+            color.lerpColors(
+              top,
+              floor,
+              Math.min(1, Math.max(0, (z - map.top) / depth)),
+            );
+            colors.set([color.r, color.g, color.b], k * 3);
+          }
+        }
+        const index: number[] = [];
+        for (let j = 0; j < ny - 1; j++) {
+          for (let i = 0; i < nx - 1; i++) {
+            const a = j * nx + i;
+            index.push(a, a + 1, a + nx, a + 1, a + nx + 1, a + nx);
+          }
+        }
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', new BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new BufferAttribute(colors, 3));
+        geometry.setIndex(index);
+        geometry.computeVertexNormals();
+        surface.add(new Mesh(geometry, material));
+      }
+      this.requestRender();
+    });
   }
 
   /** Starts or stops measuring (stopping clears the measurement). */
