@@ -39,3 +39,23 @@ describe('shape point lists migration', () => {
     ).toBe(polylinePoints);
   });
 });
+
+describe('path data migration', () => {
+  const migrated = (shape: any) =>
+    migrateModel({ shapes: [shape] }).shapes[0] as any;
+
+  it("turns a path data shape's text into a list of commands", () => {
+    const shape = migrated({ id: 'p', type: 'path-data', data: 'M0 0 h10z' });
+    expect(shape.data).toBeUndefined();
+    expect(shape.pathCommands).toEqual([
+      { id: 'p-0', command: 'M', x: 0, y: 0 },
+      { id: 'p-1', command: 'h', x: 10 },
+      { id: 'p-2', command: 'Z' },
+    ]);
+  });
+
+  it('keeps what was read before an error', () => {
+    const shape = migrated({ id: 'p', type: 'path-data', data: 'M0 0 L5 5 K' });
+    expect(shape.pathCommands.length).toBe(2);
+  });
+});
