@@ -4,7 +4,12 @@ import { GeometrySettings } from '../../cam/geometry';
 import { CamShape } from '../../cam/types';
 import worker from '../../worker';
 import { OperationParameters, ToolParameters } from '../model-editor/model';
-import { PlugSource, RestSource, VCarveSource } from './vcarve-source';
+import {
+  FlatPlugSource,
+  PlugSource,
+  RestSource,
+  VCarveSource,
+} from './vcarve-source';
 import { pointLength } from '../model-editor/operations/operation-drill';
 import { depthPerStep } from '../model-editor/operations/depth-steps';
 
@@ -16,6 +21,7 @@ export type RoutingInputs = {
   source: VCarveSource | null;
   plug: PlugSource | null;
   rest: RestSource | null;
+  flatPlug: FlatPlugSource | null;
   beyondCone: boolean;
   geometry: GeometrySettings;
   /** Order each operation's cuts to keep the travel between them short. */
@@ -50,6 +56,7 @@ function route({
   source,
   plug,
   rest,
+  flatPlug,
   beyondCone,
   geometry,
   optimizeTravel,
@@ -214,6 +221,24 @@ function route({
         leaveStock: op.leaveStock,
         clearMiddle: op.clearMiddle,
         toolEngagement: op.toolEngagement,
+      });
+
+    case 'flat-plug':
+      if (!flatPlug || bitType === 'v-bit' || bitType === 'drill') {
+        return null;
+      }
+      return worker.routeFlatPlug(shape, {
+        geometry,
+        optimizeTravel,
+        pocketToolSize: flatPlug.pocketToolSize,
+        gap: op.inlayGap ?? 0,
+        mirror: !!op.plugMirror,
+        toolSize: diameter,
+        direction: op.direction ?? 'climb',
+        startDepth: op.startDepth,
+        depthPerStep: depthPerStep(op),
+        steps: op.steps,
+        rampAngle,
       });
 
     case 'keyhole':

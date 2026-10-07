@@ -41,6 +41,13 @@ export type RestSource = {
   previousToolSize: number;
 };
 
+/** What a flat inlay plug takes from the pocket it fills. */
+export type FlatPlugSource = {
+  shapeId: string;
+  /** The pocket's bit, which rounds its corners. */
+  pocketToolSize: number;
+};
+
 type Operations = ModelType['operations'];
 type Tools = ModelType['tools'];
 
@@ -174,4 +181,21 @@ export function clearedFirst(
         tools.find((t) => t.id === o.toolId)?.bitType ?? 'end-mill',
       ),
   );
+}
+
+/** For a flat inlay plug: the pocket it fills, and that pocket's bit size. */
+export function flatPlugSource(
+  operation: OperationParameters,
+  operations: Operations,
+  tools: Tools,
+): FlatPlugSource | null {
+  if (operation.type !== 'flat-plug') {
+    return null;
+  }
+  const pocket = operations.find((o) => o.id === operation.pocketOperationId);
+  const tool = tools.find((t) => t.id === pocket?.toolId);
+  if (pocket?.type !== 'pocket' || !tool) {
+    return null;
+  }
+  return { shapeId: pocket.shapeId, pocketToolSize: tool.diameter };
 }

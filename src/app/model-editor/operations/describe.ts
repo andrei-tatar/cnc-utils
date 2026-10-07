@@ -68,6 +68,9 @@ export function describeOperation(
     case 'rest':
       what = 'rest machining';
       break;
+    case 'flat-plug':
+      what = `flat inlay plug ${stepped(operation)}`;
+      break;
     default:
       what = operation?.type ?? 'operation';
   }
@@ -101,7 +104,7 @@ export function borrowedShapeId(
   const from =
     operation?.type === 'v-carve-clear' || operation?.type === 'inlay-plug'
       ? operation.vcarveOperationId
-      : operation?.type === 'rest'
+      : operation?.type === 'rest' || operation?.type === 'flat-plug'
         ? operation.pocketOperationId
         : null;
   if (!from) {
