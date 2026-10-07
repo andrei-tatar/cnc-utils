@@ -1,5 +1,5 @@
 import { CamShape } from '../../cam/types';
-import { combine, inflate, regionShape, shapeRegion } from './regions';
+import { combine, regionShape, shapeRegion } from './regions';
 import { getBoundingBox } from './shape-transforms';
 
 /** How an inlay plug is made from the design it fills. */
@@ -15,10 +15,16 @@ export type InlayPlug = {
 };
 
 /**
- * The area to v-carve for an inlay plug: everything around the design
- * (mirrored left–right, as the plug is glued in face down) within its
- * bounding box plus `margin`, reaching `grow` into the design at the
- * surface. Carving it leaves the design standing as the plug.
+ * The area round an inlay plug: everything around the design (mirrored
+ * left–right, as the plug is glued in face down) within its bounding box
+ * plus `margin`. Carving it leaves the design standing as the plug.
+ *
+ * The carving reaches `grow` further, into the design, at the surface; but
+ * the area isn't grown by it here: each level of the carving is the area
+ * offset by `grow` less how far in that level is (`routeVCarve`,
+ * `routeVCarveClearing`). Insetting the grown area instead would round the
+ * design's corners off, more the deeper it goes, where the pocket keeps
+ * them sharp, and the plug wouldn't fit.
  */
 export async function inlayPlugShape(
   input: CamShape[],
@@ -41,9 +47,8 @@ export async function inlayPlugShape(
       { x: box.x - m, y: box.y + box.height + m },
     ],
   ];
-  const around = await combine(blank, mirrored, 'difference');
   return regionShape(
-    await inflate(around, Math.max(0, plug.grow)),
+    await combine(blank, mirrored, 'difference'),
     sourceShapeId,
   );
 }
