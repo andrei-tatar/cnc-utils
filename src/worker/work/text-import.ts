@@ -93,8 +93,13 @@ async function loadFontsFor(
     }
   }
 
-  // Loaded on demand so workers that never draw text stay small.
-  const { parse } = await import('opentype.js');
+  // Loaded on demand so workers that never draw text stay small. The build
+  // takes the package's CommonJS "browser" file, whose exports end up on
+  // `default`.
+  const opentype = await import('opentype.js');
+  const parse =
+    opentype.parse ??
+    (opentype as unknown as { default: typeof opentype }).default.parse;
 
   const ordered = [...needed];
   const all = await Promise.all(
