@@ -31,6 +31,21 @@ describe('templates', () => {
     }
   });
 
+  it('each give every tool its own index', async () => {
+    for (const template of templates) {
+      const model: any = await loadTemplate(template);
+      const indexes = model.tools.map((tool: any) => tool.index);
+      for (const index of indexes) {
+        expect(Number.isInteger(index) && index >= 1)
+          .withContext(`${template.file} tool index ${index}`)
+          .toBeTrue();
+      }
+      expect(new Set(indexes).size)
+        .withContext(template.file)
+        .toBe(indexes.length);
+    }
+  });
+
   it('each only refer to tools, shapes and operations they have', async () => {
     for (const template of templates) {
       const model: any = await loadTemplate(template);
