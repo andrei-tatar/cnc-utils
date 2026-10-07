@@ -35,6 +35,31 @@ export function fieldScope(
 }
 
 /**
+ * The variables a number field can use (`fieldScope`), with why each other
+ * one can't be used: for a variable's own value, those from itself down.
+ */
+export function fieldVariables(field: FormlyFieldConfig): Variables {
+  const variables = formVariables(field);
+  if (!field.props?.['variable']) {
+    return variables;
+  }
+  const scope = fieldScope(field);
+  const unusable = new Map(variables.unusable);
+  const own = field.model?.name?.trim();
+  for (const name of variables.scope.keys()) {
+    if (!scope.has(name)) {
+      unusable.set(
+        name,
+        name === own
+          ? `“${name}” can’t use itself`
+          : `“${name}” is defined further down`,
+      );
+    }
+  }
+  return { ...variables, scope, unusable };
+}
+
+/**
  * A number field's value with the variables in place (`null` while it's
  * empty). A variable's own value can only use the variables above it.
  */
