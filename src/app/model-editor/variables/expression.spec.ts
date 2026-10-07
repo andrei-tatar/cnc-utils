@@ -1,5 +1,6 @@
 import {
   evaluateExpression,
+  explainExpression,
   ExpressionError,
   isPlainNumber,
 } from './expression';
@@ -81,6 +82,54 @@ describe('evaluateExpression', () => {
     } catch (e) {
       expect((e as ExpressionError).unknownName).toBe('missing');
     }
+  });
+});
+
+describe('explainExpression', () => {
+  const vars = new Map([['a', 10]]);
+  /** Each token, the part it makes and that part's value (or error). */
+  const explain = (text: string) =>
+    explainExpression(text, vars).map(
+      (e) =>
+        `${text.slice(e.at, e.end)} | ${text.slice(e.from, e.to)} | ${
+          'value' in e ? e.value : e.error.message
+        }`,
+    );
+
+  it('gives every token the value of the part it makes', () => {
+    expect(explain('sqrt(a * 10) + 3cm')).toEqual([
+      'a | a | 10',
+      '10 | 10 | 10',
+      '* | a * 10 | 100',
+      'sqrt | sqrt(a * 10) | 10',
+      '( | sqrt(a * 10) | 10',
+      ') | sqrt(a * 10) | 10',
+      '3cm | 3cm | 30',
+      '+ | sqrt(a * 10) + 3cm | 40',
+    ]);
+    expect(explain('-(1 + 1) ^ 2')).toEqual([
+      '1 | 1 | 1',
+      '1 | 1 | 1',
+      '+ | 1 + 1 | 2',
+      '( | (1 + 1) | 2',
+      ') | (1 + 1) | 2',
+      '2 | 2 | 2',
+      '^ | (1 + 1) ^ 2 | 4',
+      '- | -(1 + 1) ^ 2 | -4',
+    ]);
+  });
+
+  it('says why a part has no value', () => {
+    expect(explain('b + 1')).toEqual([
+      'b | b | unknown variable “b”',
+      '1 | 1 | 1',
+      '+ | b + 1 | unknown variable “b”',
+    ]);
+  });
+
+  it('explains only numbers and names in text it can’t read', () => {
+    expect(explain('a * (2in +')).toEqual(['a | a | 10', '2in | 2in | 50.8']);
+    expect(explain('a $')).toEqual([]);
   });
 });
 
