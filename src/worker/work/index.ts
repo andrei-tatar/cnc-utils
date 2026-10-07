@@ -12,3 +12,4 @@ export * from './route-drill';
 export * from './route-helix';
 export * from './route-chamfer';
 export * from './route-rest';
+export * from './keep-tabs';

@@ -131,6 +131,13 @@ app-model-editor formly-field-number .input-group-text {
   color: var(--bs-secondary-color);
 }
 
+// Inputs holding numbers to read as code (e.g. "x, y" point lists): the
+// same font as the expressions in number fields.
+app-model-editor .code-input .form-control {
+  font-family: var(--code-font);
+  font-variant-ligatures: none;
+}
+
 // A variable: "name  value" on one row, without labels; a boolean's shape:
 // "operation  shape" (the first shape has no operation).
 app-model-editor .variable-row,

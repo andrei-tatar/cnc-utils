@@ -6,6 +6,17 @@ export class GCodeBuilder {
   private _instructions: PathInstruction[] = [];
   private _isAtSafetyHeight = false;
 
+  /** A builder of `instructions` (as `instructions` gives them). */
+  static of(
+    instructions: readonly PathInstruction[],
+    isAtSafetyHeight: boolean,
+  ): GCodeBuilder {
+    const builder = new GCodeBuilder();
+    builder._instructions = [...instructions];
+    builder._isAtSafetyHeight = isAtSafetyHeight;
+    return builder;
+  }
+
   static clone(a: GCodeBuilder): GCodeBuilder {
     const cloned = new GCodeBuilder();
     cloned._instructions = [...a._instructions];
@@ -123,6 +134,11 @@ export class GCodeBuilder {
       }
     }
     return box;
+  }
+
+  /** What was recorded, in order (to rewrite it; see `of`). */
+  get instructions(): readonly PathInstruction[] {
+    return this._instructions;
   }
 
   get isAtSafetyHeight() {
@@ -851,7 +867,7 @@ type GcodeSink = {
   cycle?(text: string): void;
 };
 
-type PathInstruction =
+export type PathInstruction =
   | { type: 'plunge'; depth: number }
   | { type: 'travel'; to: CamPoint }
   | { type: 'safety-height' }

@@ -55,8 +55,8 @@ function route({
   optimizeTravel,
 }: RoutingInputs): Observable<GCodeBuilder> | null {
   // No (or a deleted) tool or shape: nothing to cut. Routing functions
-  // expect at least one shape.
-  if (!tool || !shape.length) {
+  // expect at least one shape (a shape of only tabs has nothing to cut).
+  if (!tool || !shape.some((s) => s.polygons.length)) {
     return null;
   }
   const { bitType, diameter, vAngle, tipDiameter } = tool;
@@ -106,11 +106,6 @@ function route({
         startDepth: op.startDepth,
         depthPerStep: depthPerStep(op),
         steps: op.steps,
-        tabsEnabled: op.tabsEnabled,
-        tabCount: op.tabCount,
-        tabWidth: op.tabWidth,
-        tabHeight: op.tabHeight,
-        tabOffset: op.tabOffset ?? 0,
         mode: op.mode ?? 'both',
         rampAngle,
       });

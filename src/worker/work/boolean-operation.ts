@@ -99,7 +99,14 @@ export async function applyBooleanOperations(
   }
   result.delete();
 
-  return output.polygons.length ? [output] : [];
+  // Tabs on the shapes combined stay where they are.
+  const tabs = operands.flatMap(({ shape }) =>
+    shape.flatMap((s) => s.tabs ?? []),
+  );
+  if (tabs.length) {
+    output.tabs = tabs;
+  }
+  return output.polygons.length || tabs.length ? [output] : [];
 }
 
 /**

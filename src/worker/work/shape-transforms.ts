@@ -56,13 +56,22 @@ export function applyAffine(m: Affine, { x, y }: CamPoint): CamPoint {
 }
 
 export function transformShapes(input: CamShape[], m: Affine): CamShape[] {
-  return input.map((shape) => ({
-    sourceShapeId: shape.sourceShapeId,
-    polygons: shape.polygons.map((poly) => ({
-      close: poly.close,
-      points: poly.points.map((p) => applyAffine(m, p)),
-    })),
-  }));
+  return input.map((shape) => {
+    const moved: CamShape = {
+      sourceShapeId: shape.sourceShapeId,
+      polygons: shape.polygons.map((poly) => ({
+        close: poly.close,
+        points: poly.points.map((p) => applyAffine(m, p)),
+      })),
+    };
+    if (shape.tabs) {
+      moved.tabs = shape.tabs.map((tab) => ({
+        ...tab,
+        points: tab.points.map((p) => applyAffine(m, p)),
+      }));
+    }
+    return moved;
+  });
 }
 
 function translation(x: number, y: number): Affine {

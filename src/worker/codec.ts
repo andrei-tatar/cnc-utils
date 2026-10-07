@@ -1,5 +1,5 @@
 import { GCodeBuilder, PackedGCode } from '../cam/gcode-builder';
-import { CamShape } from '../cam/types';
+import { CamShape, CamTab } from '../cam/types';
 
 /**
  * Packs what crosses the worker boundary so it copies (or transfers)
@@ -18,6 +18,8 @@ type PackedShape = {
   offsets: Uint32Array;
   /** x, y of every point, polygon after polygon. */
   coords: Float64Array;
+  /** Its tabs, as they are (there are few). */
+  tabs?: CamTab[];
 };
 
 // The same shape is often sent to several jobs (one per operation using
@@ -103,13 +105,17 @@ function packShape(shape: CamShape): PackedShape {
     }
   });
   offsets[shape.polygons.length] = at;
-  return {
+  const packed: PackedShape = {
     packedShape: true,
     sourceShapeId: shape.sourceShapeId,
     close,
     offsets,
     coords,
   };
+  if (shape.tabs) {
+    packed.tabs = shape.tabs;
+  }
+  return packed;
 }
 
 function unpackShape(packed: PackedShape): CamShape {
@@ -121,21 +127,49 @@ function unpackShape(packed: PackedShape): CamShape {
     }
     return { points, close: closed === 1 };
   });
-  return { sourceShapeId: packed.sourceShapeId, polygons };
+  const shape: CamShape = { sourceShapeId: packed.sourceShapeId, polygons };
+  if (packed.tabs) {
+    shape.tabs = packed.tabs;
+  }
+  return shape;
 }
 
 /**
- * Only an object with exactly a shape's fields, so nothing else is lost by
- * packing it.
+ * Only an object with exactly a shape's fields (tabs optional), so nothing
+ * else is lost by packing it.
  */
 function isCamShape(value: unknown): value is CamShape {
   if (!isPlainObject(value) || !Array.isArray(value['polygons'])) {
     return false;
   }
+  const tabs = value['tabs'];
   return (
-    keyCount(value) === 2 &&
+    keyCount(value) === (tabs === undefined ? 2 : 3) &&
     typeof value['sourceShapeId'] === 'string' &&
-    (value['polygons'] as unknown[]).every(isPolygon)
+    (value['polygons'] as unknown[]).every(isPolygon) &&
+    (tabs === undefined || (Array.isArray(tabs) && tabs.every(isTab)))
+  );
+}
+
+function isTab(value: unknown) {
+  return (
+    isPlainObject(value) &&
+    keyCount(value) === 2 &&
+    typeof value['top'] === 'number' &&
+    isPolygonPoints(value['points'])
+  );
+}
+
+function isPolygonPoints(points: unknown) {
+  return (
+    Array.isArray(points) &&
+    points.every(
+      (p) =>
+        isPlainObject(p) &&
+        typeof p['x'] === 'number' &&
+        typeof p['y'] === 'number' &&
+        keyCount(p) === 2,
+    )
   );
 }
 
@@ -145,14 +179,7 @@ function isPolygon(value: unknown) {
   return (
     keyCount(value) === 2 &&
     typeof value['close'] === 'boolean' &&
-    Array.isArray(points) &&
-    points.every(
-      (p) =>
-        isPlainObject(p) &&
-        typeof p['x'] === 'number' &&
-        typeof p['y'] === 'number' &&
-        keyCount(p) === 2,
-    )
+    isPolygonPoints(points)
   );
 }
 

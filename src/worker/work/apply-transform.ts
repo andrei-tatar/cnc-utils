@@ -1,6 +1,6 @@
 import { Matrix3, Vector2 } from 'three';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
-import { CamPolygon, CamShape } from '../../cam/types';
+import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
 import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
 import { applyConvexHull } from './convex-hull-transform';
@@ -15,8 +15,34 @@ import {
   shapeCorners,
 } from './shape-transforms';
 import { dogbones, simplifyShapes } from './clipper-transforms';
+import { placeTabs } from '../../cam/tabs';
+import { parsePointList } from '../../cam/point-patterns';
 
 export async function applyTransform(
+  input: CamShape[],
+  transform: TransformParameters,
+  geometry?: GeometrySettings,
+): Promise<CamShape[]> {
+  return keepingTabs(input, await transformed(input, transform, geometry));
+}
+
+/**
+ * The transform's output, keeping the input's tabs where the transform
+ * didn't move them with the shape (it made new outlines): they stay where
+ * they were.
+ */
+function keepingTabs(input: CamShape[], output: CamShape[]): CamShape[] {
+  const tabs = input.flatMap((s) => s.tabs ?? []);
+  if (!tabs.length || output.some((s) => s.tabs?.length)) {
+    return output;
+  }
+  if (!output.length) {
+    return [{ sourceShapeId: input[0].sourceShapeId, polygons: [], tabs }];
+  }
+  return [{ ...output[0], tabs }, ...output.slice(1)];
+}
+
+async function transformed(
   input: CamShape[],
   transform: TransformParameters,
   geometry?: GeometrySettings,
@@ -188,6 +214,21 @@ export async function applyTransform(
       case 'corners':
         return shapeCorners(input, transform);
 
+      case 'tabs':
+        return placeTabs(input, {
+          on: transform.tabsOn,
+          side: transform.tabSide,
+          count: transform.tabCount,
+          width: transform.tabWidth,
+          length: transform.tabLength,
+          depth: transform.tabDepth,
+          offset: transform.tabOffset ?? 0,
+          at:
+            transform.tabPlacement === 'points'
+              ? parsePointList(transform.tabPoints)
+              : undefined,
+        });
+
       default:
         return input;
     }
@@ -251,19 +292,22 @@ function boundingRectangles(
 }
 
 function applyMatrixTransform(input: CamShape, matrix: Matrix3): CamShape {
-  return {
-    sourceShapeId: input.sourceShapeId,
-    polygons: input.polygons.map((poly) => {
-      return {
-        close: poly.close,
-        points: poly.points.map((p) => {
-          const result = new Vector2(p.x, p.y).applyMatrix3(matrix);
-          return {
-            x: result.x,
-            y: result.y,
-          };
-        }),
-      };
-    }),
+  const apply = (p: CamPoint) => {
+    const result = new Vector2(p.x, p.y).applyMatrix3(matrix);
+    return { x: result.x, y: result.y };
   };
+  const shape: CamShape = {
+    sourceShapeId: input.sourceShapeId,
+    polygons: input.polygons.map((poly) => ({
+      close: poly.close,
+      points: poly.points.map(apply),
+    })),
+  };
+  if (input.tabs) {
+    shape.tabs = input.tabs.map((tab) => ({
+      ...tab,
+      points: tab.points.map(apply),
+    }));
+  }
+  return shape;
 }

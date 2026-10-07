@@ -7,14 +7,10 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
-import { alongLoop, arcTo, enterCut, Resume, startingAt } from '../../cam/ramp';
+import { enterCut, Resume } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 import { insideFirst, TravelStop, travelOrder } from '../../cam/travel-order';
-
-const EPS = 1e-6;
-
-type Tab = { start: number; end: number };
 
 export async function routeProfile(
   input: CamShape[],
@@ -27,12 +23,6 @@ export async function routeProfile(
     startDepth: number;
     depthPerStep: number;
     steps: number;
-    tabsEnabled: boolean;
-    tabCount: number;
-    tabWidth: number;
-    tabHeight: number;
-    /** Moves all tabs this far along the toolpath (mm). */
-    tabOffset?: number;
     /** Which part of the shape to profile. */
     mode?: ShapePart;
     /** Ramp down into each pass at this angle (degrees) instead of plunging. */
@@ -121,11 +111,6 @@ export async function routeProfile(
       ? polygons
       : travelOrdered(polygons, {
           ...options,
-          // Tabs are placed from a loop's first point: keep it.
-          tabs:
-            options.tabsEnabled &&
-            options.tabCount > 0 &&
-            options.tabHeight > 0,
           // Open paths from loops keep their direction.
           reversible: options.mode !== 'holes',
         });
@@ -138,34 +123,16 @@ export async function routeProfile(
 
     for (let step = 0; step < options.steps; step++) {
       const depth = -(options.startDepth + options.depthPerStep * (step + 1));
-      const isLastStep = step === options.steps - 1;
-
-      // Tabs are only meaningful on the final pass of a closed loop: they leave
-      // a thin bridge of material so the part stays put when it's cut free.
-      const tabFloor =
-        isLastStep &&
-        options.tabsEnabled &&
-        polygon.close &&
-        options.tabCount > 0 &&
-        options.tabHeight > 0
-          ? Math.min(0, depth + options.tabHeight)
-          : null;
 
       // Each pass starts where the previous one left off.
       const from = -(options.startDepth + options.depthPerStep * step);
       const cut = carvePass(
         builder,
         points,
-        polygon.points,
         polygon.close,
         from,
         depth,
-        tabFloor,
-        {
-          ...options,
-          rampAngle: options.rampAngle ?? null,
-          tabOffset: options.tabOffset ?? 0,
-        },
+        { ...options, rampAngle: options.rampAngle ?? null },
         resume,
       );
       if (options.rampAngle) {
@@ -186,13 +153,12 @@ export async function routeProfile(
 /**
  * The paths in the order that keeps the travel between them short, those
  * inside a loop before it (so a part stays held until it's cut free). Loops
- * start at their point nearest the tool, unless that would move their tabs;
- * open paths may be cut either way round when `reversible`.
+ * start at their point nearest the tool; open paths may be cut either way
+ * round when `reversible`.
  */
 function travelOrdered(
   polygons: CamPolygon[],
   options: {
-    tabs: boolean;
     reversible: boolean;
     steps: number;
     rampAngle?: number | null;
@@ -204,7 +170,7 @@ function travelOrdered(
   const endsWhereStarted = !!options.rampAngle && options.steps % 2 === 0;
   const stops = polygons.map(({ points, close }, i): TravelStop => {
     if (close) {
-      return { starts: options.tabs ? [points[0]] : points, after: after[i] };
+      return { starts: points, after: after[i] };
     }
     const first = points[0];
     const last = points[points.length - 1];
@@ -328,67 +294,16 @@ function orientPath(
     : [...points].reverse();
 }
 
-/**
- * One pass along `points` at `depth`. `anchor` is the path as it was first
- * given (`points` may start elsewhere by now): tabs sit at fixed places
- * measured from its first point, so they stay put whatever the pass starts.
- */
+/** One pass along `points` at `depth`; returns the path as it was cut. */
 function carvePass(
   builder: GCodeBuilder,
   points: CamPoint[],
-  anchor: CamPoint[],
   close: boolean,
   from: number,
   depth: number,
-  tabFloor: number | null,
-  options: {
-    tabCount: number;
-    tabWidth: number;
-    tabOffset: number;
-    rampAngle: number | null;
-    toolSize: number;
-  },
+  options: { rampAngle: number | null; toolSize: number },
   resume?: Resume,
 ): CamPoint[] {
-  const perimeter = pathLength(close ? [...anchor, anchor[0]] : anchor);
-  const layout =
-    tabFloor === null
-      ? []
-      : tabIntervals(
-          perimeter,
-          options.tabCount,
-          options.tabWidth,
-          options.tabOffset,
-        );
-  // The free stretch between two tabs.
-  const gap = layout.length
-    ? perimeter / layout.length - (layout[0].end - layout[0].start)
-    : Infinity;
-
-  if (layout.length) {
-    // Start just before a tab when ramping (the ramp gets the gap before
-    // it), else plunge in the middle of a gap.
-    const start = options.rampAngle
-      ? layout[0].start
-      : layout[0].start - gap / 2;
-    points = startingAt(anchor, start);
-    if (resume?.down && options.rampAngle) {
-      // Carry on along the cut (at the depth of the pass before, so through
-      // material that's gone) to where this pass's ramp starts.
-      const needed =
-        (from - depth) / Math.tan((options.rampAngle * Math.PI) / 180);
-      const rampStart = needed <= gap ? start - needed : start;
-      const here = arcTo(anchor, resume.point);
-      const ahead = mod(rampStart - here, perimeter);
-      for (const p of alongLoop(startingAt(anchor, here), ahead)) {
-        builder.carveTo(p.x, p.y);
-      }
-      resume = { point: startingAt(anchor, rampStart)[0], down: true };
-    } else {
-      resume = undefined;
-    }
-  }
-
   if (!resume?.down) {
     builder.goToSafeHeight();
   }
@@ -400,132 +315,15 @@ function carvePass(
     depth,
     options.rampAngle,
     options.toolSize,
-    gap,
+    Infinity,
     resume,
   );
-  // The tabs, measured from where the pass starts.
-  const tabs = shiftTabs(
-    layout,
-    layout.length ? arcTo(anchor, points[0]) : 0,
-    perimeter,
-  );
-  const edges = tabs.flatMap((t) => [t.start, t.end]);
-
   // Vertices the tool visits in order; a closed loop returns to its start.
   const loop = close ? [...points, points[0]] : points;
-
-  if (tabFloor === null) {
-    for (let i = 1; i < loop.length; i++) {
-      builder.carveTo(loop[i].x, loop[i].y);
-    }
-    return points;
-  }
-
-  let traveled = 0;
-  let currentDepth = depth;
-
-  const setDepth = (atArcLength: number) => {
-    const want = inTab(atArcLength + EPS, tabs) ? tabFloor : depth;
-    if (want !== currentDepth) {
-      builder.plunge(want);
-      currentDepth = want;
-    }
-  };
-  // A tab can start right at the start (when ramping).
-  setDepth(0);
-
   for (let i = 1; i < loop.length; i++) {
-    const a = loop[i - 1];
-    const b = loop[i];
-    const segLength = getDistance(a, b);
-    if (segLength === 0) {
-      continue;
-    }
-
-    // Split the segment at every tab edge it crosses, lifting to the tab floor
-    // inside tabs and dropping back to full depth outside them.
-    const crossings = edges
-      .filter((s) => s > traveled + EPS && s < traveled + segLength - EPS)
-      .sort((x, y) => x - y);
-
-    for (const crossing of crossings) {
-      const fraction = (crossing - traveled) / segLength;
-      builder.carveTo(
-        a.x + (b.x - a.x) * fraction,
-        a.y + (b.y - a.y) * fraction,
-      );
-      setDepth(crossing);
-    }
-
-    builder.carveTo(b.x, b.y);
-    traveled += segLength;
-
-    if (i < loop.length - 1) {
-      setDepth(traveled);
-    }
+    builder.carveTo(loop[i].x, loop[i].y);
   }
   return points;
-}
-
-/**
- * Evenly spaced tabs, measured from the path's first point: centered
- * between multiples of the spacing, then moved along by `offset`.
- */
-function tabIntervals(
-  perimeter: number,
-  count: number,
-  width: number,
-  offset: number,
-): Tab[] {
-  if (count <= 0 || width <= 0 || perimeter <= 0) {
-    return [];
-  }
-
-  const spacing = perimeter / count;
-  const half = Math.min(width, spacing) / 2;
-  const tabs: Tab[] = [];
-  for (let k = 0; k < count; k++) {
-    const center = mod((k + 0.5) * spacing + offset, perimeter);
-    tabs.push({ start: center - half, end: center + half });
-  }
-  return tabs.sort((a, b) => a.start - b.start);
-}
-
-/**
- * Tabs measured from `start` instead of the path's first point, within
- * [0, perimeter): one that spans the start is split in two.
- */
-function shiftTabs(tabs: Tab[], start: number, perimeter: number): Tab[] {
-  const shifted: Tab[] = [];
-  for (const tab of tabs) {
-    const from = mod(tab.start - start, perimeter);
-    const to = from + (tab.end - tab.start);
-    if (to > perimeter) {
-      shifted.push(
-        { start: from, end: perimeter },
-        { start: 0, end: to - perimeter },
-      );
-    } else {
-      shifted.push({ start: from, end: to });
-    }
-  }
-  return shifted.sort((a, b) => a.start - b.start);
-}
-
-function mod(a: number, n: number) {
-  return ((a % n) + n) % n;
-}
-
-function inTab(arcLength: number, tabs: Tab[]): boolean {
-  return tabs.some((t) => arcLength >= t.start && arcLength <= t.end);
-}
-
-function pathLength(loop: CamPoint[]): number {
-  let total = 0;
-  for (let i = 1; i < loop.length; i++) {
-    total += getDistance(loop[i - 1], loop[i]);
-  }
-  return total;
 }
 
 function signedArea(points: CamPoint[]): number {
