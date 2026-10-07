@@ -20,6 +20,23 @@ export function parsePointList(text: string | null | undefined): CamPoint[] {
   return points;
 }
 
+/**
+ * A typed list's points with both coordinates worked out: a point whose x
+ * or y is an expression that can't be (resolved to `null`) is left out.
+ */
+export function finitePoints(
+  list:
+    | ReadonlyArray<{ x: unknown; y: unknown } | null | undefined>
+    | null
+    | undefined,
+): CamPoint[] {
+  return (Array.isArray(list) ? list : []).flatMap((p) =>
+    Number.isFinite(p?.x) && Number.isFinite(p?.y)
+      ? [{ x: p!.x as number, y: p!.y as number }]
+      : [],
+  );
+}
+
 /** `countX` × `countY` points, `spacingX` / `spacingY` apart, from (0, 0). */
 export function gridPoints(
   countX: number,

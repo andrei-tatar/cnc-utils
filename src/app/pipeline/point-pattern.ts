@@ -2,8 +2,8 @@ import { circlePolygon } from '../../cam/corners';
 import { GeometrySettings } from '../../cam/geometry';
 import {
   circlePoints,
+  finitePoints,
   gridPoints,
-  parsePointList,
 } from '../../cam/point-patterns';
 import { CamShape } from '../../cam/types';
 import type { ModelType as PointsParameters } from '../model-editor/shapes/shape-points';
@@ -16,7 +16,7 @@ export function pointPattern(
 ): CamShape[] {
   const points =
     t.pointsMode === 'list'
-      ? parsePointList(t.pointsList)
+      ? finitePoints(t.pointsList)
       : t.pointsMode === 'circle'
         ? circlePoints(t.circleCount, t.circleDiameter, t.circleStartAngle)
         : gridPoints(

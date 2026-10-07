@@ -1,5 +1,5 @@
 import { boxPanelOutline } from '../../cam/box-joints';
-import { parsePointList, pathData } from '../../cam/point-patterns';
+import { finitePoints, pathData } from '../../cam/point-patterns';
 import { ShapeParameters } from '../model-editor/model';
 
 /**
@@ -31,7 +31,7 @@ export function createSvgFromShape(t: SvgShapeParameters) {
     }
     case 'polyline':
       return `<svg><path d="${pathData(
-        parsePointList(t.polylinePoints),
+        finitePoints(t.polylinePoints),
         t.polylineClosed,
       )}" /></svg>`;
     case 'box-panel':

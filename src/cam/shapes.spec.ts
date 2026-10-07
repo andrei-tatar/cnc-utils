@@ -1,7 +1,30 @@
 import { boxPanelOutline, fingerCount } from './box-joints';
 import { traceContours } from './marching-squares';
-import { circlePoints, gridPoints, parsePointList } from './point-patterns';
+import {
+  circlePoints,
+  finitePoints,
+  gridPoints,
+  parsePointList,
+} from './point-patterns';
 import { signedArea2 } from './polygon-nesting';
+
+describe('finitePoints', () => {
+  it('keeps the points whose coordinates were worked out', () => {
+    expect(
+      finitePoints([
+        { x: 1, y: 2 },
+        { x: null, y: 3 },
+        { x: 4, y: 'a' },
+        null,
+        { x: -5, y: 0.5 },
+      ]),
+    ).toEqual([
+      { x: 1, y: 2 },
+      { x: -5, y: 0.5 },
+    ]);
+    expect(finitePoints(undefined)).toEqual([]);
+  });
+});
 
 describe('parsePointList', () => {
   it('reads points in any common separator, skipping other lines', () => {

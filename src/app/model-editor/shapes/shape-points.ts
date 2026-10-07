@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { PointItem, pointListField } from '../point-list';
 
 /**
  * Points or round holes: a typed list, a grid, or a circle (bolt circle).
@@ -8,8 +9,7 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 export interface ModelType {
   type: 'points';
   pointsMode: 'list' | 'grid' | 'circle';
-  /** One "x, y" per line. */
-  pointsList: string;
+  pointsList: PointItem[];
   gridCountX: number;
   gridCountY: number;
   gridSpacingX: number;
@@ -45,15 +45,23 @@ const field: FormlyFieldConfig = {
       },
     },
     {
-      key: 'pointsList',
-      type: 'textarea',
-      defaultValue: '0, 0\n20, 0\n20, 20',
-      props: {
-        label: 'x, y',
-        description: 'one point per line, in mm',
-        rows: 5,
+      ...pointListField(
+        'pointsList',
+        {
+          description:
+            'mm. The preview shows the coordinates under the cursor.',
+        },
+        [
+          { id: 'p0', x: 0, y: 0 },
+          { id: 'p1', x: 20, y: 0 },
+          { id: 'p2', x: 20, y: 20 },
+        ],
+      ),
+      expressions: {
+        // A list's own model is the list: the mode is on its parent's.
+        hide: (field: FormlyFieldConfig) =>
+          field.parent?.model?.pointsMode !== 'list',
       },
-      expressions: hideUnlessMode('list'),
     },
     {
       key: 'gridCountX',
