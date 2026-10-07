@@ -19,6 +19,7 @@ import {
 } from '../../cam/polygon-nesting';
 import { enterCut } from '../../cam/ramp';
 import { travelOrder } from '../../cam/travel-order';
+import { clearedAtMaxDepth, ClearingTool } from './route-vcarve-clearing';
 
 /**
  * Gets the bit down to `to` at the start of `path` (from safe height):
@@ -31,6 +32,18 @@ type Enter = (
   to: number,
   floor?: (along: number) => number,
 ) => void;
+
+/**
+ * How far into what clearings left the flat bottom's passes still go, in
+ * stepovers: an overlap that leaves no slivers between the two.
+ */
+const CLEARED_OVERLAP = 3;
+
+/**
+ * The longest move (mm) the bit makes at the bottom from one flat-bottom
+ * cut to the next, instead of going up and back down.
+ */
+const LINK_DISTANCE = 5;
 
 /**
  * V-carve by successive inward offsets. A V-bit whose center sits `d` inside
@@ -58,6 +71,11 @@ export async function routeVCarve(
     stepover: number | null;
     clearFlatBottom: boolean;
     /**
+     * End mills that clear for this v-carve before it (see
+     * routeVCarveClearing): the flat bottom then only needs what they left.
+     */
+    clearedBy?: ClearingTool[];
+    /**
      * With a stepover: finish with a pass along the shape's centre line
      * (medial axis), so its deepest line is cut however coarse the stepover.
      */
@@ -80,6 +98,7 @@ export async function routeVCarve(
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
   const optimizeTravel = options.optimizeTravel !== false;
+  const design = input;
   // An inlay plug: carve around the (mirrored) design instead, reaching
   // `shift` further at the surface (see inlayPlugShape).
   let shift = 0;
@@ -170,17 +189,37 @@ export async function routeVCarve(
   // Insets below are from the outline of `area`: the region, or the region
   // grown by `shift` for a plug.
   const area = shift > 0 ? await inflate(region, shift) : region;
-  // The contours `inset` in, within the island `contours` (`fromInset` in).
-  // Down to `shift` in, a plug's levels are the region grown by what's left
-  // of it: insetting the level above would round off the corners where the
-  // area wraps round the design, more at each level.
-  const inside: Inside = async (contours, fromInset, inset) =>
+  // Each level `inset` in, offset from the region itself (grown by what's
+  // left of `shift`, for a plug) rather than from the level above: every
+  // offset rounds to the precision, and offsetting offsets compounds that
+  // into wiggles, whose kinks (kept sharp, as convex corners are) the bit
+  // then runs out into. It also keeps the corners sharp where a plug's area
+  // wraps round the design.
+  const levels = new Map<number, Promise<CamPoint[][]>>();
+  const levelAt = (inset: number) => {
+    let level = levels.get(inset);
+    if (!level) {
+      level = insetContours(region, inset - shift).then((contours) =>
+        contours.map(mergeClosePoints).filter((c) => c.length > 2),
+      );
+      levels.set(inset, level);
+    }
+    return level;
+  };
+  // The contours `inset` in, within the island `contours` (`fromInset` in):
+  // the parts of that level near it, clipped to it.
+  const inside: Inside = async (contours, _fromInset, inset) => {
+    const box = bounds(contours);
+    const near = (await levelAt(inset)).filter((c) =>
+      overlaps(bounds([c]), box),
+    );
+    return near.length ? combine(near, contours, 'intersection') : [];
+  };
+  // Within a step of the island (where it collapses): offsetting it adds
+  // only one rounding.
+  const withinStep: Inside = (contours, fromInset, inset) =>
     fromInset < shift
-      ? combine(
-          await insetContours(region, inset - shift),
-          contours,
-          'intersection',
-        )
+      ? inside(contours, fromInset, inset)
       : insetContours(contours, inset - fromInset);
 
   // "Holes only" makes the same cuts as "outlines minus holes" but keeps just
@@ -218,12 +257,53 @@ export async function routeVCarve(
       }
     : null;
 
+  // The flat bottom's passes (past the max-depth inset) are only needed
+  // where the clearings didn't reach, overlapping them a little.
+  const cleared =
+    options.clearFlatBottom && options.clearedBy?.length
+      ? await insetContours(
+          await clearedAtMaxDepth(design, options, options.clearedBy),
+          CLEARED_OVERLAP * stepover,
+        )
+      : [];
+  const uncut = cleared.length
+    ? (p: CamPoint) => !insideRegion(p, cleared)
+    : null;
+  const flatBottom = (inset: number) =>
+    !!uncut && inset > maxInset + precision();
+  // A long edge can cross what's cleared between its ends: give the
+  // flat bottom's contours a point either side of every crossing, so
+  // their points tell what to cut.
+  const crossings = (inset: number, contours: CamPoint[][]) =>
+    flatBottom(inset)
+      ? contours.map((c) => splitWhereChanges(c, uncut!, stepover / 2))
+      : contours;
+  const keepCut = (inset: number) => {
+    const keep = keepAt(inset);
+    if (!flatBottom(inset)) {
+      return keep;
+    }
+    return keep ? (p: CamPoint) => keep(p) && uncut!(p) : uncut;
+  };
+
   // Step size that lands exactly on the max-depth inset, so the walls reach
   // full depth before any flat-bottom clearing starts.
   const stepFrom = (inset: number) =>
     inset < maxInset - precision()
       ? Math.min(stepover, maxInset - inset)
       : stepover;
+
+  // Those passes come in many short pieces (round the corners the end mill
+  // can't reach, where they graze its edge): kept for the end, to cut
+  // nearest first, going from one to the next at the bottom.
+  const pieces: Piece[] = [];
+  const later = recorder(pieces);
+  const cutWith = (inset: number) =>
+    flatBottom(inset) ? later : { carver: builder, enter };
+  // Where it's below the cone, the material left after the walls are cut
+  // (pieces aren't cut in order, level after level).
+  const fromAt = (inset: number, fromInset: number) =>
+    clearedAbove(inset, flatBottom(inset) ? maxInset : fromInset);
 
   const firstInset = tipRadius + stepFrom(tipRadius);
   const firstLevel = groupComponents(await inside(area, 0, firstInset));
@@ -239,18 +319,23 @@ export async function routeVCarve(
 
   while (stack.length) {
     const { contours, inset, fromInset } = stack.pop()!;
+    const toCut = crossings(inset, contours);
+    // All cleared: so is everything further in.
+    if (flatBottom(inset) && !toCut.some((c) => c.some(uncut!))) {
+      continue;
+    }
 
-    for (const contour of orderByProximity(contours, position)) {
+    for (const contour of orderByProximity(toCut, position)) {
       cutContour(
-        builder,
+        cutWith(inset).carver,
         contour,
         inset,
         fromInset,
         depthAt,
         corners,
-        keepAt(inset),
-        enter,
-        clearedAbove(inset, fromInset),
+        keepCut(inset),
+        cutWith(inset).enter,
+        fromAt(inset, fromInset),
       );
       position = contour[0];
     }
@@ -283,24 +368,39 @@ export async function routeVCarve(
     // The island collapses somewhere within this step. Its deepest point (on
     // the medial axis) would otherwise be left as a ridge up to
     // `step / tan(angle / 2)` high, so find the last non-empty inset.
-    const collapse = await findCollapse(contours, inset, step, inside);
+    const collapse = await findCollapse(contours, inset, step, withinStep);
     if (collapse) {
-      const collapsed = groupComponents(collapse.contours).flat();
+      const collapsed = crossings(
+        inset + collapse.inset,
+        groupComponents(collapse.contours).flat(),
+      );
       for (const contour of orderByProximity(collapsed, position)) {
         cutContour(
-          builder,
+          cutWith(inset + collapse.inset).carver,
           contour,
           inset + collapse.inset,
           inset,
           depthAt,
           corners,
-          keepAt(inset + collapse.inset),
-          enter,
-          clearedAbove(inset + collapse.inset, inset),
+          keepCut(inset + collapse.inset),
+          cutWith(inset + collapse.inset).enter,
+          fromAt(inset + collapse.inset, inset),
         );
         position = contour[0];
       }
     }
+  }
+
+  if (pieces.length) {
+    // Anywhere the bit's centre is at least the max-depth inset in, it's
+    // clear of the walls at the bottom. "Holes only" leaves the outlines'
+    // flat bottom alone: no moves across it.
+    const bottom = await inside(area, 0, maxInset - 2 * precision());
+    const link = (a: CamPoint, b: CamPoint) =>
+      options.mode !== 'holes' &&
+      getDistance(a, b) <= LINK_DISTANCE &&
+      segmentInside(a, b, bottom);
+    position = cutPieces(builder, pieces, enter, link, position);
   }
 
   if (options.centerLine) {
@@ -505,6 +605,116 @@ function crossing(a: AxisPoint, b: AxisPoint, d: number): AxisPoint {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, d };
 }
 
+/** Where cuts go: a GCodeBuilder, or a recorder of pieces. */
+type Carver = { carveTo(x: number, y: number, z?: number): unknown };
+
+/** A cut kept for later: how it was entered, and where it goes. */
+type Piece = {
+  close: boolean;
+  /** How far down the material above it is cleared. */
+  from: number;
+  points: CamPoint3[];
+};
+
+/** Records cuts as pieces instead of making them. */
+function recorder(pieces: Piece[]): { carver: Carver; enter: Enter } {
+  return {
+    carver: {
+      carveTo(x, y, z) {
+        const points = pieces[pieces.length - 1].points;
+        points.push({ x, y, z: z ?? points[points.length - 1].z });
+      },
+    },
+    enter(path, close, from, to) {
+      pieces.push({
+        close,
+        from,
+        points: [{ x: path[0].x, y: path[0].y, z: to }],
+      });
+    },
+  };
+}
+
+/**
+ * Cut the pieces nearest first (open ones either way round, loops from
+ * their nearest point), moving straight from one to the next at the same
+ * depth where `link` allows, instead of going up and back down. Returns
+ * where it ends.
+ */
+function cutPieces(
+  builder: GCodeBuilder,
+  pieces: Piece[],
+  enter: Enter,
+  link: (a: CamPoint, b: CamPoint) => boolean,
+  position: CamPoint,
+): CamPoint {
+  const remaining = [...pieces];
+  let at: CamPoint3 | null = null;
+  while (remaining.length) {
+    let best = { piece: 0, start: 0, distance: Infinity };
+    remaining.forEach((piece, i) => {
+      const { points } = piece;
+      const starts = piece.close
+        ? points.map((_, k) => k)
+        : [0, points.length - 1];
+      for (const k of starts) {
+        const distance = getDistance(at ?? position, points[k]);
+        if (distance < best.distance) {
+          best = { piece: i, start: k, distance };
+        }
+      }
+    });
+    const [piece] = remaining.splice(best.piece, 1);
+    const points = startingFrom(piece, best.start);
+    const start = points[0];
+    if (at && Math.abs(at.z - start.z) < 1e-6 && link(at, start)) {
+      builder.carveTo(start.x, start.y, start.z);
+    } else {
+      enter(points, piece.close, piece.from, start.z);
+    }
+    for (const p of points.slice(1)) {
+      builder.carveTo(p.x, p.y, p.z);
+    }
+    at = points[points.length - 1];
+  }
+  return at ?? position;
+}
+
+/**
+ * The piece's points from point `k` on: an open piece reversed when that's
+ * its end, a loop going once round back to it.
+ */
+function startingFrom(piece: Piece, k: number): CamPoint3[] {
+  const { points } = piece;
+  if (!piece.close) {
+    return k === 0 ? points : [...points].reverse();
+  }
+  const first = points[0];
+  const last = points[points.length - 1];
+  const loop =
+    points.length > 1 && getDistance(first, last) < 1e-9 && first.z === last.z
+      ? points.slice(0, -1)
+      : points;
+  const rotated = [
+    ...loop.slice(k % loop.length),
+    ...loop.slice(0, k % loop.length),
+  ];
+  return [...rotated, rotated[0]];
+}
+
+/** Whether the segment from `a` to `b` stays inside `region`. */
+function segmentInside(a: CamPoint, b: CamPoint, region: CamPoint[][]) {
+  const samples = Math.max(1, Math.ceil(getDistance(a, b) / 0.05));
+  for (let k = 0; k <= samples; k++) {
+    const t = k / samples;
+    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    if (!insideRegion(p, region)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 type Component = {
   contours: CamPoint[][];
   inset: number;
@@ -652,7 +862,7 @@ function cutPath(
  * `from`: how far down the material above it is already cleared.
  */
 function cutContour(
-  builder: GCodeBuilder,
+  builder: Carver,
   contour: CamPoint[],
   inset: number,
   fromInset: number,
@@ -755,6 +965,54 @@ function cutContour(
 }
 
 /**
+ * The closed contour with points added where `test` changes along its edges
+ * (sampled every `spacing`): one on each side of the change, `precision()`
+ * apart.
+ */
+function splitWhereChanges(
+  contour: CamPoint[],
+  test: (p: CamPoint) => boolean,
+  spacing: number,
+): CamPoint[] {
+  const result: CamPoint[] = [];
+  const n = contour.length;
+  for (let i = 0; i < n; i++) {
+    const a = contour[i];
+    const b = contour[(i + 1) % n];
+    result.push(a);
+    const length = getDistance(a, b);
+    const at = (t: number) => ({
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+    });
+    const samples = Math.ceil(length / Math.max(precision(), spacing));
+    let lastT = 0;
+    let last = test(a);
+    for (let k = 1; k <= samples; k++) {
+      const t = k / samples;
+      const value = test(at(t));
+      if (value !== last) {
+        let lo = lastT;
+        let hi = t;
+        while ((hi - lo) * length > precision()) {
+          const mid = (lo + hi) / 2;
+          if (test(at(mid)) === last) {
+            lo = mid;
+          } else {
+            hi = mid;
+          }
+        }
+        if (lo > 0) result.push(at(lo));
+        if (hi < 1) result.push(at(hi));
+      }
+      lastT = t;
+      last = value;
+    }
+  }
+  return result;
+}
+
+/**
  * Points (outward from the vertex) tracing a sharp corner's bisector from
  * `inset` back to `fromInset`, at the depth that keeps the cone touching both
  * edges. Null when the corner isn't sharp or the run would cut the outline.
@@ -851,6 +1109,66 @@ function neighbour(contour: CamPoint[], i: number, direction: 1 | -1) {
 function unit(x: number, y: number): CamPoint | null {
   const length = Math.hypot(x, y);
   return length > 1e-9 ? { x: x / length, y: y / length } : null;
+}
+
+/**
+ * The closed contour with each run of points within two precision steps of
+ * its first merged into one. Rounding to the precision turns the short
+ * round joins an offset puts at a curve's flattened corners into steps of
+ * a precision or two, at 0°, 45° or 90°: a zigzag on every corner.
+ */
+function mergeClosePoints(contour: CamPoint[]): CamPoint[] {
+  const reach = 2 * precision() + 1e-9;
+  const runs: CamPoint[][] = [];
+  for (const p of contour) {
+    const run = runs[runs.length - 1];
+    if (run && getDistance(run[0], p) <= reach) {
+      run.push(p);
+    } else {
+      runs.push([p]);
+    }
+  }
+  // The contour is closed: its last run may carry on into its first.
+  if (
+    runs.length > 1 &&
+    getDistance(runs[0][0], runs[runs.length - 1][0]) <= reach
+  ) {
+    runs[0].push(...runs.pop()!);
+  }
+  return runs.map((run) =>
+    run.length === 1
+      ? run[0]
+      : {
+          x: run.reduce((sum, p) => sum + p.x, 0) / run.length,
+          y: run.reduce((sum, p) => sum + p.y, 0) / run.length,
+        },
+  );
+}
+
+type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+function bounds(contours: CamPoint[][]): Bounds {
+  const box = {
+    minX: Infinity,
+    minY: Infinity,
+    maxX: -Infinity,
+    maxY: -Infinity,
+  };
+  for (const contour of contours) {
+    for (const { x, y } of contour) {
+      box.minX = Math.min(box.minX, x);
+      box.minY = Math.min(box.minY, y);
+      box.maxX = Math.max(box.maxX, x);
+      box.maxY = Math.max(box.maxY, y);
+    }
+  }
+  return box;
+}
+
+function overlaps(a: Bounds, b: Bounds) {
+  return (
+    a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY
+  );
 }
 
 function insideRegion(point: CamPoint, region: CamPoint[][]) {

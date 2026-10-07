@@ -78,6 +78,31 @@ export async function combine(
   return toPoints(result);
 }
 
+/** What a round tool of `radius` cuts moving along `lines`. */
+export async function sweptArea(
+  lines: CamPoint[][],
+  radius: number,
+): Promise<Region> {
+  if (!lines.length || !(radius > 0)) return [];
+  // A lone point (a plunge) as a line too short to matter.
+  const paths = await makePaths(
+    lines.map((line) =>
+      line.length > 1 ? line : [line[0], { x: line[0].x + 1e-6, y: line[0].y }],
+    ),
+  );
+  const result = await clipperInflateRaw(
+    paths,
+    radius,
+    'round',
+    'round',
+    2,
+    decimals(),
+    0,
+  );
+  paths.delete();
+  return toPoints(result);
+}
+
 /** What a round tool of `radius` can reach of the region: an opening. */
 export async function reachable(region: Region, radius: number) {
   return inflate(await inflate(region, -radius), radius);

@@ -5,6 +5,7 @@ import { CamShape } from '../../cam/types';
 import worker from '../../worker';
 import { OperationParameters, ToolParameters } from '../model-editor/model';
 import {
+  Clearing,
   FlatPlugSource,
   PlugSource,
   RestSource,
@@ -22,7 +23,8 @@ export type RoutingInputs = {
   plug: PlugSource | null;
   rest: RestSource | null;
   flatPlug: FlatPlugSource | null;
-  beyondCone: boolean;
+  /** End mills clearing for a v-carve (or inlay plug) before it. */
+  clearings: Clearing[];
   geometry: GeometrySettings;
   /** Order each operation's cuts to keep the travel between them short. */
   optimizeTravel: boolean;
@@ -57,7 +59,7 @@ function route({
   plug,
   rest,
   flatPlug,
-  beyondCone,
+  clearings,
   geometry,
   optimizeTravel,
 }: RoutingInputs): Observable<GCodeBuilder> | null {
@@ -68,6 +70,8 @@ function route({
   }
   const { bitType, diameter, vAngle, tipDiameter } = tool;
   const rampAngle = tool.ramp ? tool.rampAngle : null;
+  // Cleared first: a V-bit can go below its cone.
+  const beyondCone = clearings.length > 0;
 
   switch (op.type) {
     case 'pocket':
@@ -135,6 +139,7 @@ function route({
         stepover: op.stepover && op.stepover > 0 ? op.stepover : null,
         // Without a max depth there's no flat bottom.
         clearFlatBottom: !op.unlimitedDepth && op.clearFlatBottom,
+        clearedBy: clearings,
         centerLine: !!op.centerLine,
         sharpCorners: op.sharpCorners ?? true,
         sharpCornerAngle: op.sharpCornerAngle ?? 150,
@@ -179,6 +184,7 @@ function route({
         maxDepth: plug.maxDepth,
         stepover: plug.stepover,
         clearFlatBottom: true,
+        clearedBy: clearings,
         centerLine: plug.centerLine,
         sharpCorners: plug.sharpCorners,
         sharpCornerAngle: plug.sharpCornerAngle,

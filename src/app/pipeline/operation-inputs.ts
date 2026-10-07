@@ -7,7 +7,8 @@ import {
 import { toolLabel, toolNumber } from '../model-editor/tools';
 import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
 import {
-  clearedFirst,
+  Clearing,
+  clearingsBefore,
   FlatPlugSource,
   flatPlugSource,
   PlugSource,
@@ -43,7 +44,11 @@ export type OperationInputs = {
   plug: PlugSource | null;
   rest: RestSource | null;
   flatPlug: FlatPlugSource | null;
-  beyondCone: boolean;
+  /**
+   * For a v-carve or inlay plug: the end mills clearing for it first (see
+   * clearingsBefore).
+   */
+  clearings: Clearing[];
   toolInfo: ToolInfo | null;
   enabled: boolean;
 };
@@ -121,10 +126,11 @@ export function operationInputs(
     plug,
     rest,
     flatPlug,
-    beyondCone:
-      (operationParameters.type === 'v-carve' ||
-        operationParameters.type === 'inlay-plug') &&
-      clearedFirst(id, operations, tools),
+    clearings:
+      operationParameters.type === 'v-carve' ||
+      operationParameters.type === 'inlay-plug'
+        ? clearingsBefore(id, operations, tools)
+        : [],
     toolInfo,
     enabled: !disabled,
   };

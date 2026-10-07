@@ -154,7 +154,7 @@ function createOperationEntry(
     plug: input('plug').pipe(distinctJson()),
     rest: input('rest').pipe(distinctJson()),
     flatPlug: input('flatPlug').pipe(distinctJson()),
-    beyondCone: input('beyondCone').pipe(distinctUntilChanged()),
+    clearings: input('clearings').pipe(distinctJson()),
     geometry: geometry$,
     optimizeTravel: optimizeTravel$,
   }).pipe(switchMap((routing) => routeOperation(id, routing, working$)));
