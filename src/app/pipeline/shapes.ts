@@ -27,7 +27,7 @@ import {
   TransformParameters,
 } from '../model-editor/model';
 import { createSvgFromShape } from './shape-svg';
-import { pointPattern } from './point-pattern';
+import { hingeCup, pointPattern } from './point-pattern';
 import { geometrySettings } from './geometry-settings';
 import { distinctJson, shareLatest } from './operators';
 
@@ -210,6 +210,9 @@ function resolveShape(
     case 'points':
       // Quick enough to make here.
       return of(pointPattern(t, shapeId, geometry));
+
+    case 'hinge-cup':
+      return of(hingeCup(t, shapeId, geometry));
 
     default:
       return worker.importSvg(createSvgFromShape(t), shapeId, geometry);

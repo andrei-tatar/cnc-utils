@@ -60,6 +60,14 @@ import {
   Definition as TraceDefinition,
   ModelType as TraceModelType,
 } from './shape-trace';
+import {
+  Definition as HingeCupDefinition,
+  ModelType as HingeCupModelType,
+} from './shape-hinge-cup';
+import {
+  Definition as BowtieDefinition,
+  ModelType as BowtieModelType,
+} from './shape-bowtie';
 
 type CommonShape = {
   id: string;
@@ -82,7 +90,9 @@ type ShapeType =
   | SlotModelType
   | PolylineModelType
   | BoxPanelModelType
-  | TraceModelType;
+  | TraceModelType
+  | HingeCupModelType
+  | BowtieModelType;
 
 export type ModelType = {
   shapes: Array<ShapeType & CommonShape>;
@@ -100,6 +110,8 @@ const shapes = [
   TraceDefinition,
   TextDefinition,
   BoxPanelDefinition,
+  HingeCupDefinition,
+  BowtieDefinition,
   BooleanDefinition,
   CopyDefinition,
 ];
