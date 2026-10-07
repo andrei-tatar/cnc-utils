@@ -1,6 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { rootModel, shapeLabel } from '../shapes/describe';
-import { toolLabel, ToolType } from '../tools';
+import { numberedToolLabel, ToolType } from '../tools';
 import { totalDepth } from './depth-steps';
 
 /** All operations in the model, from any field in the form. */
@@ -72,7 +72,11 @@ export function describeOperation(
   const shapeId = borrowedShapeId(operation, operations);
   const shape = shapes.find((s) => s.id === shapeId);
   const tool = tools.find((t) => t.id === operation?.toolId);
-  return [what, shape && shapeLabel(shape, shapes), tool && toolLabel(tool)]
+  return [
+    what,
+    shape && shapeLabel(shape, shapes),
+    tool && numberedToolLabel(tool),
+  ]
     .filter(Boolean)
     .join(' · ');
 }

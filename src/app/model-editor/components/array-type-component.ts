@@ -622,11 +622,13 @@ export type ItemAction = {
                   ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M6 3.5 10.5 8 6 12.5" /></svg
                 ></span>
-                <span class="item_index">{{ $index + 1 }}</span>
+                <span class="item_index">{{
+                  itemPrefix(field.model) || $index + 1
+                }}</span>
                 <span
                   class="item_name"
                   [class.item_name--auto]="!field.model?.name && describeItem"
-                  >{{ itemName(field.model) }}</span
+                  >{{ ownName(field.model) }}</span
                 >
                 @if (itemType(field.model); as type) {
                   <span class="item_type">{{ type }}</span>
@@ -875,7 +877,29 @@ export class ArrayTypeComponent
     return this.props['describeItem'];
   }
 
+  /**
+   * Optional `props.itemPrefix(model, field)`: shown in the item's badge
+   * instead of its place in the list (a tool's index, "T2"), and before its
+   * name where it's mentioned (dialogs).
+   */
+  itemPrefix(model: any): string {
+    return (
+      this.props['itemPrefix']?.(
+        resolvedItem(this.field, model, true),
+        this.field,
+      ) ?? ''
+    );
+  }
+
+  /** The item's name, with its prefix. */
   itemName(model: any): string {
+    const prefix = this.itemPrefix(model);
+    const name = this.ownName(model);
+    return prefix ? `${prefix} ${name}` : name;
+  }
+
+  /** The item's name, without its prefix. */
+  ownName(model: any): string {
     return (
       model?.name ||
       this.describeItem?.(resolvedItem(this.field, model, true), this.field) ||
@@ -890,7 +914,7 @@ export class ArrayTypeComponent
     if (!model?.name && this.describeItem) {
       return null;
     }
-    return type && type !== this.itemName(model) ? type : null;
+    return type && type !== this.ownName(model) ? type : null;
   }
 
   toggleCollapsed() {

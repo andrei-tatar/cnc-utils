@@ -4,7 +4,7 @@ import {
   OperationType,
   ToolParameters,
 } from '../model-editor/model';
-import { toolLabel } from '../model-editor/tools';
+import { toolLabel, toolNumber } from '../model-editor/tools';
 import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
 import {
   clearedFirst,
@@ -18,7 +18,7 @@ import {
 
 /** How an operation's tool appears in the G-code. */
 export type ToolInfo = {
-  /** Position in the tools list, from 1 (T1, T2, …). */
+  /** The tool's index (T1, T2, …), not its place in the list. */
   number: number;
   label: string;
   spindleSpeed?: number;
@@ -80,6 +80,7 @@ export function operationInputs(
         id: _,
         expanded: __,
         name: ___,
+        index: _______,
         spindleSpeed: ____,
         feedRate: _____,
         plungeFeedRate: ______,
@@ -97,10 +98,9 @@ export function operationInputs(
   );
   const rest = restSource(operationParameters, operations, tools);
 
-  // Tools are numbered by their position in the tools list.
   const toolInfo: ToolInfo | null = tool
     ? {
-        number: tools.indexOf(found!) + 1,
+        number: toolNumber(found!, tools),
         label: toolLabel(tool),
         spindleSpeed: tool.spindleSpeed || undefined,
         feedRate: tool.feedRate || undefined,

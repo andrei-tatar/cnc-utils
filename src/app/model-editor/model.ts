@@ -48,7 +48,13 @@ export type OperationParameters = OmitUnion<
 /** What a tool contributes to toolpath routing (not to G-code text). */
 export type ToolParameters = OmitUnion<
   ToolsModelType['tools'][number],
-  'id' | 'expanded' | 'name' | 'spindleSpeed' | 'feedRate' | 'plungeFeedRate'
+  | 'id'
+  | 'expanded'
+  | 'name'
+  | 'index'
+  | 'spindleSpeed'
+  | 'feedRate'
+  | 'plungeFeedRate'
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [
   variablesField,
@@ -87,13 +93,39 @@ export function migrateModel(stored: any): ModelType {
     shapes: (Array.isArray(stored?.shapes) ? stored.shapes : []).map(
       (shape: any) => withTabs(migrateShape(shape), profileTabs),
     ),
-    tools: tools.map(({ operations: _, ...tool }) => tool),
+    tools: withToolIndexes(tools.map(({ operations: _, ...tool }) => tool)),
     operations: operations.map(migrateOperation),
     // Projects from before G-code options existed get the defaults.
     gcode: resolveGcodeOptions(stored?.gcode),
     // Projects from before stock settings have none set.
     stock: resolveStock(stored?.stock),
   };
+}
+
+/**
+ * Tools used to be numbered by their place in the list (T1 the first);
+ * now each has its own index. A tool without one gets that number, so the
+ * G-code stays the same, or the lowest free one if another tool has it.
+ */
+function withToolIndexes(tools: any[]): any[] {
+  const taken = new Set(tools.map((tool) => tool?.index));
+  const free = () => {
+    let index = 1;
+    while (taken.has(index)) index++;
+    return index;
+  };
+  return tools.map((tool, i) => {
+    if (
+      tool?.index !== undefined &&
+      tool?.index !== null &&
+      tool?.index !== ''
+    ) {
+      return tool;
+    }
+    const index = taken.has(i + 1) ? free() : i + 1;
+    taken.add(index);
+    return { ...tool, index };
+  });
 }
 
 /**
