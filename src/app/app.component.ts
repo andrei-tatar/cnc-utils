@@ -10,7 +10,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Highlight } from '../cam/types';
 import { ViewerComponent } from './viewer/viewer.component';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
-import { ToolbarComponent } from './toolbar/toolbar.component';
+import { JobAction, ToolbarComponent } from './toolbar/toolbar.component';
 import { EditorDividerComponent } from './editor-divider/editor-divider.component';
 import { loadEditorWidth } from './editor-divider/editor-width';
 import { ModelStore } from './services/model-store.service';
@@ -42,6 +42,16 @@ export class AppComponent {
   readonly history = inject(ModelHistory);
   readonly isWorking$ = inject(WorkTracker).isWorking$;
 
+  /** More things to do with the job, in the G-code menu. */
+  readonly jobActions: JobAction[] = [
+    {
+      id: 'setup-sheet',
+      label: 'Setup sheet',
+      description:
+        'A page to print for the machine: stock, zero, tools in order, times and a drawing.',
+    },
+  ];
+
   readonly editorWidth = signal(loadEditorWidth());
   readonly resizing = signal(false);
 
@@ -53,6 +63,14 @@ export class AppComponent {
     this.store.replaced$
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.viewer().refit());
+  }
+
+  onJobAction(id: string) {
+    switch (id) {
+      case 'setup-sheet':
+        this.cam.openSetupSheet();
+        break;
+    }
   }
 
   /**

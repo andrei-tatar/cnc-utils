@@ -18,6 +18,8 @@
     (load)="store.open()"
     (download)="cam.download()"
     (downloadPerTool)="cam.downloadPerTool()"
+    [jobActions]="jobActions"
+    (jobAction)="onJobAction($event)"
   />
 
   <div class="layout" [class.resizing]="resizing()">

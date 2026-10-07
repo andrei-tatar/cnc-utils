@@ -6,6 +6,7 @@ import {
   firstValueFrom,
   map,
   Observable,
+  of,
   ReplaySubject,
   share,
   shareReplay,
@@ -34,6 +35,8 @@ import {
 import { generateShapesFromModel } from '../pipeline/shapes';
 import { downloadFile, fileNameFrom } from '../project-file';
 import { createZip } from '../zip';
+import { setupSheetHtml } from '../setup-sheet';
+import { numberedToolLabel } from '../model-editor/tools';
 import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { resolveModel } from '../model-editor/variables/resolve';
@@ -128,6 +131,9 @@ export class CamService implements ShapeExporter {
     })),
   );
 
+  /** What to check before cutting, one line each (for the setup sheet). */
+  readonly notes$: Observable<string[]> = of([]);
+
   private download$ = new Subject<'one' | 'per-tool'>();
 
   constructor() {
@@ -176,6 +182,62 @@ export class CamService implements ShapeExporter {
    */
   downloadPerTool() {
     this.download$.next('per-tool');
+  }
+
+  /**
+   * Opens the setup sheet for the job in a new tab: stock, zero, tools in
+   * order, operations with their times, a drawing from above. Opened at
+   * once (browsers only allow it straight after a click), filled in when the
+   * work in progress is done.
+   */
+  async openSetupSheet() {
+    const tab = window.open('', '_blank');
+    if (!tab) return;
+    tab.document.write(
+      '<p style="font: 14px system-ui">Preparing the setup sheet…</p>',
+    );
+    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+    const [model, program, shapes, paths, view, notes] = await firstValueFrom(
+      combineLatest([
+        this.model$,
+        this.program$,
+        this.shapes$,
+        this.paths$,
+        this.stock$,
+        this.notes$,
+      ]),
+    );
+    const time = programTime(program);
+    const operations = (model.operations ?? [])
+      .filter((o) => !o.disabled && (time.byOperation.get(o.id) ?? 0) > 0)
+      .map((o) => {
+        const tool = model.tools.find((t) => t.id === o.toolId);
+        return {
+          id: o.id,
+          name:
+            o.name ||
+            describeOperation(o, model.shapes, model.tools, model.operations),
+          tool: tool ? numberedToolLabel(tool) : null,
+          seconds: time.byOperation.get(o.id)!,
+        };
+      });
+    const html = setupSheetHtml({
+      title: this.store.project?.name || 'Untitled project',
+      date: new Date(),
+      stock: view.stock,
+      zero: view.zero,
+      options: program.options,
+      operations,
+      total: time.total,
+      shapes: shapes.filter(
+        (s) => !model.shapes.find((m) => m.id === s.sourceShapeId)?.hidden,
+      ),
+      paths,
+      notes,
+    });
+    tab.document.open();
+    tab.document.write(html);
+    tab.document.close();
   }
 
   /**
