@@ -129,15 +129,25 @@ export class CamService implements ShapeExporter {
         ? of(null)
         : combineLatest([this.paths$, this.model$]).pipe(
             debounceTime(300),
-            switchMap(([paths, model]) => {
-              const input = simulationInput(paths, model);
-              return input
+            map(([paths, model]) => ({
+              paths,
+              input: simulationInput(paths, model),
+            })),
+            // Edits that change neither the cuts, their bits nor the stock
+            // (renames, feeds) don't simulate again.
+            distinctUntilChanged(
+              (a, b) =>
+                a.paths === b.paths &&
+                JSON.stringify(a.input) === JSON.stringify(b.input),
+            ),
+            switchMap(({ paths, input }) =>
+              input
                 ? race(
                     worker.simulateStock(paths, input.tools, input.stock),
                     this.workTracker.working$,
                   )
-                : of(null);
-            }),
+                : of(null),
+            ),
           ),
     ),
     shareReplay({ bufferSize: 1, refCount: true }),
