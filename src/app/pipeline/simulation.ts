@@ -7,7 +7,7 @@ import { ModelType } from '../model-editor/model';
 const MARGIN = 5;
 
 /**
- * What the simulation needs: each operation's bit, and the block of
+ * What the simulation needs: each enabled operation's bit, and the block of
  * material (the stock, or one round the cuts). Null with nothing to cut.
  */
 export function simulationInput(
@@ -17,6 +17,7 @@ export function simulationInput(
   const tools: Record<string, SimulatedTool> = {};
   let widest = 0;
   for (const op of model.operations ?? []) {
+    if (op.disabled) continue;
     const tool = model.tools.find((t) => t.id === op.toolId);
     if (!tool || !(tool.diameter > 0)) continue;
     tools[op.id] = {

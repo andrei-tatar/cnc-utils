@@ -86,6 +86,7 @@ import {
 import { StockView, TimeSummary } from '../services/cam.service';
 import { JobWarning } from '../../cam/job-checks';
 import type { Heightmap } from '../../cam/simulate';
+import { stockSolid } from './helpers/stock-solid';
 
 /** The measuring line, drawn over everything. */
 const MEASURE_MATERIAL = new LineBasicMaterial({
@@ -592,7 +593,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     scene.add(this.content);
     scene.add(this.measureGroup);
     this.content.add(this.pathsGroup);
-    this.drawSimulation(scene);
+    this.drawSimulation(scene, grid);
 
     // Axis arrows of a constant on-screen size (scaled per frame below).
     const origin = new Vector3(0, 0, 0);
@@ -656,6 +657,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
         this.camera.zoom,
         width,
         height,
+        grid.position.z,
       ].join();
 
       // Arrows keep a constant on-screen size and are thinned out on screen,
@@ -670,7 +672,14 @@ export class ViewerComponent implements OnInit, OnDestroy {
         viewKey = key;
         const bounds = visiblePlaneBounds(this.camera, this.controls.target);
         const spacing = grid.update(bounds, pixelsPerUnit);
-        labels.update(bounds, spacing, this.camera, width, height);
+        labels.update(
+          bounds,
+          spacing,
+          this.camera,
+          width,
+          height,
+          grid.position.z,
+        );
         this.gridReadout.nativeElement.textContent = `grid ${formatMm(
           spacing.minor,
         )} mm`;
@@ -1147,10 +1156,11 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * The simulated material as a lit surface (wood-coloured, darker where
-   * it's cut deeper), in place of the toolpaths while it's shown.
+   * The simulated material as a lit, wood-coloured solid (darker where it's
+   * cut deeper, with holes where it's cut through), in place of the
+   * toolpaths while it's shown.
    */
-  private drawSimulation(scene: Scene) {
+  private drawSimulation(scene: Scene, grid: Object3D) {
     scene.add(new AmbientLight('#ffffff', 1.6));
     const sun = new DirectionalLight('#ffffff', 1.8);
     sun.position.set(-0.5, -0.8, 1.2);
@@ -1166,46 +1176,28 @@ export class ViewerComponent implements OnInit, OnDestroy {
     });
     const surface = new Group();
     this.content.add(surface);
-    const top = new Color('#e2c08f');
-    const floor = new Color('#7a4a22');
-    const color = new Color();
+    const colors = {
+      top: new Color('#e2c08f'),
+      floor: new Color('#7a4a22'),
+      side: new Color('#c9a06a'),
+    };
 
     this.simulation$.pipe(takeUntil(this.destroy$)).subscribe((map) => {
       surface.children.forEach((child) => (child as Mesh).geometry.dispose());
       surface.clear();
       this.pathsGroup.visible = !map;
+      // The block stands on the grid, rather than the grid cutting through
+      // it at Z0.
+      grid.position.z = map ? map.bottom : 0;
       if (map) {
-        const { nx, ny, cell, minX, minY, heights } = map;
-        const positions = new Float32Array(nx * ny * 3);
-        const colors = new Float32Array(nx * ny * 3);
-        const depth = Math.min(-1e-6, map.bottom - map.top);
-        for (let j = 0; j < ny; j++) {
-          for (let i = 0; i < nx; i++) {
-            const k = j * nx + i;
-            const z = heights[k];
-            positions.set(
-              [minX + (i + 0.5) * cell, minY + (j + 0.5) * cell, z],
-              k * 3,
-            );
-            color.lerpColors(
-              top,
-              floor,
-              Math.min(1, Math.max(0, (z - map.top) / depth)),
-            );
-            colors.set([color.r, color.g, color.b], k * 3);
-          }
-        }
-        const index: number[] = [];
-        for (let j = 0; j < ny - 1; j++) {
-          for (let i = 0; i < nx - 1; i++) {
-            const a = j * nx + i;
-            index.push(a, a + 1, a + nx, a + 1, a + nx + 1, a + nx);
-          }
-        }
+        const solid = stockSolid(map, colors);
         const geometry = new BufferGeometry();
-        geometry.setAttribute('position', new BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new BufferAttribute(colors, 3));
-        geometry.setIndex(index);
+        geometry.setAttribute(
+          'position',
+          new BufferAttribute(solid.positions, 3),
+        );
+        geometry.setAttribute('color', new BufferAttribute(solid.colors, 3));
+        geometry.setIndex(new BufferAttribute(solid.index, 1));
         geometry.computeVertexNormals();
         surface.add(new Mesh(geometry, material));
       }

@@ -21,6 +21,8 @@ export class GridLabels {
     camera: OrthographicCamera,
     width: number,
     height: number,
+    /** The grid's height (Z). */
+    z = 0,
   ) {
     const { major } = spacing;
     const placed: Array<{ x: number; y: number }> = [];
@@ -46,14 +48,14 @@ export class GridLabels {
     const yLabelDx = yAxisX >= bounds.maxX ? -34 : 4;
     const v = new Vector3();
 
-    place(v.set(0, 0, 0), '0', 4, 4);
+    place(v.set(0, 0, z), '0', 4, 4);
     for (
       let x = Math.ceil(bounds.minX / major) * major;
       x <= bounds.maxX && labels.length < MAX_LABELS;
       x += major
     ) {
       if (Math.abs(x) > major / 2) {
-        place(v.set(x, xAxisY, 0), formatMm(x), 3, xLabelDy);
+        place(v.set(x, xAxisY, z), formatMm(x), 3, xLabelDy);
       }
     }
     for (
@@ -62,7 +64,7 @@ export class GridLabels {
       y += major
     ) {
       if (Math.abs(y) > major / 2) {
-        place(v.set(yAxisX, y, 0), formatMm(y), yLabelDx, -12);
+        place(v.set(yAxisX, y, z), formatMm(y), yLabelDx, -12);
       }
     }
 
