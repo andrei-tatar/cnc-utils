@@ -15,3 +15,4 @@ export * from './route-rest';
 export * from './keep-tabs';
 export * from './route-keyhole';
 export * from './route-flat-plug';
+export * from './simulate-stock';

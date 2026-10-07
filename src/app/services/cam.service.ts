@@ -4,10 +4,14 @@ import {
   concatMap,
   filter,
   firstValueFrom,
+  BehaviorSubject,
   debounceTime,
+  distinctUntilChanged,
   map,
   Observable,
   of,
+  race,
+  switchMap,
   ReplaySubject,
   share,
   shareReplay,
@@ -43,6 +47,9 @@ import { shapeLabel } from '../model-editor/shapes/describe';
 import { borrowedShapeId } from '../model-editor/operations/describe';
 import { nestContours } from '../../cam/polygon-nesting';
 import { JobWarning } from '../../cam/job-checks';
+import type { Heightmap } from '../../cam/simulate';
+import { simulationInput } from '../pipeline/simulation';
+import worker from '../../worker';
 import { jobChecks } from '../pipeline/job-checks';
 import { numberedToolLabel } from '../model-editor/tools';
 import { getModelMetadata } from '../store';
@@ -105,6 +112,34 @@ export class CamService implements ShapeExporter {
     debounceTime(150),
     map(([model, paths, shapes]) => jobChecks(model, paths, shapes)),
     distinctJson(),
+    shareReplay({ bufferSize: 1, refCount: true }),
+  );
+
+  /** Whether to simulate the material left (see `simulation$`). */
+  readonly simulate$ = new BehaviorSubject(false);
+
+  /**
+   * While simulating: what's left of the stock (or, without stock, of a
+   * block round the cuts) once every toolpath is cut. Null otherwise.
+   */
+  readonly simulation$: Observable<Heightmap | null> = this.simulate$.pipe(
+    distinctUntilChanged(),
+    switchMap((on) =>
+      !on
+        ? of(null)
+        : combineLatest([this.paths$, this.model$]).pipe(
+            debounceTime(300),
+            switchMap(([paths, model]) => {
+              const input = simulationInput(paths, model);
+              return input
+                ? race(
+                    worker.simulateStock(paths, input.tools, input.stock),
+                    this.workTracker.working$,
+                  )
+                : of(null);
+            }),
+          ),
+    ),
     shareReplay({ bufferSize: 1, refCount: true }),
   );
 

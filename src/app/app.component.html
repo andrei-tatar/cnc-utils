@@ -43,6 +43,8 @@
       [time]="cam.time$ | async"
       [checks]="cam.warnings$ | async"
       [clampShapes]="cam.clampShapes$ | async"
+      [simulation]="cam.simulation$ | async"
+      (simulateChange)="cam.simulate$.next($event)"
     />
   </div>
 </div>
