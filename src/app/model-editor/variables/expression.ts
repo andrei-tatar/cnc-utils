@@ -3,7 +3,8 @@
  *
  * Numbers, variables, `+ - * / %`, `^` (or `**`) for powers, parentheses
  * and the functions below. Angles are in radians (`rad(45)`, `deg(x)`
- * convert). Parsed by hand: nothing is ever `eval`ed.
+ * convert). A number can have a length unit (`1cm` is 10; without one it's
+ * in mm). Parsed by hand: nothing is ever `eval`ed.
  */
 
 /** Something wrong with an expression, in words for the user. */
@@ -17,12 +18,33 @@ export class ExpressionError extends Error {
   }
 }
 
-const CONSTANTS: Record<string, number> = { pi: Math.PI };
+export const CONSTANTS: Record<string, number> = { pi: Math.PI };
+
+/**
+ * Length units, in millimetres, written right after a number: `1cm`,
+ * `2.5 in`. They belong to that number only (`2 * 3cm` is 60), except that
+ * a fraction of whole numbers takes the unit as a whole: `1/4in` is 6.35.
+ */
+export const UNITS: Record<string, number> = {
+  mm: 1,
+  cm: 10,
+  dm: 100,
+  m: 1000,
+  in: 25.4,
+  ft: 304.8,
+  thou: 0.0254,
+};
 
 /** Functions, and how many arguments they take (`max` of -1: any). */
-const FUNCTIONS: Record<
+export const FUNCTIONS: Record<
   string,
-  { min: number; max: number; fn: (...args: number[]) => number }
+  {
+    min: number;
+    max: number;
+    fn: (...args: number[]) => number;
+    /** The arguments, for suggestions: `x` unless said. */
+    args?: string;
+  }
 > = {
   sqrt: { min: 1, max: 1, fn: Math.sqrt },
   cbrt: { min: 1, max: 1, fn: Math.cbrt },
@@ -38,17 +60,27 @@ const FUNCTIONS: Record<
   asin: { min: 1, max: 1, fn: Math.asin },
   acos: { min: 1, max: 1, fn: Math.acos },
   atan: { min: 1, max: 1, fn: Math.atan },
-  atan2: { min: 2, max: 2, fn: Math.atan2 },
+  atan2: { min: 2, max: 2, fn: Math.atan2, args: 'y, x' },
   exp: { min: 1, max: 1, fn: Math.exp },
   ln: { min: 1, max: 1, fn: Math.log },
   log: { min: 1, max: 1, fn: Math.log10 },
   log2: { min: 1, max: 1, fn: Math.log2 },
-  pow: { min: 2, max: 2, fn: Math.pow },
-  hypot: { min: 1, max: -1, fn: Math.hypot },
-  min: { min: 1, max: -1, fn: Math.min },
-  max: { min: 1, max: -1, fn: Math.max },
-  rad: { min: 1, max: 1, fn: (degrees) => (degrees * Math.PI) / 180 },
-  deg: { min: 1, max: 1, fn: (radians) => (radians * 180) / Math.PI },
+  pow: { min: 2, max: 2, fn: Math.pow, args: 'x, y' },
+  hypot: { min: 1, max: -1, fn: Math.hypot, args: 'a, b, …' },
+  min: { min: 1, max: -1, fn: Math.min, args: 'a, b, …' },
+  max: { min: 1, max: -1, fn: Math.max, args: 'a, b, …' },
+  rad: {
+    min: 1,
+    max: 1,
+    fn: (degrees) => (degrees * Math.PI) / 180,
+    args: 'degrees',
+  },
+  deg: {
+    min: 1,
+    max: 1,
+    fn: (radians) => (radians * 180) / Math.PI,
+    args: 'radians',
+  },
 };
 
 /** Names a variable can't have: the constants and functions. */
@@ -76,35 +108,46 @@ type Token =
   | { kind: 'op'; op: string; at: number }
   | { kind: 'end'; at: number };
 
+const NUMBER = String.raw`(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?`;
+const UNIT = String.raw`\s*(?<unit>${Object.keys(UNITS)
+  .sort((a, b) => b.length - a.length)
+  .join('|')})(?![A-Za-z0-9_])`;
+const TOKEN = new RegExp(
+  String.raw`\s*(?:(?<over>\d+)\s*\/\s*(?<under>\d+)(?=${UNIT.replace('?<unit>', '?:')})|(?<number>${NUMBER})|(?<name>[A-Za-z_][A-Za-z0-9_]*)|(?<op>\*\*|[-+*/%^(),]))`,
+  'y',
+);
+const UNIT_AFTER = new RegExp(UNIT, 'y');
+
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
-  const pattern =
-    /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*)|(\*\*|[-+*/%^(),]))/y;
   let at = 0;
   while (at < text.length) {
     if (/^\s*$/.test(text.slice(at))) {
       break;
     }
-    pattern.lastIndex = at;
-    const match = pattern.exec(text);
+    TOKEN.lastIndex = at;
+    const match = TOKEN.exec(text);
     if (!match) {
       const bad = text.slice(at).trimStart()[0];
       throw new ExpressionError(`unexpected “${bad}”`);
     }
-    const start =
-      at + match[0].length - (match[1] ?? match[2] ?? match[3]).length;
-    if (match[1] !== undefined) {
-      tokens.push({ kind: 'number', value: Number(match[1]), at: start });
-    } else if (match[2] !== undefined) {
-      tokens.push({ kind: 'name', name: match[2], at: start });
+    const { over, under, number, name, op } = match.groups!;
+    const start = at + match[0].length - match[0].trimStart().length;
+    at = TOKEN.lastIndex;
+    if (over !== undefined || number !== undefined) {
+      let value = number !== undefined ? Number(number) : +over / +under;
+      UNIT_AFTER.lastIndex = at;
+      const unit = UNIT_AFTER.exec(text);
+      if (unit) {
+        value *= UNITS[unit.groups!['unit']];
+        at = UNIT_AFTER.lastIndex;
+      }
+      tokens.push({ kind: 'number', value, at: start });
+    } else if (name !== undefined) {
+      tokens.push({ kind: 'name', name, at: start });
     } else {
-      tokens.push({
-        kind: 'op',
-        op: match[3] === '**' ? '^' : match[3],
-        at: start,
-      });
+      tokens.push({ kind: 'op', op: op === '**' ? '^' : op, at: start });
     }
-    at = pattern.lastIndex;
   }
   tokens.push({ kind: 'end', at: text.length });
   return tokens;
@@ -188,6 +231,14 @@ export function evaluateExpression(
     const token = tokens[i];
     if (token.kind === 'number') {
       i++;
+      // A name right after a number (and not a call) is meant as its unit.
+      const next = peek();
+      const after = tokens[i + 1];
+      if (next.kind === 'name' && !(after.kind === 'op' && after.op === '(')) {
+        throw new ExpressionError(
+          `unknown unit “${next.name}” (${Object.keys(UNITS).join(', ')})`,
+        );
+      }
       return token.value;
     }
     if (token.kind === 'name') {

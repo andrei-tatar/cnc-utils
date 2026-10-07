@@ -131,6 +131,11 @@ app-model-editor .operand-row {
   > .variable-name {
     flex: 0 0 32%;
     min-width: 0;
+
+    // Like the values (number fields), which are expressions.
+    .form-control {
+      font-family: var(--bs-font-monospace);
+    }
   }
 
   > .operand-operation {

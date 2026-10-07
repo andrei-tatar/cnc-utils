@@ -15,6 +15,26 @@ export function formVariables(field: FormlyFieldConfig | undefined): Variables {
 }
 
 /**
+ * The variables a number field can use, by name: all of them, or for a
+ * variable's own value, the ones above it.
+ */
+export function fieldScope(
+  field: FormlyFieldConfig,
+): ReadonlyMap<string, number> {
+  const { scope } = formVariables(field);
+  if (!field.props?.['variable']) {
+    return scope;
+  }
+  const above = new Map<string, number>();
+  for (const variable of rootModel(field)?.variables ?? []) {
+    if (variable?.id === field.model?.id) break;
+    const name = variable?.name?.trim();
+    if (scope.has(name)) above.set(name, scope.get(name)!);
+  }
+  return above;
+}
+
+/**
  * A number field's value with the variables in place (`null` while it's
  * empty). A variable's own value can only use the variables above it.
  */

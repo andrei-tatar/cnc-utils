@@ -40,11 +40,31 @@ describe('evaluateExpression', () => {
     expect(value('atan2(1, 1)')).toBeCloseTo(Math.PI / 4, 10);
   });
 
+  it('reads lengths in units as millimetres', () => {
+    expect(value('1cm')).toBe(10);
+    expect(value('2.5 in')).toBeCloseTo(63.5, 10);
+    expect(value('1m - 1cm')).toBe(990);
+    expect(value('2 * 3cm')).toBe(60);
+    expect(value('-1ft')).toBeCloseTo(-304.8, 10);
+    expect(value('10thou')).toBeCloseTo(0.254, 10);
+    expect(value('1e3mm')).toBe(1000);
+    // A fraction of whole numbers takes the unit as a whole.
+    expect(value('1/4in')).toBeCloseTo(6.35, 10);
+    expect(value('3 / 8 in')).toBeCloseTo(9.525, 10);
+    expect(value('a / 2cm')).toBe(0.5);
+    // Units only follow numbers: a variable can have a unit's name.
+    expect(evaluateExpression('2 * m', new Map([['m', 3]]))).toBe(6);
+  });
+
   it('explains what is wrong', () => {
     expect(error('c + 1')).toBe('unknown variable “c”');
     expect(error('1 +')).toBe('incomplete expression');
     expect(error('(1 + 2')).toBe('expected “)” but found the end');
     expect(error('1 2')).toBe('unexpected “2”');
+    expect(error('1km')).toBe(
+      'unknown unit “km” (mm, cm, dm, m, in, ft, thou)',
+    );
+    expect(error('2 a')).toContain('unknown unit “a”');
     expect(error('foo(1)')).toBe('unknown function “foo”');
     expect(error('sqrt(1, 2)')).toBe('sqrt takes 1 argument');
     expect(error('sqrt')).toBe('sqrt is a function: sqrt(…)');
