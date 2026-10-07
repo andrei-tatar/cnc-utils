@@ -153,6 +153,7 @@ function createOperationEntry(
     source: input('source').pipe(distinctJson()),
     plug: input('plug').pipe(distinctJson()),
     rest: input('rest').pipe(distinctJson()),
+    flatPlug: input('flatPlug').pipe(distinctJson()),
     beyondCone: input('beyondCone').pipe(distinctUntilChanged()),
     geometry: geometry$,
     optimizeTravel: optimizeTravel$,

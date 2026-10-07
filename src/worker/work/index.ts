@@ -14,3 +14,4 @@ export * from './route-chamfer';
 export * from './route-rest';
 export * from './keep-tabs';
 export * from './route-keyhole';
+export * from './route-flat-plug';

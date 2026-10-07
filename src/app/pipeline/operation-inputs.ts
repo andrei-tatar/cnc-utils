@@ -8,6 +8,8 @@ import { toolLabel, toolNumber } from '../model-editor/tools';
 import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
 import {
   clearedFirst,
+  FlatPlugSource,
+  flatPlugSource,
   PlugSource,
   plugSource,
   RestSource,
@@ -40,6 +42,7 @@ export type OperationInputs = {
   source: VCarveSource | null;
   plug: PlugSource | null;
   rest: RestSource | null;
+  flatPlug: FlatPlugSource | null;
   beyondCone: boolean;
   toolInfo: ToolInfo | null;
   enabled: boolean;
@@ -97,6 +100,7 @@ export function operationInputs(
     tools,
   );
   const rest = restSource(operationParameters, operations, tools);
+  const flatPlug = flatPlugSource(operationParameters, operations, tools);
 
   const toolInfo: ToolInfo | null = tool
     ? {
@@ -110,11 +114,12 @@ export function operationInputs(
 
   return {
     operationParameters,
-    shapeId: (source ?? plug ?? rest)?.shapeId ?? shapeId,
+    shapeId: (source ?? plug ?? rest ?? flatPlug)?.shapeId ?? shapeId,
     toolParameters,
     source,
     plug,
     rest,
+    flatPlug,
     beyondCone:
       (operationParameters.type === 'v-carve' ||
         operationParameters.type === 'inlay-plug') &&

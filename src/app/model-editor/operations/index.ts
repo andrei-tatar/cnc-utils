@@ -66,6 +66,11 @@ import {
 } from './operation-rest';
 
 import {
+  Definition as FlatPlugDefinition,
+  ModelType as FlatPlugModelType,
+} from './operation-flat-plug';
+
+import {
   Definition as KeyholeDefinition,
   ModelType as KeyholeModelType,
 } from './operation-keyhole';
@@ -74,6 +79,7 @@ const operations = [
   PocketDefinition,
   ProfileDefinition,
   RestDefinition,
+  FlatPlugDefinition,
   FlatDefinition,
   DrillDefinition,
   HelixDefinition,
@@ -104,6 +110,7 @@ const allowedBits: Record<
   [InlayDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
   [ChamferDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
   [VCarveClearDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
+  [FlatPlugDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
   [KeyholeDefinition.type]: { bits: ['keyhole'], needs: 'a keyhole bit' },
 };
 
@@ -116,6 +123,7 @@ const borrowsShape = new Set<string>([
   VCarveClearDefinition.type,
   InlayDefinition.type,
   RestDefinition.type,
+  FlatPlugDefinition.type,
 ]);
 
 export type ModelType = {
@@ -141,6 +149,7 @@ export type ModelType = {
         | InlayModelType
         | RestModelType
         | KeyholeModelType
+        | FlatPlugModelType
       )
   >;
 };
@@ -304,6 +313,7 @@ export const field: FormlyFieldConfig = {
         RestDefinition.type,
         ChamferDefinition.type,
         InlayDefinition.type,
+        FlatPlugDefinition.type,
       ]),
     ],
   },
