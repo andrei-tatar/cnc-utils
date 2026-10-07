@@ -1,6 +1,8 @@
 import { ModelType, OperationParameters } from '../model-editor/model';
 import type { InlayPlug } from '../../worker/work/inlay-plug';
 import { depthPerStep } from '../model-editor/operations/depth-steps';
+import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
+import type { ClearingTool } from '../../worker/work/route-vcarve-clearing';
 
 /**
  * What a v-carve clearing borrows from the v-carve (or inlay plug) it
@@ -161,26 +163,56 @@ export function vCarveSource(
 }
 
 /**
- * Whether v-carve `vcarveId` is preceded by a clearing for it that uses an
- * end mill. Then the groove's middle is gone before the V-bit arrives, so
- * it can carve below its cone without the shank meeting uncut material.
+ * An end mill clearing for a v-carve (or inlay plug) before it: what routes
+ * the clearing, besides what it borrows from the v-carve.
  */
+export type Clearing = ClearingTool;
+
+/**
+ * The clearings for v-carve `vcarveId` that come before it and use an end
+ * mill. With any, the groove's middle is gone before the V-bit arrives, so
+ * it can carve below its cone without the shank meeting uncut material, and
+ * its flat bottom only needs what they left. Disabled ones count too: the
+ * v-carve is planned for them having been cut (in a file of their own, say).
+ */
+export function clearingsBefore(
+  vcarveId: string,
+  operations: ModelType['operations'],
+  tools: ModelType['tools'],
+): Clearing[] {
+  const vcarveIndex = operations.findIndex((o) => o.id === vcarveId);
+  return operations.flatMap((o, index) => {
+    if (
+      index >= vcarveIndex ||
+      o.type !== 'v-carve-clear' ||
+      o.vcarveOperationId !== vcarveId
+    ) {
+      return [];
+    }
+    const found = tools.find((t) => t.id === o.toolId);
+    if (!found || ['v-bit', 'drill'].includes(found.bitType ?? 'end-mill')) {
+      return [];
+    }
+    const tool = withOverrides(found, o);
+    return [
+      {
+        toolSize: tool.diameter,
+        toolEngagement: o.toolEngagement,
+        depthPerStep: o.depthPerStep,
+        leaveStock: o.leaveStock,
+        rampAngle: (tool.ramp && tool.rampAngle) || null,
+      },
+    ];
+  });
+}
+
+/** Whether v-carve `vcarveId` is cleared first (see clearingsBefore). */
 export function clearedFirst(
   vcarveId: string,
   operations: ModelType['operations'],
   tools: ModelType['tools'],
 ): boolean {
-  const vcarveIndex = operations.findIndex((o) => o.id === vcarveId);
-  return operations.some(
-    (o, index) =>
-      index < vcarveIndex &&
-      !o.disabled &&
-      o.type === 'v-carve-clear' &&
-      o.vcarveOperationId === vcarveId &&
-      !['v-bit', 'drill'].includes(
-        tools.find((t) => t.id === o.toolId)?.bitType ?? 'end-mill',
-      ),
-  );
+  return clearingsBefore(vcarveId, operations, tools).length > 0;
 }
 
 /** For a flat inlay plug: the pocket it fills, and that pocket's bit size. */

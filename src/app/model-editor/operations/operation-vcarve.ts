@@ -107,6 +107,10 @@ const field: FormlyFieldConfig = {
       expressions: {
         hide: (field: FormlyFieldConfig) =>
           hideIfUnlimited(field) || singlePass(field),
+        'props.description': (field: FormlyFieldConfig) =>
+          clearedFirst(field)
+            ? 'only what the v-carve clearing before it leaves'
+            : '',
       },
     },
     {
@@ -160,6 +164,25 @@ export const Definition = {
 } as const;
 
 /**
+ * Whether a v-carve clearing with an end mill comes before this v-carve
+ * (enabled or not, as clearingsBefore counts them).
+ */
+function clearedFirst(field: FormlyFieldConfig): boolean {
+  const op = field.model;
+  const operations = allOperations(field);
+  const index = operations.indexOf(op);
+  return operations.some(
+    (o, i) =>
+      i < index &&
+      o.type === 'v-carve-clear' &&
+      o.vcarveOperationId === op?.id &&
+      !['v-bit', 'drill'].includes(
+        allTools(field).find((t) => t.id === o.toolId)?.bitType ?? 'end-mill',
+      ),
+  );
+}
+
+/**
  * Explain whether the V-bit limits the depth: without clearing it can't go
  * below its cone (the shank would push through the uncut middle); with a
  * v-carve clearing earlier in the list it can.
@@ -176,16 +199,7 @@ function maxDepthHint(field: FormlyFieldConfig): string {
       (Math.max(0, tool.diameter / 2 - (tool.tipDiameter ?? 0) / 2) / tan) *
         100,
     ) / 100;
-  const operations = allOperations(field);
-  const index = operations.indexOf(op);
-  const cleared = operations.some(
-    (o, i) =>
-      i < index &&
-      o.type === 'v-carve-clear' &&
-      o.vcarveOperationId === op?.id &&
-      (allTools(field).find((t) => t.id === o.toolId)?.bitType ??
-        'end-mill') !== 'v-bit',
-  );
+  const cleared = clearedFirst(field);
   if (op?.unlimitedDepth) {
     return cleared
       ? `cleared first, so it carves the full V however deep the shape needs`

@@ -1,5 +1,5 @@
 import { InlayPlug, inlayPlugShape } from './inlay-plug';
-import { CamShape } from '../../cam/types';
+import { CamPoint, CamShape } from '../../cam/types';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import {
@@ -11,6 +11,7 @@ import {
   vCarveGeometry,
 } from '../../cam/vcarve-geometry';
 import { routePocketHole } from './route-pocket-hole';
+import { combine, sweptArea } from './regions';
 
 /**
  * Extra margin from the V's walls on top of `leaveStock`: the pocket router
@@ -145,4 +146,76 @@ export async function routeVCarveClearing(
   }
 
   return builder;
+}
+
+/** An end mill clearing for a v-carve: the clearing's own settings. */
+export type ClearingTool = {
+  toolSize: number;
+  toolEngagement: number;
+  depthPerStep: number;
+  leaveStock: number;
+  rampAngle: number | null;
+};
+
+/**
+ * What clearings for a v-carve leave cleared at its max depth: where their
+ * end mills sweep on their deepest level, routed as routeVCarveClearing
+ * routes them (an end mill that fits somewhere doesn't always get there).
+ * `input` and `vcarve` are the v-carve's shape and settings, before any
+ * plug.
+ */
+export async function clearedAtMaxDepth(
+  input: CamShape[],
+  vcarve: {
+    toolSize: number;
+    vAngle: number;
+    tipDiameter: number;
+    startDepth: number;
+    maxDepth: number | null;
+    beyondCone?: boolean;
+    mode?: ShapePart;
+    plug?: InlayPlug | null;
+    geometry?: GeometrySettings;
+    optimizeTravel?: boolean;
+  },
+  clearings: ClearingTool[],
+): Promise<CamPoint[][]> {
+  const geometry = vCarveGeometry(vcarve);
+  if (!geometry) {
+    return [];
+  }
+  const bottom = -(vcarve.startDepth + geometry.maxDepth);
+  let cleared: CamPoint[][] = [];
+  for (const clearing of clearings) {
+    const routed = await routeVCarveClearing(input, {
+      ...clearing,
+      vToolSize: vcarve.toolSize,
+      vAngle: vcarve.vAngle,
+      tipDiameter: vcarve.tipDiameter,
+      startDepth: vcarve.startDepth,
+      maxDepth: vcarve.maxDepth,
+      beyondCone: vcarve.beyondCone,
+      mode: vcarve.mode,
+      plug: vcarve.plug,
+      geometry: vcarve.geometry,
+      optimizeTravel: vcarve.optimizeTravel,
+    });
+    // The runs of cuts at the bottom (ramps down to it don't count).
+    const runs: CamPoint[][] = [];
+    for (const path of routed.toPaths()) {
+      let run: CamPoint[] = [];
+      for (const p of path.type === 'carve' ? path.points : []) {
+        if (Math.abs(p.z - bottom) < 1e-4) {
+          run.push(p);
+        } else {
+          if (run.length) runs.push(run);
+          run = [];
+        }
+      }
+      if (run.length) runs.push(run);
+    }
+    const swept = await sweptArea(runs, clearing.toolSize / 2);
+    cleared = cleared.length ? await combine(cleared, swept, 'union') : swept;
+  }
+  return cleared;
 }
