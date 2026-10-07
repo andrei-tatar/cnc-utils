@@ -410,62 +410,171 @@ export function distanceToPolygons(
 }
 
 /**
- * Winding number of the closed polygons around `p`, arcs included (a ray
- * to +x crossing each segment's pieces that are monotone in y).
+ * A piece of a closed loop's outline that only climbs or only falls, so a
+ * horizontal line crosses it at most once: a line, or an arc no more than
+ * half a turn round (from its top or bottom to the other), on the circle's
+ * right side or its left.
  */
+type YPiece = {
+  /** Heights of its ends, lowest first. */
+  y0: number;
+  y1: number;
+  /** +1 climbing, -1 falling. */
+  dir: number;
+  /** A line: its ends as travelled. */
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  /** An arc: its circle, and which side of it the piece is on. */
+  arc: boolean;
+  cx: number;
+  cy: number;
+  r: number;
+  right: boolean;
+};
+
+/** The pieces of a closed polygon's outline (see YPiece). */
+function yPieces(polygon: CamPolygon, out: YPiece[]) {
+  forEachSegment(polygon, (a, b, bulge) => {
+    if (!bulge) {
+      if (a.y === b.y) return;
+      out.push({
+        y0: Math.min(a.y, b.y),
+        y1: Math.max(a.y, b.y),
+        dir: b.y > a.y ? 1 : -1,
+        ax: a.x,
+        ay: a.y,
+        bx: b.x,
+        by: b.y,
+        arc: false,
+        cx: 0,
+        cy: 0,
+        r: 0,
+        right: false,
+      });
+      return;
+    }
+    const { center, radius, start, sweep } = arcOf(a, b, bulge);
+    // Cut at the top and bottom, then each piece crosses like a curve
+    // between its ends' heights.
+    const cuts = [0, 1]
+      .map((k) => {
+        let d = ((k ? -1 : 1) * Math.PI) / 2 - start;
+        d *= Math.sign(sweep);
+        return ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      })
+      .filter((d) => d > 1e-12 && d < Math.abs(sweep) - 1e-12)
+      .sort((x, y) => x - y);
+    let from = 0;
+    let pa: CamPoint = a;
+    for (const to of [...cuts, Math.abs(sweep)]) {
+      const angle = start + Math.sign(sweep) * to;
+      const pb =
+        to === Math.abs(sweep)
+          ? b
+          : {
+              x: center.x + radius * Math.cos(angle),
+              y: center.y + radius * Math.sin(angle),
+            };
+      const mid = start + (Math.sign(sweep) * (from + to)) / 2;
+      if (pa.y !== pb.y) {
+        out.push({
+          y0: Math.min(pa.y, pb.y),
+          y1: Math.max(pa.y, pb.y),
+          dir: pb.y > pa.y ? 1 : -1,
+          ax: pa.x,
+          ay: pa.y,
+          bx: pb.x,
+          by: pb.y,
+          arc: true,
+          cx: center.x,
+          cy: center.y,
+          r: radius,
+          right: Math.cos(mid) >= 0,
+        });
+      }
+      from = to;
+      pa = pb;
+    }
+  });
+}
+
+/**
+ * How the piece winds round `p`: ±1 where it passes to the right of `p` at
+ * its height (climbing +1), else 0. Heights are taken half-open (the bottom
+ * end counts, the top doesn't), so loops crossing at a vertex count once.
+ */
+function pieceWinding(piece: YPiece, p: CamPoint): number {
+  if (!(piece.y0 <= p.y && p.y < piece.y1)) return 0;
+  if (!piece.arc) {
+    const cross =
+      (piece.bx - piece.ax) * (p.y - piece.ay) -
+      (p.x - piece.ax) * (piece.by - piece.ay);
+    return piece.dir > 0 ? (cross > 0 ? 1 : 0) : cross < 0 ? -1 : 0;
+  }
+  const dy = p.y - piece.cy;
+  const dx = Math.sqrt(Math.max(0, piece.r * piece.r - dy * dy));
+  const x = piece.right ? piece.cx + dx : piece.cx - dx;
+  return x > p.x ? piece.dir : 0;
+}
+
+/** Winding number of closed polygons (lines and arcs) around `p`. */
 export function windingNumber(p: CamPoint, polygons: CamPolygon[]): number {
   let winding = 0;
-  const line = (a: CamPoint, b: CamPoint) => {
-    if (a.y <= p.y && p.y < b.y) {
-      if ((b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y) > 0) winding++;
-    } else if (b.y <= p.y && p.y < a.y) {
-      if ((b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y) < 0) winding--;
-    }
-  };
+  const pieces: YPiece[] = [];
   for (const polygon of polygons) {
-    if (!polygon.close) continue;
-    forEachSegment(polygon, (a, b, bulge) => {
-      if (!bulge) {
-        line(a, b);
-        return;
-      }
-      const { center, radius, start, sweep } = arcOf(a, b, bulge);
-      // Cut at the top and bottom, then each piece crosses like a curve
-      // between its ends' heights.
-      const cuts = [0, 1]
-        .map((k) => {
-          let d = ((k ? -1 : 1) * Math.PI) / 2 - start;
-          d *= Math.sign(sweep);
-          return ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-        })
-        .filter((d) => d > 1e-12 && d < Math.abs(sweep) - 1e-12)
-        .sort((x, y) => x - y);
-      let from = 0;
-      let pa: CamPoint = a;
-      for (const to of [...cuts, Math.abs(sweep)]) {
-        const angle = start + Math.sign(sweep) * to;
-        const pb =
-          to === Math.abs(sweep)
-            ? b
-            : {
-                x: center.x + radius * Math.cos(angle),
-                y: center.y + radius * Math.sin(angle),
-              };
-        const mid = start + (Math.sign(sweep) * (from + to)) / 2;
-        const up = pa.y <= p.y && p.y < pb.y;
-        const down = pb.y <= p.y && p.y < pa.y;
-        if (up || down) {
-          const dy = p.y - center.y;
-          const dx = Math.sqrt(Math.max(0, radius * radius - dy * dy));
-          const x = Math.cos(mid) >= 0 ? center.x + dx : center.x - dx;
-          if (x > p.x) winding += up ? 1 : -1;
-        }
-        from = to;
-        pa = pb;
-      }
-    });
+    if (polygon.close) yPieces(polygon, pieces);
   }
+  for (const piece of pieces) winding += pieceWinding(piece, p);
   return winding;
+}
+
+/**
+ * Whether points lie inside `polygons`, read as insidePolygons reads them
+ * (inside an odd number of the closed loops), for testing many points
+ * against the same polygons: their outlines are cut into pieces once and
+ * filed by height, so each point only looks at the pieces level with it.
+ */
+export function insideTester(polygons: CamPolygon[]): (p: CamPoint) => boolean {
+  const pieces: YPiece[] = [];
+  const loops: number[] = [];
+  polygons.forEach((polygon, i) => {
+    if (!polygon.close) return;
+    const from = pieces.length;
+    yPieces(polygon, pieces);
+    for (let k = from; k < pieces.length; k++) loops.push(i);
+  });
+  if (!pieces.length) return () => false;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const piece of pieces) {
+    minY = Math.min(minY, piece.y0);
+    maxY = Math.max(maxY, piece.y1);
+  }
+  const count = Math.max(
+    1,
+    Math.min(4096, Math.ceil(Math.sqrt(pieces.length))),
+  );
+  const height = maxY > minY ? (maxY - minY) / count : 1;
+  const band = (y: number) =>
+    Math.max(0, Math.min(count - 1, Math.floor((y - minY) / height)));
+  const bands: number[][] = Array.from({ length: count }, () => []);
+  pieces.forEach((piece, i) => {
+    for (let b = band(piece.y0); b <= band(piece.y1); b++) bands[b].push(i);
+  });
+  const winding = new Map<number, number>();
+  return (p) => {
+    if (!(p.y >= minY && p.y < maxY)) return false;
+    winding.clear();
+    for (const i of bands[band(p.y)]) {
+      const w = pieceWinding(pieces[i], p);
+      if (w) winding.set(loops[i], (winding.get(loops[i]) ?? 0) + w);
+    }
+    let inside = false;
+    for (const w of winding.values()) if (w) inside = !inside;
+    return inside;
+  };
 }
 
 /** Where (0 to 1) `p`, a point on the segment, is along it. */
