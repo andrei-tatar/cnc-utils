@@ -223,7 +223,7 @@ function withTabs(shape: any, profileTabs: Map<string, any>) {
 }
 
 function migrateShape(shape: any) {
-  shape = migrateBoolean(shape);
+  shape = migrateShapePoints(migrateBoolean(shape));
   if (!Array.isArray(shape?.transforms)) {
     return shape;
   }
@@ -263,8 +263,7 @@ function migrateOffset(transform: any) {
 
 /**
  * A tabs transform's points were text, one "x, y" per line; now they're a
- * list, x and y each its own field (so each can be an expression). Ids come
- * from the transform's, so loading the same project gives the same ones.
+ * list, x and y each its own field (so each can be an expression).
  */
 function migrateTabPoints(transform: any) {
   if (transform?.type !== 'tabs' || typeof transform.tabPoints !== 'string') {
@@ -272,12 +271,35 @@ function migrateTabPoints(transform: any) {
   }
   return {
     ...transform,
-    tabPoints: parsePointList(transform.tabPoints).map(({ x, y }, i) => ({
-      id: `${transform.id}-${i}`,
-      x,
-      y,
-    })),
+    tabPoints: pointItems(transform.tabPoints, transform.id),
   };
+}
+
+/** The same for a points shape's list and a polyline's points. */
+function migrateShapePoints(shape: any) {
+  const key =
+    shape?.type === 'points'
+      ? 'pointsList'
+      : shape?.type === 'polyline'
+        ? 'polylinePoints'
+        : undefined;
+  if (!key || typeof shape[key] !== 'string') {
+    return shape;
+  }
+  return { ...shape, [key]: pointItems(shape[key], shape.id) };
+}
+
+/**
+ * Points typed as text as a list of points. Ids come from the owner's, so
+ * loading the same project gives the same ones (and a freshly opened
+ * project isn't "changed").
+ */
+function pointItems(text: string, ownerId: string) {
+  return parsePointList(text).map(({ x, y }, i) => ({
+    id: `${ownerId}-${i}`,
+    x,
+    y,
+  }));
 }
 
 /**

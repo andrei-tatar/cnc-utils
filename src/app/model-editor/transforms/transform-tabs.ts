@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { PointItem, pointListField } from '../point-list';
 
 /**
  * Tabs on the shape's loops: material every operation leaves standing below
@@ -14,7 +15,7 @@ export interface ModelType {
   /** Spaced evenly round each loop, or at given points. Missing: evenly. */
   tabPlacement?: 'evenly' | 'points';
   /** A tab on the line nearest each. */
-  tabPoints?: TabPoint[];
+  tabPoints?: PointItem[];
   tabCount: number;
   tabWidth: number;
   tabLength: number;
@@ -22,12 +23,6 @@ export interface ModelType {
   tabDepth: number;
   /** Moves the tabs round each loop (mm). */
   tabOffset: number;
-}
-
-export interface TabPoint {
-  id: string;
-  x: number;
-  y: number;
 }
 
 const hideUnlessTabs = (field: FormlyFieldConfig) =>
@@ -81,50 +76,11 @@ const field: FormlyFieldConfig = {
       },
     },
     {
-      key: 'tabPoints',
-      type: 'repeat',
-      defaultValue: [],
-      props: {
-        label: 'points',
-        itemLabel: 'point',
-        // One row per point: x and y, each a number or an expression.
-        inline: true,
+      ...pointListField('tabPoints', {
         description:
           'mm; each tab goes on the line nearest its point. ' +
           'The preview shows the coordinates under the cursor.',
-      },
-      fieldArray: {
-        fieldGroupClassName: 'point-row',
-        fieldGroup: [
-          {
-            key: 'id',
-            type: 'hidden',
-            className: 'd-none',
-          },
-          {
-            key: 'x',
-            type: 'number',
-            className: 'point-x',
-            defaultValue: 0,
-            props: {
-              placeholder: 'x',
-              required: true,
-              attributes: { 'aria-label': 'x' },
-            },
-          },
-          {
-            key: 'y',
-            type: 'number',
-            className: 'point-y',
-            defaultValue: 0,
-            props: {
-              placeholder: 'y',
-              required: true,
-              attributes: { 'aria-label': 'y' },
-            },
-          },
-        ],
-      },
+      }),
       expressions: {
         // A list's own model is the list: the placement is on its parent's.
         hide: (field: FormlyFieldConfig) => !atPoints(field.parent ?? field),

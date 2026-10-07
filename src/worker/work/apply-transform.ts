@@ -19,6 +19,7 @@ import {
 } from './shape-transforms';
 import { dogbones, simplifyShapes } from './clipper-transforms';
 import { placeTabs } from '../../cam/tabs';
+import { finitePoints } from '../../cam/point-patterns';
 
 export async function applyTransform(
   input: CamShape[],
@@ -216,9 +217,7 @@ async function transformed(
           offset: transform.tabOffset ?? 0,
           at:
             transform.tabPlacement === 'points'
-              ? (transform.tabPoints ?? [])
-                  .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-                  .map(({ x, y }) => ({ x, y }))
+              ? finitePoints(transform.tabPoints)
               : undefined,
         });
 
