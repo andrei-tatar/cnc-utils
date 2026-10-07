@@ -1,29 +1,39 @@
-<div class="layout" [class.resizing]="resizing()">
-  <aside class="editor" [style.width.px]="editorWidth()">
-    <app-toolbar
-      [working]="(isWorking$ | async) ?? false"
-      (clear)="clearProject()"
-      (load)="store.open()"
-      (openTemplate)="openTemplate($event)"
-      (download)="cam.download()"
-    />
-
-    <div class="editor_content">
-      <app-model-editor
-        [model]="store.value"
-        (modelChange)="store.set($event)"
-      />
-    </div>
-  </aside>
-
-  <app-editor-divider [(width)]="editorWidth" [(resizing)]="resizing" />
-
-  <app-viewer
-    [shapes]="cam.shapes$"
-    [paths]="cam.paths$"
-    [highlight]="(cam.highlight$ | async) ?? NO_HIGHLIGHT"
-    [hiddenShapes]="(cam.hiddenShapes$ | async) ?? []"
-    [stock]="cam.stock$ | async"
-    [time]="cam.time$ | async"
+<div class="app">
+  <app-toolbar
+    [working]="(isWorking$ | async) ?? false"
+    [projects]="(store.projects$ | async) ?? []"
+    [project]="(store.project$ | async) ?? null"
+    [pending]="(store.pending$ | async) ?? false"
+    (save)="projects.save()"
+    (saveAs)="projects.saveAs()"
+    (openProject)="projects.openProject($event)"
+    (deleteProject)="projects.delete($event)"
+    (projectsOpened)="store.refreshProjects()"
+    (newProject)="projects.newProject()"
+    (openTemplate)="projects.openTemplate($event)"
+    (load)="store.open()"
+    (download)="cam.download()"
   />
+
+  <div class="layout" [class.resizing]="resizing()">
+    <aside class="editor" [style.width.px]="editorWidth()">
+      <div class="editor_content">
+        <app-model-editor
+          [model]="store.value"
+          (modelChange)="store.set($event)"
+        />
+      </div>
+    </aside>
+
+    <app-editor-divider [(width)]="editorWidth" [(resizing)]="resizing" />
+
+    <app-viewer
+      [shapes]="cam.shapes$"
+      [paths]="cam.paths$"
+      [highlight]="(cam.highlight$ | async) ?? NO_HIGHLIGHT"
+      [hiddenShapes]="(cam.hiddenShapes$ | async) ?? []"
+      [stock]="cam.stock$ | async"
+      [time]="cam.time$ | async"
+    />
+  </div>
 </div>

@@ -90,6 +90,12 @@ export class ModelStore {
   /** The saved projects, most recent first (see `refreshProjects`). */
   readonly projects$ = new BehaviorSubject<Project[]>([]);
 
+  /**
+   * The work was replaced (opened, loaded, new): not edited, so the preview
+   * should frame it afresh.
+   */
+  readonly replaced$ = new Subject<void>();
+
   private open$ = new Subject<void>();
 
   constructor() {
@@ -205,6 +211,7 @@ export class ModelStore {
     this.saved$.next(project && { project, model: snapshot(model) });
     this.model$.next(model);
     this.persist();
+    this.replaced$.next();
   }
 
   /** Keeps the work (and the project it belongs to) for the next visit. */
