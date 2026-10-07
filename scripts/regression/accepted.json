@@ -1,0 +1,322 @@
+{
+  "flat-plug-basic": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "flat-plug-mirror-conventional": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "flat-plug-star-ramp": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "An edge moved by a cell or two (0.1–0.2 mm) at single spots: exact arcs and offsets instead of master's chords and 0.02 mm overcut."
+  },
+  "gcode-arcs-off": {
+    "material left": "Lead-ins and ramps start where the offset loop starts, now the shape's own first point (master's was wherever Clipper's output began): the same cut, entered elsewhere along the outline."
+  },
+  "gcode-arcs-on": {
+    "material left": "Lead-ins and ramps start where the offset loop starts, now the shape's own first point (master's was wherever Clipper's output began): the same cut, entered elsewhere along the outline."
+  },
+  "gcode-coarse-geometry": {
+    "shape": "With a curve tolerance of 0.2 mm master turned the circle and the text into 0.2 mm chords; circles are exact arcs now and text is fitted with arcs (within the tolerance).",
+    "material left": "With a curve tolerance of 0.2 mm master turned the circle and the text into 0.2 mm chords; circles are exact arcs now and text is fitted with arcs (within the tolerance)."
+  },
+  "gcode-output-options": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "gcode-single-tool-no-change": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "helix-hole-in-disc": {
+    "material left": "The helix follows the exact circle (master: chords): the bore is up to 0.06 mm wider between the chords' ends."
+  },
+  "inlay-plug-basic": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "inlay-plug-borrowed-options": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "inlay-plug-no-gap-small-margin": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "inlay-plug-ramp": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "inlay-plug-with-clearing": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "inlay-pocket-and-plug-cleared": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "pocket-ball-and-bull-nose": {
+    "material left": "Master's extra centre loop was a rounding artifact; the ball and bull nose bits leave their scallops (≤ 0.17 mm) there now."
+  },
+  "profile-lead-in-outside": {
+    "material left": "Lead-ins and ramps start where the offset loop starts, now the shape's own first point (master's was wherever Clipper's output began): the same cut, entered elsewhere along the outline."
+  },
+  "profile-leave-stock-finish-pass": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "profile-onion-skin-finish-pass": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "profile-ramp-override-lead-in": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "Lead-ins and ramps start where the offset loop starts, now the shape's own first point (master's was wherever Clipper's output began): the same cut, entered elsewhere along the outline."
+  },
+  "profile-ramp-tool": {
+    "material left": "An edge moved by a cell or two (0.1–0.2 mm) at single spots: exact arcs and offsets instead of master's chords and 0.02 mm overcut."
+  },
+  "profile-tabs-evenly": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "profile-tabs-repeat-offset": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "profile-text-outside": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-boolean-chain-holes": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "The slot cut from the part is exactly the bit's width (6 mm): its centre has a path of no width there, which master left and the new code partly cuts."
+  },
+  "shape-boolean-difference": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-boolean-fill-rules": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-boolean-intersection": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-boolean-union": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-boolean-xor": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-bowtie": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "An edge moved by a cell or two (0.1–0.2 mm) at single spots: exact arcs and offsets instead of master's chords and 0.02 mm overcut."
+  },
+  "shape-box-panel": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-box-panel-mixed-edges": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-copy": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-nest": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "An edge moved by a cell or two (0.1–0.2 mm) at single spots: exact arcs and offsets instead of master's chords and 0.02 mm overcut."
+  },
+  "shape-nest-layer": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-nest-overflow-sheet-2": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-path-data-absolute": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-path-data-holes": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "Master's pockets cut 0.02 mm (2 × precision) past every wall: they grew the outlines to join near ones and never shrank that back. Now exactly on the wall, so a little more is left where that 0.02 mm reached furthest: sharp corners and narrow tips."
+  },
+  "shape-path-data-relative": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "The second subpath runs the other way round from the first, so — as Clipper read it — it is a hole in nothing and no outline is cut round it. Master's offset still left a fan of spikes along it, which its profile cut as ~100 tiny moves."
+  },
+  "shape-polyline-closed": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "Master's pockets cut 0.02 mm (2 × precision) past every wall: they grew the outlines to join near ones and never shrank that back. Now exactly on the wall, so a little more is left where that 0.02 mm reached furthest: sharp corners and narrow tips."
+  },
+  "shape-rectangle": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-svg": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-svg-viewbox": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-text-bold-italic": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-text-bold-multiline-center": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-text-italic-right": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "shape-text-regular": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "Roboto 400's strokes are 1.985 mm wide here: master's 0.02 mm overcut each side let the 2 mm bit in; it doesn't fit now (it would cut into the letters' walls)."
+  },
+  "shape-trace": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "Traced loops are wound by nesting now (outlines counter-clockwise, holes clockwise). Master wound the ring's hole like its outline, so offsets read it as filled: the pocket ran over the hole and the outside profile skipped it."
+  },
+  "shape-trace-invert": {
+    "material left": "Master's inside profile of the inverted trace was garbage (spikes from misread loop windings, 75 cuts). Now the square's inset meets the ring's hole grown by the bit's radius, leaving the four corners and the centre disc."
+  },
+  "template-bowtie-inlay": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "template-box-template": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "template-cabinet-side-shelf-pins": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "template-coasters": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "template-drawer-box": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "template-end-grain-board-inlay": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "template-shop-fixtures": {
+    "shape": "Fillets and dogbones are made on exact arcs: master's, on chorded circles, came out tiny and differed between copies.",
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline. Lead-ins and ramps start where the offset loop starts, now the shape's own first point (master's was wherever Clipper's output began): the same cut, entered elsewhere along the outline. And fillets on exact arcs (see the shape)."
+  },
+  "template-spoilboard-insert-grid": {
+    "material left": "An edge moved by a cell or two (0.1–0.2 mm) at single spots: exact arcs and offsets instead of master's chords and 0.02 mm overcut."
+  },
+  "template-v-carved-sign": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "transform-align": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-centers": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-chain": {
+    "shape": "Fillets and dogbones are made on exact arcs: master's, on chorded circles, came out tiny and differed between copies.",
+    "material left": "Fillets and dogbones are made on exact arcs: master's, on chorded circles, came out tiny and differed between copies."
+  },
+  "transform-disabled": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-dogbone": {
+    "material left": "Dogbones are made on exact arcs: master's bump, on chords, differed from corner to corner."
+  },
+  "transform-dogbone-t-bones": {
+    "material left": "An edge moved by a cell or two (0.1–0.2 mm) at single spots: exact arcs and offsets instead of master's chords and 0.02 mm overcut."
+  },
+  "transform-fit": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-mirror": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-offset-negative": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-offset-open-paths": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-offset-positive": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-offset-split-and-vanish": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-polar": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-repeat": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-rotate": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-scale": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-simplify": {
+    "shape": "Simplifying keeps arcs: master simplified the chords of the circle and the text, moving them by up to the tolerance.",
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "Simplifying keeps arcs: master simplified the chords of the circle and the text, moving them by up to the tolerance."
+  },
+  "transform-tabs-both-sides": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "The pocket's loop now runs exactly a bit's radius from the tab, just touching it (master's 0.02 mm overcut put it within reach, so it lifted over a longer stretch). The tab is the same."
+  },
+  "transform-tabs-carried": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "transform-tabs-evenly-outside": {
+    "tabs": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline.",
+    "material left": "Tabs are spaced from each loop's first point, now the shape's own first point (master's was wherever Clipper's output began): same count and spacing, further along the outline."
+  },
+  "transform-tabs-holes-inside": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "transform-tabs-points": {
+    "tabs": "Each tab sits at the nearest point of the exact circle (master: of its chords), up to 0.17 mm away.",
+    "material left": "Each tab sits at the nearest point of the exact circle (master: of its chords), up to 0.17 mm away."
+  },
+  "transform-translate": {
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+  },
+  "vcarve-center-line": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-clear-depth-engagement": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-clear-ramp": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-cleared-first": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-cleared-first-single-pass": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-clearing-after": {
+    "material left": "Master's pockets cut 0.02 mm (2 × precision) past every wall: they grew the outlines to join near ones and never shrank that back. Now exactly on the wall, so a little more is left where that 0.02 mm reached furthest: sharp corners and narrow tips. Here the V-bit's scallops (≤ 0.3 mm) remain in the corners of the flat bottom."
+  },
+  "vcarve-clearing-disabled": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-mode-contours": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-mode-holes": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-no-flat-bottom": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-ramp": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-sharp-corner-angle-175": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-start-depth": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-text-stepover-flat-bottom": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-tip-diameter": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "vcarve-two-clearings": {
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  }
+}
