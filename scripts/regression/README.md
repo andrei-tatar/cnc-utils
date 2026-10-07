@@ -28,15 +28,30 @@ git.
 Per project (tolerances at the top of `run.ts`):
 
 - each shape's outlines: Hausdorff distance;
-- each operation's cutting moves, in 3D: Hausdorff distance (travel left out),
-  plus the number of cuts and their length;
-- the material left after every cut (the simulation's heightmap), allowing
-  an edge to move by a cell;
-- the estimated time, the job checks' warnings, and the G-code's size and
-  arc count (reported, not failed).
+- the tabs on them: their footprints and tops;
+- the material left after every cut (the simulation's heightmap, simulated
+  with arcs followed far finer than the preview's), allowing an edge to move
+  by a cell — this is what decides whether two runs cut the same;
+- the job checks' warnings;
+- reported, not failed: each operation's cutting moves in the material
+  (Z ≤ 0), in 3D (Hausdorff distance, travel left out; plus the number of
+  cuts and their length), the estimated time, and the G-code's size and arc
+  count.
 
 Order, direction and the split into separate cuts may change freely: what
-must hold is the geometry cut.
+must hold is the material cut.
+
+Failing checks get an overlay SVG: the cuts or outlines (baseline blue, now
+red), or for the material, dots over the shapes where more is left now (red)
+or more is cut (blue).
+
+## Accepted differences
+
+`accepted.json` lists differences known to be intended, by project and by
+check (the start of its name: `material left`, `warnings`, `tabs`,
+`operation op-…`), each with the reason. They're reported as notes with the
+reason instead of failing. Add one only once the difference is understood —
+the reason should say why the new result is right (or as good).
 
 ## How
 

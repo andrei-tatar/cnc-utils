@@ -37,8 +37,12 @@ const worker = path.join(srcRoot, "src/worker/index.ts");
 await build({
   entryPoints: [path.join(here, "run.ts")],
   bundle: true,
-  // Bare imports from the other tree resolve to this checkout's packages.
-  nodePaths: [path.join(root, "node_modules")],
+  // Bare imports from the other tree resolve to its packages, else this
+  // checkout's.
+  nodePaths: [
+    ...(srcRoot !== root ? [path.join(srcRoot, "node_modules")] : []),
+    path.join(root, "node_modules"),
+  ],
   platform: "node",
   format: "esm",
   target: "node22",
@@ -87,13 +91,14 @@ await build({
             ? { path: path.join(here, "fake-worker.ts") }
             : undefined;
         });
-        // Clipper's wasm from node_modules, not next to the page.
+        // (Code from before the geometry kernel:) Clipper's wasm from its
+        // tree's node_modules, not next to the page.
         b.onLoad({ filter: /src\/cam\/clipper\.ts$/ }, (args) => ({
           contents: fs
             .readFileSync(args.path, "utf8")
             .replace(
               /locateFile: \(\) => `clipper2z\.wasm\?v=\$\{clipperVersion\}`/,
-              `locateFile: () => ${JSON.stringify(path.join(root, "node_modules/clipper2-wasm/dist/es/clipper2z.wasm"))}`,
+              `locateFile: () => ${JSON.stringify(path.join(srcRoot, "node_modules/clipper2-wasm/dist/es/clipper2z.wasm"))}`,
             ),
           loader: "ts",
         }));

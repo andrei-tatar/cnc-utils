@@ -33,6 +33,20 @@ import { outlinePoints } from './outline';
 
 installImagePolyfill();
 
+// The geometry kernel's WebAssembly, for checkouts that have one (see
+// src/cam/kernel.ts).
+const ROOT_FOR_KERNEL = path.resolve(__dirname, '../../..');
+for (const file of [
+  process.env['CNC_KERNEL_WASM'],
+  path.join(ROOT_FOR_KERNEL, 'kernel/dist/cnc-kernel.wasm'),
+]) {
+  if (file && fs.existsSync(file)) {
+    (globalThis as { cncKernelWasm?: BufferSource }).cncKernelWasm =
+      fs.readFileSync(file);
+    break;
+  }
+}
+
 // Bundled into .build/.
 const ROOT = path.resolve(__dirname, '../../..');
 
@@ -52,6 +66,9 @@ const TOLERANCE = {
   time: 0.05,
 };
 
+/** How closely the simulation's lines follow arcs (mm). */
+const SIMULATED_TOLERANCE = 0.0005;
+
 /** Give up on a project after this long (ms). */
 const TIMEOUT = 180_000;
 
@@ -65,6 +82,8 @@ type Output = {
   error?: string;
   /** Outlines by shape id. */
   shapes: Record<string, Polyline[]>;
+  /** Tab footprints by shape id, with each one's top as a third coordinate. */
+  tabs?: Record<string, number[][][]>;
   /** Cutting moves by operation id (3D polylines; travel left out). */
   operations: Record<
     string,
@@ -167,7 +186,15 @@ async function runProject(
   const program: Program = latestProgram;
   const camShapes: CamShape[] = latestShapes;
 
+  output.tabs = {};
   for (const shape of camShapes) {
+    if (shape.tabs?.length) {
+      (output.tabs[shape.sourceShapeId] ??= []).push(
+        ...shape.tabs.map((tab) =>
+          tab.points.map((p) => [round(p.x), round(p.y), round(tab.top)]),
+        ),
+      );
+    }
     const list = (output.shapes[shape.sourceShapeId] ??= []);
     for (const polygon of shape.polygons) {
       list.push({
@@ -203,10 +230,18 @@ async function runProject(
     (w) => `${w.level}: ${w.text}`,
   );
 
+  // The material left, simulated on arcs drawn far finer than the preview
+  // draws them: two cuts that meet exactly on a curve (a pocket inside a
+  // circle, a profile outside it) leave nothing between them, which lines
+  // within the curve tolerance would turn into a sliver of uncut cells.
   let heights: Float32Array | null = null;
-  const input = simulationInput(paths, model);
+  const fine = programPaths({
+    ...program,
+    options: { ...program.options, curveTolerance: SIMULATED_TOLERANCE },
+  });
+  const input = simulationInput(fine, model);
   if (input) {
-    const map = await simulateStock(paths, input.tools, input.stock);
+    const map = await simulateStock(fine, input.tools, input.stock);
     const { heights: h, ...rest } = map;
     output.heightmap = rest;
     heights = h;
@@ -366,7 +401,51 @@ function hausdorff(a: Seg[], b: Seg[], limit: number) {
   return { worst, at };
 }
 
-type Check = { what: string; ok: boolean; detail: string };
+/**
+ * One comparison: `ok`, or not — failing the project, unless it's only a
+ * `note` (a difference to look at that doesn't by itself mean the result
+ * changed, e.g. a toolpath taking another route to cut the same material).
+ */
+type Check = {
+  what: string;
+  ok: boolean;
+  detail: string;
+  note?: boolean;
+  /** For the material left: the cells that differ (see compareHeights). */
+  cells?: number[][];
+};
+
+/**
+ * A cut's stretches in the material (Z ≤ 0): above it, moves cut only air,
+ * and where a bit plunges from changes with the route.
+ */
+function inMaterial(lines: number[][][]): { points: number[][] }[] {
+  const out: { points: number[][] }[] = [];
+  for (const line of lines) {
+    let current: number[][] = [];
+    for (let i = 0; i < line.length; i++) {
+      const p = line[i];
+      if (p[2] <= 1e-6) {
+        if (!current.length && i > 0 && line[i - 1][2] > 1e-6) {
+          current.push(atZero(line[i - 1], p));
+        }
+        current.push(p);
+      } else if (current.length) {
+        current.push(atZero(line[i - 1], p));
+        out.push({ points: current });
+        current = [];
+      }
+    }
+    if (current.length) out.push({ points: current });
+  }
+  return out;
+}
+
+/** Where the move from `a` to `b` crosses Z 0. */
+function atZero(a: number[], b: number[]) {
+  const t = a[2] / (a[2] - b[2]);
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, 0];
+}
 
 function compareOutputs(
   base: Output,
@@ -398,6 +477,26 @@ function compareOutputs(
       detail: `${a.length}→${b.length} outlines, off by ${fmt(h.worst)} mm${h.at ? ` at ${h.at.map(fmt).join(',')}` : ''}`,
     });
   }
+  // Tabs (where recorded): footprints and tops, as closed outlines.
+  if (base.tabs && cur.tabs) {
+    const tabIds = new Set([
+      ...Object.keys(base.tabs),
+      ...Object.keys(cur.tabs),
+    ]);
+    for (const id of tabIds) {
+      const a = (base.tabs[id] ?? []).map((points) => ({
+        close: true,
+        points,
+      }));
+      const b = (cur.tabs[id] ?? []).map((points) => ({ close: true, points }));
+      const h = hausdorff(segmentsOf(a), segmentsOf(b), 20);
+      checks.push({
+        what: `tabs on ${id}`,
+        ok: a.length === b.length && h.worst <= TOLERANCE.shape,
+        detail: `${a.length}→${b.length} tabs, off by ${fmt(h.worst)} mm${h.at ? ` at ${h.at.map(fmt).join(',')}` : ''}`,
+      });
+    }
+  }
   const ops = new Set([
     ...Object.keys(base.operations),
     ...Object.keys(cur.operations),
@@ -414,8 +513,8 @@ function compareOutputs(
       continue;
     }
     const h = hausdorff(
-      segmentsOf(a.carve.map((points) => ({ points }))),
-      segmentsOf(b.carve.map((points) => ({ points }))),
+      segmentsOf(inMaterial(a.carve)),
+      segmentsOf(inMaterial(b.carve)),
       5,
     );
     const lengthChange =
@@ -423,6 +522,7 @@ function compareOutputs(
     checks.push({
       what: `operation ${id} (${a.type})`,
       ok: h.worst <= TOLERANCE.path,
+      note: true,
       detail: `paths off by ${fmt(h.worst)} mm${h.at ? ` at ${h.at.map(fmt).join(',')}` : ''}; ${a.carve.length}→${b.carve.length} cuts, length ${fmt(a.length)}→${fmt(b.length)} (${(lengthChange * 100).toFixed(1)}%)`,
     });
   }
@@ -430,6 +530,7 @@ function compareOutputs(
   checks.push({
     what: 'time',
     ok: timeChange <= TOLERANCE.time || Math.abs(cur.time - base.time) < 2,
+    note: true,
     detail: `${fmt(base.time)}→${fmt(cur.time)} s`,
   });
   const removed = base.warnings.filter((w) => !cur.warnings.includes(w));
@@ -454,11 +555,20 @@ function compareOutputs(
       baseHeights,
       cur.heightmap,
       curHeights,
+      nearOutline(
+        [base, cur],
+        Math.max(base.heightmap.cell, cur.heightmap.cell),
+      ),
     );
+    const walls = h.walls
+      ? `; ${h.walls} more on walls of no thickness or lone (see compareHeights)`
+      : '';
     checks.push({
       what: 'material left',
       ok: h.bad === 0,
-      detail: `${h.bad} of ${h.total} cells off by more than ${TOLERANCE.height} mm (worst ${fmt(h.worst)} mm${h.at ? ` at ${h.at.map(fmt).join(',')}` : ''})`,
+      note: h.bad === 0 && h.walls > 0,
+      detail: `${h.bad} of ${h.total} cells off by more than ${TOLERANCE.height} mm (worst ${fmt(h.worst)} mm${h.at ? ` at ${h.at.map(fmt).join(',')}` : ''})${walls}`,
+      cells: h.cells,
     });
   } else if (!!base.heightmap !== !!cur.heightmap) {
     checks.push({
@@ -471,6 +581,49 @@ function compareOutputs(
 }
 
 /**
+ * Whether a point lies within 1.5 cells of a shape's outline, in either run.
+ */
+function nearOutline(
+  outputs: Output[],
+  cell: number,
+): (x: number, y: number) => boolean {
+  const reach = 1.5 * cell;
+  const size = 4 * cell;
+  const grid = new Map<string, number[][]>();
+  const key = (i: number, j: number) => `${i},${j}`;
+  for (const o of outputs)
+    for (const line of Object.values(o.shapes).flat()) {
+      const pts = line.close ? [...line.points, line.points[0]] : line.points;
+      for (let k = 1; k < pts.length; k++) {
+        const [a, b] = [pts[k - 1], pts[k]];
+        const i0 = Math.floor((Math.min(a[0], b[0]) - reach) / size),
+          i1 = Math.floor((Math.max(a[0], b[0]) + reach) / size);
+        const j0 = Math.floor((Math.min(a[1], b[1]) - reach) / size),
+          j1 = Math.floor((Math.max(a[1], b[1]) + reach) / size);
+        for (let i = i0; i <= i1; i++)
+          for (let j = j0; j <= j1; j++) {
+            const list = grid.get(key(i, j)) ?? [];
+            list.push([a[0], a[1], b[0], b[1]]);
+            grid.set(key(i, j), list);
+          }
+      }
+    }
+  return (x, y) =>
+    (grid.get(key(Math.floor(x / size), Math.floor(y / size))) ?? []).some(
+      ([ax, ay, bx, by]) => {
+        const dx = bx - ax,
+          dy = by - ay;
+        const l = dx * dx + dy * dy;
+        const t =
+          l > 0
+            ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l))
+            : 0;
+        return Math.hypot(ax + dx * t - x, ay + dy * t - y) <= reach;
+      },
+    );
+}
+
+/**
  * Cells where the material differs, allowing an edge to have moved by up to
  * `heightCells`: a cell matches if a cell that near in the other run has
  * (nearly) its height. Checked both ways.
@@ -480,15 +633,52 @@ function compareHeights(
   ah: Float32Array,
   b: Output['heightmap'] & {},
   bh: Float32Array,
+  onOutline: (x: number, y: number) => boolean = () => false,
 ) {
   let bad = 0,
     total = 0,
-    worst = 0;
+    worst = 0,
+    walls = 0;
   let at: number[] | null = null;
+  /** The cells that differ: where, and by how much (now − baseline). */
+  const cells: number[][] = [];
   const sample = (m: typeof a, h: Float32Array, x: number, y: number) => {
     const i = Math.floor((x - m.minX) / m.cell),
       j = Math.floor((y - m.minY) / m.cell);
     return i < 0 || j < 0 || i >= m.nx || j >= m.ny ? m.top : h[j * m.nx + i];
+  };
+  // A wall of no thickness: where two cuts meet on a shape's outline (a
+  // pocket and an outside profile, say), the cells whose centres fall on
+  // the line are left standing by rounding, as a ridge a cell wide that
+  // comes and goes with the tiniest change. Not a difference in what's cut;
+  // nor is a lone cell standing above all its neighbours, wherever it is.
+  const spike = (m: typeof a, h: Float32Array, x: number, y: number) => {
+    const v = sample(m, h, x, y),
+      c = m.cell;
+    for (const dx of [-c, 0, c])
+      for (const dy of [-c, 0, c])
+        if (
+          (dx || dy) &&
+          !(sample(m, h, x + dx, y + dy) < v - TOLERANCE.height)
+        )
+          return false;
+    return true;
+  };
+  const ridge = (m: typeof a, h: Float32Array, x: number, y: number) => {
+    const v = sample(m, h, x, y),
+      c = m.cell;
+    return (
+      [
+        [c, 0],
+        [0, c],
+        [c, c],
+        [c, -c],
+      ] as const
+    ).some(
+      ([dx, dy]) =>
+        sample(m, h, x + dx, y + dy) < v - TOLERANCE.height &&
+        sample(m, h, x - dx, y - dy) < v - TOLERANCE.height,
+    );
   };
   for (const [m, h, o, oh] of [
     [a, ah, b, bh],
@@ -506,7 +696,17 @@ function compareHeights(
             best = Math.min(best, Math.abs(sample(o, oh, x + dx, y + dy) - v));
         total++;
         if (best > TOLERANCE.height) {
+          if (
+            spike(a, ah, x, y) ||
+            spike(b, bh, x, y) ||
+            ((ridge(a, ah, x, y) || ridge(b, bh, x, y)) && onOutline(x, y))
+          ) {
+            walls++;
+            continue;
+          }
           bad++;
+          const other = sample(o, oh, x, y);
+          cells.push([x, y, m === a ? other - v : v - other]);
           if (best > worst) {
             worst = best;
             at = [x, y];
@@ -514,7 +714,37 @@ function compareHeights(
         }
       }
   }
-  return { bad, total, worst, at };
+  return { bad, total, worst, at, cells, walls };
+}
+
+/**
+ * Where the material differs, over the shapes' outlines (grey): red where
+ * more is left now, blue where more is cut.
+ */
+function heightOverlay(base: Output, cells: number[][]): string | null {
+  const outlines = Object.values(base.shapes).flat();
+  const all = [...outlines.flatMap((l) => l.points), ...cells];
+  if (!all.length) return null;
+  const minX = Math.min(...all.map((p) => p[0])) - 2;
+  const maxX = Math.max(...all.map((p) => p[0])) + 2;
+  const minY = Math.min(...all.map((p) => p[1])) - 2;
+  const maxY = Math.max(...all.map((p) => p[1])) + 2;
+  const S = 1200 / Math.max(maxX - minX, maxY - minY);
+  const tx = (p: number[]) =>
+    `${((p[0] - minX) * S).toFixed(1)},${((maxY - p[1]) * S).toFixed(1)}`;
+  const lines = outlines
+    .map(
+      (l) =>
+        `<${l.close ? 'polygon' : 'polyline'} points="${l.points.map(tx).join(' ')}" fill="none" stroke="#999" stroke-width="1"/>`,
+    )
+    .join('');
+  const dots = cells
+    .map(
+      (c) =>
+        `<circle cx="${tx(c).split(',')[0]}" cy="${tx(c).split(',')[1]}" r="1.5" fill="${c[2] > 0 ? '#d32f2f' : '#1565c0'}"/>`,
+    )
+    .join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${((maxX - minX) * S).toFixed(0)}" height="${((maxY - minY) * S).toFixed(0)}"><rect width="100%" height="100%" fill="white"/>${lines}${dots}</svg>`;
 }
 
 function fmt(v: number) {
@@ -532,6 +762,29 @@ function load(dir: string, name: string) {
     ? new Float32Array(new Uint8Array(fs.readFileSync(bin)).buffer)
     : null;
   return { output, heights };
+}
+
+/**
+ * Differences from the baseline known to be intended (`accepted.json`: by
+ * project, then by the start of a check's name, the reason): such a check
+ * no longer fails the project, and the report gives the reason.
+ */
+function acceptKnown(name: string, checks: Check[]): Check[] {
+  const file = path.join(ROOT, 'scripts/regression/accepted.json');
+  const accepted: Record<string, Record<string, string>> = fs.existsSync(file)
+    ? JSON.parse(fs.readFileSync(file, 'utf8'))
+    : {};
+  const known = accepted[name] ?? {};
+  return checks.map((c) => {
+    const key = Object.keys(known).find((k) => c.what.startsWith(k));
+    return !c.ok && key
+      ? {
+          ...c,
+          note: true,
+          detail: `${c.detail} — accepted: ${known[key]}`,
+        }
+      : c;
+  });
 }
 
 /** Top view of a failing check: baseline blue, now red. */
@@ -574,6 +827,7 @@ async function compare(
     .filter((n) => !filter || n.includes(filter))
     .sort();
   let failed = 0;
+  let noted = 0;
   const report: string[] = [
     '# Regression comparison',
     '',
@@ -600,26 +854,30 @@ async function compare(
       failed++;
       continue;
     }
-    const checks = compareOutputs(
-      base.output,
-      cur.output,
-      base.heights,
-      cur.heights,
+    const checks = acceptKnown(
+      name,
+      compareOutputs(base.output, cur.output, base.heights, cur.heights),
     );
-    const ok = checks.every((c) => c.ok);
+    const ok = checks.every((c) => c.ok || c.note);
+    const notes = checks.some((c) => !c.ok && c.note);
     if (!ok) failed++;
-    console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`);
+    if (ok && notes) noted++;
+    const verdict = ok ? (notes ? 'NOTE' : 'PASS') : 'FAIL';
+    console.log(`${verdict} ${name}`);
     report.push(
-      `## ${ok ? '✓' : '✗'} ${name}`,
+      `## ${ok ? (notes ? '◐' : '✓') : '✗'} ${name}`,
       '',
       `_${base.output.covers}_`,
       '',
     );
     for (const c of checks) {
-      report.push(`- ${c.ok ? '✓' : '✗'} ${c.what}: ${c.detail}`);
+      const mark = c.ok ? '✓' : c.note ? '◐' : '✗';
+      report.push(`- ${mark} ${c.what}: ${c.detail}`);
       if (!c.ok) {
-        console.log(`     ✗ ${c.what}: ${c.detail}`);
-        const svg = overlay(base.output, cur.output, c);
+        console.log(`     ${mark} ${c.what}: ${c.detail}`);
+        const svg = c.cells
+          ? heightOverlay(base.output, c.cells)
+          : overlay(base.output, cur.output, c);
         if (svg) {
           const file = `${name}--${c.what.replace(/[^a-zA-Z0-9-]+/g, '_')}.svg`;
           fs.writeFileSync(path.join(reportDir, file), svg);
@@ -632,12 +890,12 @@ async function compare(
   report.splice(
     4,
     0,
-    `**${names.length - failed} of ${names.length} projects match.**`,
+    `**${names.length - failed} of ${names.length} projects match**, ${noted} of them with notes (◐: toolpaths or times that differ, while what's cut doesn't).`,
     '',
   );
   fs.writeFileSync(path.join(reportDir, 'report.md'), report.join('\n'));
   console.log(
-    `\n${names.length - failed} of ${names.length} projects match; report in ${reportDir}/report.md`,
+    `\n${names.length - failed} of ${names.length} projects match (${noted} with notes); report in ${reportDir}/report.md`,
   );
   process.exit(failed ? 1 : 0);
 }

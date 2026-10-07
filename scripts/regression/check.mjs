@@ -36,11 +36,24 @@ if (!fs.existsSync(tree)) {
     cwd: tree,
   });
 }
-if (!fs.existsSync(path.join(tree, "node_modules"))) {
-  fs.symlinkSync(
-    path.join(root, "node_modules"),
-    path.join(tree, "node_modules"),
-  );
+// The ref's own packages when they differ from this checkout's (e.g. a
+// geometry library since removed), else this checkout's.
+const sameLock =
+  fs.readFileSync(path.join(tree, "package-lock.json"), "utf8") ===
+  fs.readFileSync(path.join(root, "package-lock.json"), "utf8");
+const modules = path.join(tree, "node_modules");
+const linked = fs.existsSync(modules) && fs.lstatSync(modules).isSymbolicLink();
+if (sameLock) {
+  if (!fs.existsSync(modules)) {
+    fs.symlinkSync(path.join(root, "node_modules"), modules);
+  }
+} else if (linked || !fs.existsSync(modules)) {
+  fs.rmSync(modules, { recursive: true, force: true });
+  console.log(`Installing ${ref}'s packages in ${tree}`);
+  execFileSync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], {
+    cwd: tree,
+    stdio: "inherit",
+  });
 }
 
 const run = (...a) => {
