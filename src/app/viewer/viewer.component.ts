@@ -497,7 +497,10 @@ export class ViewerComponent implements OnInit, OnDestroy {
   /** Simulating: asks for the material left, and shows it. */
   simulating = false;
   @Output() simulateChange = new EventEmitter<boolean>();
-  /** The toolpaths, hidden while the simulated material is shown. */
+  /**
+   * The toolpaths, hidden while the simulated material is shown (so are the
+   * shapes).
+   */
   private pathsGroup = new Group();
 
   /** Shapes marked as clamps: drawn in red. */
@@ -823,8 +826,15 @@ export class ViewerComponent implements OnInit, OnDestroy {
                       distinctUntilChanged(),
                     ),
                     highlight$: isHighlighted$,
-                    hidden$: this.hiddenShapes$.pipe(
-                      map((hidden) => hidden.includes(shape.sourceShapeId)),
+                    // Toggled off, or the simulated material is shown.
+                    hidden$: combineLatest([
+                      this.hiddenShapes$,
+                      this.simulation$,
+                    ]).pipe(
+                      map(
+                        ([hidden, simulation]) =>
+                          !!simulation || hidden.includes(shape.sourceShapeId),
+                      ),
                       distinctUntilChanged(),
                     ),
                   }).pipe(
