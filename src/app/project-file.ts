@@ -22,6 +22,14 @@ export function downloadFile(
 }
 
 /**
+ * `name` made safe for a file name: runs of anything but letters, digits,
+ * `.`, `_` and `-` become `-`. Empty when nothing of it is left.
+ */
+export function fileNameFrom(name: string): string {
+  return name.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '');
+}
+
+/**
  * Asks for a G-code file and emits the project embedded in it (migrated to
  * the current model). Completes without emitting for a file without one.
  */

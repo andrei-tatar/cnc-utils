@@ -31,7 +31,7 @@ import {
   reuseUnchangedPaths,
 } from '../pipeline/preview';
 import { generateShapesFromModel } from '../pipeline/shapes';
-import { downloadFile } from '../project-file';
+import { downloadFile, fileNameFrom } from '../project-file';
 import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { resolveModel } from '../model-editor/variables/resolve';
@@ -138,7 +138,9 @@ export class CamService implements ShapeExporter {
         ),
       )
       .subscribe((gcode) => {
-        downloadFile(gcode, `gcode-${new Date().getTime()}.nc`);
+        // Named after the saved project the work belongs to, if any.
+        const name = fileNameFrom(this.store.project?.name ?? '');
+        downloadFile(gcode, `${name || 'gcode'}-${new Date().getTime()}.nc`);
       });
   }
 
@@ -166,10 +168,7 @@ export class CamService implements ShapeExporter {
       { points, chords: points + options.curveTolerance },
       name,
     );
-    const fileName = name
-      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
-      .replace(/^-+|-+$/g, '');
-    downloadFile(svg, `${fileName || 'shape'}.svg`, 'image/svg+xml');
+    downloadFile(svg, `${fileNameFrom(name) || 'shape'}.svg`, 'image/svg+xml');
   }
 }
 
