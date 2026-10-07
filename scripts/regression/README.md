@@ -69,3 +69,18 @@ node scripts/regression/build.mjs compare <baseline> <current> <report dir> [fil
 
 Text shapes fetch their fonts from jsDelivr, so the first run needs the
 network.
+
+## Profiling
+
+`REGRESSION_PROFILE=<file>` makes `record` run the work functions one at a
+time and append each call's name and time (ms) to the file, so the geometry
+of two checkouts can be timed call by call:
+
+```
+REGRESSION_PROFILE=/tmp/now.tsv node scripts/regression/build.mjs record /tmp/now inlay
+REGRESSION_PROFILE=/tmp/base.tsv node scripts/regression/build.mjs --src <checkout> record /tmp/base inlay
+```
+
+For where the time goes inside a call, run the bundle under Node's profiler
+(`node --cpu-prof scripts/regression/.build/run.mjs record <dir> <filter>`,
+after a `build.mjs` run has bundled it).

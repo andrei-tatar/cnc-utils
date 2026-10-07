@@ -1,6 +1,7 @@
 // Stands in for src/worker/index.ts in the regression harness: runs each
 // work function in this process, its arguments and result going through
 // the same codec as the real worker pool (so packing is exercised too).
+import * as fs from 'node:fs';
 import { defer, lastValueFrom, Observable, take, toArray } from 'rxjs';
 import { pack, unpack } from '../../src/worker/codec';
 import * as work from '../../src/worker/work';
@@ -14,6 +15,9 @@ type Contract = {
   ) => Observable<Awaited<ReturnType<(typeof work)[K]>>>;
 };
 
+/** Profiling: the calls in turn. */
+let queue: Promise<unknown> = Promise.resolve();
+
 const worker: Contract = new Proxy({} as Contract, {
   get(_target, name: string) {
     return (...args: unknown[]) =>
@@ -24,33 +28,47 @@ const worker: Contract = new Proxy({} as Contract, {
           return;
         }
         running.count++;
+        // REGRESSION_PROFILE=<file>: calls run one at a time, each one's name
+        // and time (ms) logged, so a call's time is its own.
+        const log = process.env['REGRESSION_PROFILE'];
+        let started = 0;
         let done = false;
-        const finish = () => {
+        const finish = (completed: boolean) => {
           if (!done) {
             done = true;
             running.count--;
+            if (log && completed) {
+              fs.appendFileSync(
+                log,
+                `${name}\t${(performance.now() - started).toFixed(2)}\n`,
+              );
+            }
           }
         };
-        lastValueFrom(
-          defer(() => found.apply(null, unpack(pack(args)) as unknown[])).pipe(
-            take(1),
-            toArray(),
-          ),
-        ).then(
+        const call = () => {
+          started = performance.now();
+          return lastValueFrom(
+            defer(() =>
+              found.apply(null, unpack(pack(args)) as unknown[]),
+            ).pipe(take(1), toArray()),
+          );
+        };
+        const result = log ? (queue = queue.then(call, call)) : call();
+        result.then(
           (values) => {
-            finish();
+            finish(true);
             if (values.length) {
               subscriber.next(unpack(pack(values[0])));
             }
             subscriber.complete();
           },
           (error) => {
-            finish();
+            finish(true);
             subscriber.error(error);
           },
         );
         // Cancelling drops the result, like the pool does.
-        return finish;
+        return () => finish(false);
       });
   },
 });
