@@ -26,6 +26,17 @@ body {
   --editor-hover-bg: rgba(15, 23, 42, 0.04);
   --editor-chip-bg: #eef1f5;
   --editor-label-color: #5b6475;
+
+  // Expressions in number fields: the font and the colours of their parts.
+  --code-font:
+    "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --code-number: #0550ae;
+  --code-unit: #0a7c86;
+  --code-variable: #7c3aed;
+  --code-constant: #b35900;
+  --code-function: #1a7f37;
+  --code-operator: #6e7781;
+  --code-error: #cf222e;
 }
 
 // One field per row: fixed-width label on the left, control on the right.
@@ -134,7 +145,8 @@ app-model-editor .operand-row {
 
     // Like the values (number fields), which are expressions.
     .form-control {
-      font-family: var(--bs-font-monospace);
+      font-family: var(--code-font);
+      font-variant-ligatures: none;
     }
   }
 
