@@ -1,5 +1,5 @@
 import { CamPoint, CamShape } from '../../cam/types';
-import { decimals, GeometrySettings, useGeometry } from '../../cam/geometry';
+import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { applyTransform } from './apply-transform';
 import { applyBooleanOperation } from './boolean-operation';
@@ -27,14 +27,11 @@ export async function flatOutline(
   useGeometry(options.geometry);
   if (options.growByToolsize) {
     input = await applyTransform(input, {
-      type: 'clipper-inflate',
+      type: 'offset',
       offset: options.toolSize * 0.5,
       endType: 'polygon',
       joinType: 'round',
-      // The offset transform's fields reach Clipper swapped (see
-      // applyTransform): miter limit 2, the settings' decimal places.
-      precision: 2,
-      miterLimit: decimals(),
+      miterLimit: 2,
       // 0: automatic, fine arcs (newer Clipper takes a coarse tolerance literally).
       arcTolerance: 0,
     });

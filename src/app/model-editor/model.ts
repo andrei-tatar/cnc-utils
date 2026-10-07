@@ -209,9 +209,23 @@ function migrateShape(shape: any) {
             centersOf: 'all',
             centersKeepOriginal: true,
           }
-        : transform,
+        : migrateOffset(transform),
     ),
   };
+}
+
+/**
+ * The offset transform was "clipper-inflate", and its fields reached Clipper
+ * swapped: "precision" was the miter limit, "miter limit" the decimal places.
+ * The miter limit moves to its own field; the decimal places are now the
+ * project's geometry precision, like every other offset.
+ */
+function migrateOffset(transform: any) {
+  if (transform?.type !== 'clipper-inflate') {
+    return transform;
+  }
+  const { precision, miterLimit: _, ...rest } = transform;
+  return { ...rest, type: 'offset', miterLimit: precision };
 }
 
 /**
