@@ -60,9 +60,12 @@ export async function routeVCarveClearing(
   },
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
+  // An inlay plug: carve around the (mirrored) design instead, reaching
+  // `shift` further at the surface.
+  let shift = 0;
   if (options.plug) {
-    // An inlay plug: carve around the (mirrored) design instead.
     input = await inlayPlugShape(input, options.plug);
+    shift = Math.max(0, options.plug.grow);
   }
   const sourceShapeId = input?.[0]?.sourceShapeId;
   let builder = new GCodeBuilder().sourceShapeId(sourceShapeId);
@@ -109,7 +112,7 @@ export async function routeVCarveClearing(
             outlines,
             await insetContours(holes, -wallInset),
           )
-        : await insetContours(region, wallInset);
+        : await insetContours(region, wallInset - shift);
 
     // Deeper levels only shrink, so once the end mill no longer fits, no
     // deeper level can need it either.

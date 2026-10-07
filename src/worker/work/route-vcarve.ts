@@ -1,4 +1,5 @@
 import { InlayPlug, inlayPlugShape } from './inlay-plug';
+import { combine, inflate } from './regions';
 import {
   insetContours,
   carveRegion,
@@ -79,9 +80,12 @@ export async function routeVCarve(
 ): Promise<GCodeBuilder> {
   useGeometry(options.geometry);
   const optimizeTravel = options.optimizeTravel !== false;
+  // An inlay plug: carve around the (mirrored) design instead, reaching
+  // `shift` further at the surface (see inlayPlugShape).
+  let shift = 0;
   if (options.plug) {
-    // An inlay plug: carve around the (mirrored) design instead.
     input = await inlayPlugShape(input, options.plug);
+    shift = Math.max(0, options.plug.grow);
   }
   const builder = new GCodeBuilder();
   builder.sourceShapeId(input?.[0]?.sourceShapeId);
@@ -163,6 +167,21 @@ export async function routeVCarve(
   }
 
   const region = await carveRegion(closed, options.mode);
+  // Insets below are from the outline of `area`: the region, or the region
+  // grown by `shift` for a plug.
+  const area = shift > 0 ? await inflate(region, shift) : region;
+  // The contours `inset` in, within the island `contours` (`fromInset` in).
+  // Down to `shift` in, a plug's levels are the region grown by what's left
+  // of it: insetting the level above would round off the corners where the
+  // area wraps round the design, more at each level.
+  const inside: Inside = async (contours, fromInset, inset) =>
+    fromInset < shift
+      ? combine(
+          await insetContours(region, inset - shift),
+          contours,
+          'intersection',
+        )
+      : insetContours(contours, inset - fromInset);
 
   // "Holes only" makes the same cuts as "outlines minus holes" but keeps just
   // the parts growing out from the holes.
@@ -173,6 +192,8 @@ export async function routeVCarve(
     await carveSinglePass(
       builder,
       region,
+      shift,
+      () => inside(area, 0, maxInset),
       geometry,
       depthAt,
       keepAt,
@@ -193,6 +214,7 @@ export async function routeVCarve(
         depthAt,
         maxInset,
         boundary: region,
+        shift,
       }
     : null;
 
@@ -204,7 +226,7 @@ export async function routeVCarve(
       : stepover;
 
   const firstInset = tipRadius + stepFrom(tipRadius);
-  const firstLevel = groupComponents(await insetContours(region, firstInset));
+  const firstLevel = groupComponents(await inside(area, 0, firstInset));
 
   // Depth-first over the inset tree: each island is carved all the way down
   // before moving on, which keeps travel short and lets every island get its
@@ -238,7 +260,7 @@ export async function routeVCarve(
     }
 
     const step = stepFrom(inset);
-    const next = await insetContours(contours, step);
+    const next = await inside(contours, inset, inset + step);
 
     if (next.length) {
       const children = orderComponents(groupComponents(next), position);
@@ -261,7 +283,7 @@ export async function routeVCarve(
     // The island collapses somewhere within this step. Its deepest point (on
     // the medial axis) would otherwise be left as a ridge up to
     // `step / tan(angle / 2)` high, so find the last non-empty inset.
-    const collapse = await findCollapse(contours, step);
+    const collapse = await findCollapse(contours, inset, step, inside);
     if (collapse) {
       const collapsed = groupComponents(collapse.contours).flat();
       for (const contour of orderByProximity(collapsed, position)) {
@@ -285,6 +307,7 @@ export async function routeVCarve(
     await carveAxis(
       builder,
       region,
+      shift,
       geometry,
       depthAt,
       keepAt,
@@ -309,6 +332,9 @@ export async function routeVCarve(
 async function carveSinglePass(
   builder: GCodeBuilder,
   region: CamPoint[][],
+  shift: number,
+  /** The contours at the max depth. */
+  deepest: () => Promise<CamPoint[][]>,
   geometry: { tipRadius: number; maxInset: number },
   depthAt: (inset: number) => number,
   keepAt: (inset: number) => ((p: CamPoint) => boolean) | null,
@@ -321,6 +347,7 @@ async function carveSinglePass(
   position = await carveAxis(
     builder,
     region,
+    shift,
     geometry,
     depthAt,
     keepAt,
@@ -332,7 +359,7 @@ async function carveSinglePass(
 
   if (Number.isFinite(maxInset)) {
     for (const contour of orderByProximity(
-      groupComponents(await insetContours(region, maxInset)).flat(),
+      groupComponents(await deepest()).flat(),
       position,
     )) {
       cutContour(
@@ -355,12 +382,14 @@ async function carveSinglePass(
 
 /**
  * Cut the medial axis where the shape is no wider than the max depth allows,
- * each point at the depth for its distance to the edges. Branches into
- * corners are kept for corners up to `sharpCornerAngle` (null: none).
+ * each point at the depth for its distance to the edges (plus `shift`).
+ * Branches into corners are kept for corners up to `sharpCornerAngle`
+ * (null: none).
  */
 async function carveAxis(
   builder: GCodeBuilder,
   region: CamPoint[][],
+  shift: number,
   geometry: { tipRadius: number; maxInset: number },
   depthAt: (inset: number) => number,
   keepAt: (inset: number) => ((p: CamPoint) => boolean) | null,
@@ -376,11 +405,16 @@ async function carveAxis(
   // The parts of the axis to cut: narrow enough (ending exactly at the max
   // depth inset), and on the holes' side for "holes only".
   const runs: AxisPoint[][] = [];
-  for (const axis of medialAxis(
+  for (const regionAxis of medialAxis(
     region,
     Math.max(0.1, 5 * precision()),
     sharpCornerAngle,
   )) {
+    // A plug's insets count from `shift` outside the region (the cone then
+    // reaches that much further at the surface).
+    const axis = shift
+      ? regionAxis.map((p) => ({ ...p, d: p.d + shift }))
+      : regionAxis;
     let run: AxisPoint[] = [];
     // (A single point is a plunge: e.g. the centre of a circle.)
     const end = () => {
@@ -478,6 +512,13 @@ type Component = {
   fromInset: number;
 };
 
+/** The contours `inset` in, within the island `contours` (`fromInset` in). */
+type Inside = (
+  contours: CamPoint[][],
+  fromInset: number,
+  inset: number,
+) => Promise<CamPoint[][]>;
+
 type CornerOptions = {
   /** Corners with an interior angle up to this (radians) get sharpened. */
   maxAngle: number;
@@ -485,16 +526,23 @@ type CornerOptions = {
   maxInset: number;
   /** The original outline, used to make sure a corner run never gouges it. */
   boundary: CamPoint[][];
+  /** How far outside `boundary` the insets count from (an inlay plug's). */
+  shift: number;
 };
 
-async function findCollapse(contours: CamPoint[][], step: number) {
+async function findCollapse(
+  contours: CamPoint[][],
+  fromInset: number,
+  step: number,
+  inside: Inside,
+) {
   let lo = 0;
   let hi = step;
   let found: CamPoint[][] | null = null;
 
   while (hi - lo > precision()) {
     const mid = (lo + hi) / 2;
-    const inset = await insetContours(contours, mid);
+    const inset = await inside(contours, fromInset, fromInset + mid);
     if (inset.length) {
       lo = mid;
       found = inset;
@@ -762,11 +810,16 @@ function cornerRun(
   const samples = [0.25, 0.5, 0.75, 1].map(
     (f) => inset - (inset - fromInset) * f,
   );
+  // (A plug's insets count from `shift` outside the outline: no runs where
+  // they'd still be outside it.)
   const isValid = samples.every(
     (t) =>
-      Math.abs(distanceToBoundary(at(t), corners.boundary) - t) <=
+      Math.abs(
+        distanceToBoundary(at(t), corners.boundary) - (t - corners.shift),
+      ) <=
         3 * precision() &&
-      (t <= 3 * precision() || insideRegion(at(t), corners.boundary)),
+      (t - corners.shift <= 3 * precision() ||
+        insideRegion(at(t), corners.boundary)),
   );
   if (!isValid) {
     return null;
