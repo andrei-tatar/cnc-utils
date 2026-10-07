@@ -10,12 +10,17 @@ import { ModelType } from '../model-editor/model';
 import { distinctItems, distinctJson } from './operators';
 import { borrowedShapeId } from '../model-editor/operations/describe';
 
-/** Shapes toggled off in the editor (hidden in the preview only). */
+/**
+ * Shapes toggled off in the editor (hidden in the preview only), unless
+ * they're expanded: a shape being edited is shown.
+ */
 export function hiddenShapeIds(
   model$: Observable<ModelType>,
 ): Observable<string[]> {
   return model$.pipe(
-    map(({ shapes }) => shapes.filter((s) => s.hidden).map((s) => s.id)),
+    map(({ shapes }) =>
+      shapes.filter((s) => s.hidden && !s.expanded).map((s) => s.id),
+    ),
     distinctUntilChanged((a, b) => a.join() === b.join()),
   );
 }
