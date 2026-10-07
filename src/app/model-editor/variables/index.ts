@@ -42,7 +42,7 @@ export const field: FormlyFieldConfig = {
     // One row per variable, edited in place.
     inline: true,
     description:
-      'Use them in any number field, e.g. “width / 2”. A variable can use the ones above it.',
+      'Use them in any number field, e.g. “width / 2”. A variable can use the ones above it. Lengths can have units: “1cm”, “1/4in” (mm without one). Ctrl+Space suggests names.',
   },
   fieldArray: {
     fieldGroupClassName: 'variable-row',
