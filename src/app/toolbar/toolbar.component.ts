@@ -20,6 +20,9 @@ import { DatePipe } from '@angular/common';
 import { listTemplates, Template } from '../templates';
 import { Project } from '../projects';
 
+/** An entry in the G-code button's menu. */
+export type JobAction = { id: string; label: string; description: string };
+
 /**
  * The app's header, across the editor and the preview: the project being
  * worked on (its name, whether it's saved, the saved projects) on the left,
@@ -249,19 +252,70 @@ import { Project } from '../projects';
         <span class="label secondary-label">Load .nc</span>
       </button>
       <span class="separator" aria-hidden="true"></span>
-      <button
-        class="btn btn-sm btn-primary toolbar_button"
-        type="button"
-        title="Download the G-code (the project is embedded in it)"
-        aria-label="Download G-code"
-        [disabled]="working()"
-        (click)="download.emit()"
+      <div
+        class="btn-group download"
+        ngbDropdown
+        placement="bottom-end bottom-start"
+        role="group"
       >
-        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
-        </svg>
-        <span class="label">G-code</span>
-      </button>
+        <button
+          class="btn btn-sm btn-primary toolbar_button"
+          type="button"
+          title="Download the G-code (the project is embedded in it)"
+          aria-label="Download G-code"
+          [disabled]="working()"
+          (click)="download.emit()"
+        >
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
+          </svg>
+          <span class="label">G-code</span>
+        </button>
+        <button
+          ngbDropdownToggle
+          class="btn btn-sm btn-primary dropdown-toggle-split"
+          type="button"
+          aria-label="More ways to get the job"
+          title="More ways to get the job"
+        ></button>
+        <div ngbDropdownMenu class="menu">
+          <h6 class="dropdown-header menu_header">The job</h6>
+          <button
+            ngbDropdownItem
+            type="button"
+            [disabled]="working()"
+            (click)="download.emit()"
+          >
+            <span class="menu_name">G-code</span>
+            <span class="menu_description"
+              >One .nc file, the project embedded in it.</span
+            >
+          </button>
+          <button
+            ngbDropdownItem
+            type="button"
+            [disabled]="working()"
+            (click)="downloadPerTool.emit()"
+          >
+            <span class="menu_name">One file per tool (.zip)</span>
+            <span class="menu_description"
+              >For machines that can’t change tools mid-job: a file for each
+              tool, in order. Fit the tool and set Z zero before each.</span
+            >
+          </button>
+          @for (action of jobActions(); track action.label) {
+            <button
+              ngbDropdownItem
+              type="button"
+              [disabled]="working()"
+              (click)="jobAction.emit(action.id)"
+            >
+              <span class="menu_name">{{ action.label }}</span>
+              <span class="menu_description">{{ action.description }}</span>
+            </button>
+          }
+        </div>
+      </div>
     </header>
   `,
   styles: `
@@ -532,6 +586,10 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
   readonly load = output();
   readonly openTemplate = output<Template>();
   readonly download = output();
+  readonly downloadPerTool = output();
+  /** More things to do with the job, in the G-code menu. */
+  readonly jobActions = input<JobAction[]>([]);
+  readonly jobAction = output<string>();
   /** Save over the current project (or as a new one, when there's none). */
   readonly save = output();
   readonly saveAs = output();

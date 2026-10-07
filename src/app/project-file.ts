@@ -5,7 +5,7 @@ import { loadModelFromGcode } from './store';
 
 /** Saves `data` as a file through the browser's download. */
 export function downloadFile(
-  data: string,
+  data: string | Blob,
   fileName: string,
   type = 'octet/stream',
 ) {
@@ -13,7 +13,8 @@ export function downloadFile(
   a.setAttribute('style', 'display: none');
   document.body.appendChild(a);
 
-  const url = window.URL.createObjectURL(new Blob([data], { type }));
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const url = window.URL.createObjectURL(blob);
   a.href = url;
   a.download = fileName;
   a.click();

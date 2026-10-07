@@ -201,6 +201,12 @@ export class GCodeBuilder {
     return this;
   }
 
+  /** A comment line (`; text`), e.g. a note for whoever runs the job. */
+  comment(text: string) {
+    this._instructions.push({ type: 'comment', text });
+    return this;
+  }
+
   stopProgram() {
     this._instructions.push({ type: 'stop-program' });
     return this;
@@ -517,6 +523,10 @@ export class GCodeBuilder {
 
         case 'model':
           gcode.push(`; model=${instruction.model}`);
+          break;
+
+        case 'comment':
+          gcode.push(`; ${instruction.text.replace(/[\r\n]+/g, ' ')}`);
           break;
 
         case 'stop-program':
@@ -877,6 +887,7 @@ export type PathInstruction =
   | { type: 'carve-feedrate'; feedRate: number | null }
   | { type: 'plunge-feedrate'; feedRate: number | null }
   | { type: 'model'; model: string }
+  | { type: 'comment'; text: string }
   | { type: 'stop-program' }
   | { type: 'pause' }
   | { type: 'rapid-z'; z: number }
