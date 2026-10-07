@@ -6,6 +6,7 @@ import { enterCut, Resume } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 import { insideFirst, TravelStop, travelOrder } from '../../cam/travel-order';
+import { signedArea, withLeads } from '../../cam/leads';
 
 export async function routeProfile(
   input: CamShape[],
@@ -15,6 +16,12 @@ export async function routeProfile(
     direction: 'climb' | 'conventional';
     /** Keeps the cut this much further from the material (mm). */
     leaveStock?: number;
+    /** One more pass at full depth on the line, taking off `leaveStock`. */
+    finishPass?: boolean;
+    /** Stop this much above full depth; a last pass cuts through it (mm). */
+    onionSkin?: number;
+    /** Radius of an arc into and out of each loop, on the waste side (mm). */
+    leadIn?: number;
     startDepth: number;
     depthPerStep: number;
     steps: number;
@@ -47,10 +54,68 @@ export async function routeProfile(
     input = [{ sourceShapeId, polygons: [...filled, ...open] }];
   }
 
+  const leaveStock = Math.max(0, options.leaveStock ?? 0);
+  const total = options.depthPerStep * options.steps;
+  const skin = Math.min(Math.max(0, options.onionSkin ?? 0), total);
+  // 'On line' has no wall to leave stock on.
+  const finish =
+    !!options.finishPass && leaveStock > 0 && options.side !== 'on-line';
+  const top = -options.startDepth;
+  const bottom = top - total;
+  const roughBottom = bottom + skin;
+
+  const paths = (stock: number) =>
+    profilePaths(input, closed, { ...options, leaveStock: stock });
+  const leads = (options.leadIn ?? 0) > 0 && options.side !== 'on-line';
+
+  // The passes down, each stopping at the onion skin.
+  const rough = await paths(leaveStock);
+  const levels: number[] = [];
+  for (let step = 0; step < options.steps; step++) {
+    const depth = Math.max(
+      top - options.depthPerStep * (step + 1),
+      roughBottom,
+    );
+    if (depth < (levels[levels.length - 1] ?? top) - 1e-9) {
+      levels.push(depth);
+    }
+  }
+  for (const polygon of rough) {
+    cutPasses(builder, polygon, top, levels, options, leads);
+  }
+
+  // Once every path is cut down to the skin: through it (on the line itself
+  // when finishing), at full depth in one pass. Above the skin the passes
+  // cleared all but the stock left on the wall, so it starts down there.
+  if (skin > 0 || finish) {
+    const last = finish ? await paths(0) : rough;
+    for (const polygon of last) {
+      cutPasses(builder, polygon, roughBottom, [bottom], options, leads);
+    }
+  }
+
+  return builder;
+}
+
+/** The paths to profile `input` on, oriented and in the order to cut them. */
+async function profilePaths(
+  input: CamShape[],
+  closed: CamPoint[][],
+  options: {
+    toolSize: number;
+    side: 'outside' | 'inside' | 'on-line';
+    direction: 'climb' | 'conventional';
+    leaveStock: number;
+    mode?: ShapePart;
+    steps: number;
+    rampAngle?: number | null;
+    optimizeTravel?: boolean;
+  },
+): Promise<CamPolygon[]> {
   // Offset the outline by half the tool diameter so the cutting edge lands on
   // the shape boundary, plus any stock left on the wall. 'on-line' rides the
   // path itself (no compensation, no material side to leave stock on).
-  const clearance = options.toolSize / 2 + Math.max(0, options.leaveStock ?? 0);
+  const clearance = options.toolSize / 2 + options.leaveStock;
   const offset =
     options.side === 'outside'
       ? clearance
@@ -98,48 +163,69 @@ export async function routeProfile(
       ),
     );
 
-  const ordered =
-    options.optimizeTravel === false
-      ? polygons
-      : travelOrdered(polygons, {
-          ...options,
-          // Open paths from loops keep their direction.
-          reversible: options.mode !== 'holes',
-        });
+  return options.optimizeTravel === false
+    ? polygons
+    : travelOrdered(polygons, {
+        ...options,
+        // Open paths from loops keep their direction.
+        reversible: options.mode !== 'holes',
+      });
+}
 
-  for (const polygon of ordered) {
-    let points = polygon.points;
-    // When ramping, each pass carries on from where the one before ended,
-    // without lifting: round a loop, or back along an open path.
-    let resume: Resume | undefined;
-
-    for (let step = 0; step < options.steps; step++) {
-      const depth = -(options.startDepth + options.depthPerStep * (step + 1));
-
-      // Each pass starts where the previous one left off.
-      const from = -(options.startDepth + options.depthPerStep * step);
-      const cut = carvePass(
-        builder,
-        points,
-        polygon.close,
-        from,
-        depth,
-        { ...options, rampAngle: options.rampAngle ?? null },
-        resume,
-      );
-      if (options.rampAngle) {
-        if (polygon.close) {
-          points = cut;
-        } else {
-          // Open paths end at the far end: go back the other way.
-          points = [...cut].reverse();
-        }
-        resume = { point: points[0], down: true };
-      }
+/**
+ * The passes along one path, from Z `from` down to each of `levels` in turn.
+ * With lead-ins, a loop becomes an open path that arcs in from the waste side
+ * and out again, cut the same way round every pass (lifting between them).
+ */
+function cutPasses(
+  builder: GCodeBuilder,
+  polygon: CamPolygon,
+  from: number,
+  levels: number[],
+  options: {
+    side: 'outside' | 'inside' | 'on-line';
+    toolSize: number;
+    leadIn?: number;
+    rampAngle?: number | null;
+  },
+  leads: boolean,
+) {
+  const rampAngle = options.rampAngle ?? null;
+  if (leads && polygon.close && polygon.points.length > 2) {
+    const path = withLeads(polygon.points, options.side, options.leadIn!);
+    let level = from;
+    for (const depth of levels) {
+      carvePass(builder, path, false, level, depth, {
+        rampAngle,
+        toolSize: options.toolSize,
+      });
+      level = depth;
     }
+    return;
   }
 
-  return builder;
+  let points = polygon.points;
+  // When ramping, each pass carries on from where the one before ended,
+  // without lifting: round a loop, or back along an open path.
+  let resume: Resume | undefined;
+  let level = from;
+  for (const depth of levels) {
+    const cut = carvePass(
+      builder,
+      points,
+      polygon.close,
+      level,
+      depth,
+      { rampAngle, toolSize: options.toolSize },
+      resume,
+    );
+    if (rampAngle) {
+      // Open paths end at the far end: go back the other way.
+      points = polygon.close ? cut : [...cut].reverse();
+      resume = { point: points[0], down: true };
+    }
+    level = depth;
+  }
 }
 
 /**
@@ -316,14 +402,4 @@ function carvePass(
     builder.carveTo(loop[i].x, loop[i].y);
   }
   return points;
-}
-
-function signedArea(points: CamPoint[]): number {
-  let area = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    area += a.x * b.y - b.x * a.y;
-  }
-  return area / 2;
 }
