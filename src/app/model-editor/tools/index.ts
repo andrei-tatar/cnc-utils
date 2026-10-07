@@ -1,5 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
-import { resolvedItem, resolvedModelOf } from '../variables/field';
+import { AbstractControl } from '@angular/forms';
+import { numberIn, resolvedItem, resolvedModelOf } from '../variables/field';
 import { rootModel } from '../shapes/describe';
 import { toolFeedsAndSpeeds } from './feeds-and-speeds';
 import type { HeaderAction } from '../components/array-type-component';
@@ -39,6 +40,11 @@ export type ToolType = {
   expanded: boolean;
 
   name?: string;
+  /**
+   * Its number in the G-code (`T<index>`), whatever its place in the list.
+   * Unique among the project's tools.
+   */
+  index?: number;
   bitType?: BitType;
   diameter: number;
   vAngle: number;
@@ -74,6 +80,55 @@ export function allTools(field: FormlyFieldConfig | undefined): ToolType[] {
 /** The tool's own name, or one built from its settings. */
 export function toolLabel(tool: Partial<ToolType> | undefined): string {
   return tool?.name || describeTool(tool);
+}
+
+/**
+ * The tool's number in the G-code: its index, or for a tool without one,
+ * its position in the list (from 1).
+ */
+export function toolNumber(tool: ToolType, tools: readonly ToolType[]): number {
+  return typeof tool.index === 'number' ? tool.index : tools.indexOf(tool) + 1;
+}
+
+/** The lowest index no tool in `tools` has, from 1. */
+export function freeToolIndex(
+  tools: readonly Partial<ToolType>[],
+  index: (tool: Partial<ToolType>) => number | undefined = (tool) =>
+    typeof tool?.index === 'number' ? tool.index : undefined,
+): number {
+  const taken = new Set(tools.map(index));
+  let free = 1;
+  while (taken.has(free)) free++;
+  return free;
+}
+
+/**
+ * The tool's name for the editor: its index then its label, e.g.
+ * "T2 Ø6 mm end mill". `index` is the worked-out index, when the tool's
+ * own may be an expression.
+ */
+export function numberedToolLabel(
+  tool: Partial<ToolType> | undefined,
+  index: unknown = tool?.index,
+): string {
+  const label = toolLabel(tool);
+  return typeof index === 'number' && Number.isFinite(index)
+    ? `T${index} ${label}`
+    : label;
+}
+
+/** The other tool with the same index as the one `field` belongs to. */
+function sameIndexTool(field: FormlyFieldConfig): ToolType | undefined {
+  const index = numberIn(field, field.formControl?.value);
+  if (index === undefined) {
+    return undefined;
+  }
+  return allTools(field).find(
+    (tool) =>
+      tool !== field.model &&
+      tool?.id !== field.model?.id &&
+      numberIn(field, tool?.index) === index,
+  );
 }
 
 /** A readable name built from the tool's settings, e.g. "Ø6 mm 60° v-bit". */
@@ -116,6 +171,9 @@ export const field: FormlyFieldConfig = {
     label: 'tools',
     itemLabel: 'tool',
     describeItem: describeTool,
+    // Tools are known by their index: T2 in the G-code.
+    itemPrefix: (tool: Partial<ToolType>) =>
+      typeof tool?.index === 'number' ? `T${tool.index}` : '',
     accent: '#ea580c',
     collapsible: true,
     headerActions: [
@@ -136,7 +194,14 @@ export const field: FormlyFieldConfig = {
             projectTools: structuredClone(
               items.map((tool) => resolvedItem(field, tool)),
             ),
-            addToProject: (tool: object) => add(tool),
+            // A library tool keeps its index unless a tool here has it;
+            // then it gets a free one.
+            addToProject: ({ index, ...tool }: Partial<ToolType>) => {
+              const free =
+                index !== undefined &&
+                !items.some((t) => numberIn(field, t?.index) === index);
+              return add(free ? { ...tool, index } : tool);
+            },
           });
           ref.result.catch(() => {});
         },
@@ -163,6 +228,39 @@ export const field: FormlyFieldConfig = {
         expressions: {
           'props.placeholder': (field: FormlyFieldConfig) =>
             describeTool(resolvedModelOf(field)),
+        },
+      },
+      {
+        key: 'index',
+        type: 'number',
+        props: {
+          label: 'tool index',
+          description: 'its number in the G-code: T1, T2, …',
+          min: 1,
+          required: true,
+        },
+        validators: {
+          validation: ['whole-number'],
+          uniqueIndex: {
+            expression: (_: AbstractControl, field: FormlyFieldConfig) =>
+              !sameIndexTool(field),
+            message: (_: unknown, field: FormlyFieldConfig) =>
+              `“${toolLabel(sameIndexTool(field))}” has this index too`,
+          },
+        },
+        hooks: {
+          // A new tool gets the lowest index no other tool has.
+          onInit: (field: FormlyFieldConfig) => {
+            const value = field.formControl?.value;
+            if (value === undefined || value === null || value === '') {
+              field.formControl?.setValue(
+                freeToolIndex(
+                  allTools(field).filter((tool) => tool !== field.model),
+                  (tool) => numberIn(field, tool?.index),
+                ),
+              );
+            }
+          },
         },
       },
       {
