@@ -1,5 +1,13 @@
-import { containingContours, signedArea2 } from './polygon-nesting';
-import { CamPoint, CamPolygon } from './types';
+import {
+  bulgeOf,
+  pointAlong,
+  segmentLength,
+  signedArea,
+  sweepOf,
+  tangentAt,
+} from './arcs';
+import { containingPolygons } from './polygon-nesting';
+import { CamPoint, CamPolygon, CamVertex } from './types';
 
 /** A vertex where a polygon turns. */
 export type Corner = {
@@ -30,9 +38,9 @@ export type Corner = {
   bisector: CamPoint;
 };
 
-/** A polygon without repeated points, with its corners. */
+/** A polygon without repeated vertices, with its corners. */
 export type CornerPolygon = {
-  points: CamPoint[];
+  vertices: CamVertex[];
   close: boolean;
   corners: Corner[];
 };
@@ -41,53 +49,52 @@ export type CornerPolygon = {
 const STRAIGHT = 1e-6;
 
 /**
- * The corners of every polygon. Closed polygons are taken together, by
- * even-odd nesting (as pockets and profiles see them), to know which side
- * of each one is filled.
+ * The corners of every polygon: vertices where the direction changes
+ * (smooth joins of arcs and lines aren't corners). Closed polygons are
+ * taken together, by even-odd nesting (as pockets and profiles see them),
+ * to know which side of each one is filled.
  */
 export function findCorners(polygons: CamPolygon[]): CornerPolygon[] {
   const cleaned = polygons.map((p) => ({
-    points: withoutRepeats(p.points, p.close),
+    vertices: withoutRepeats(p.vertices, p.close),
     close: p.close,
   }));
   const closed = cleaned
     .map((p, i) => ({ p, i }))
-    .filter(({ p }) => p.close && p.points.length > 2);
-  const parents = containingContours(closed.map(({ p }) => p.points));
+    .filter(({ p }) => p.close && p.vertices.length > 1);
+  const parents = containingPolygons(closed.map(({ p }) => p));
   const filledOnLeft = new Map<number, boolean>();
   closed.forEach(({ p, i }, k) => {
     const isHole = parents[k].length % 2 === 1;
-    filledOnLeft.set(i, signedArea2(p.points) > 0 !== isHole);
+    filledOnLeft.set(i, signedArea(p) > 0 !== isHole);
   });
 
   return cleaned.map((polygon, i) => ({
     ...polygon,
-    corners: polygonCorners(polygon.points, polygon.close, filledOnLeft.get(i)),
+    corners: polygonCorners(polygon, filledOnLeft.get(i)),
   }));
 }
 
 function polygonCorners(
-  points: CamPoint[],
-  close: boolean,
+  polygon: CamPolygon,
   filledOnLeft: boolean | undefined,
 ): Corner[] {
-  const n = points.length;
+  const { vertices, close } = polygon;
+  const n = vertices.length;
   const corners: Corner[] = [];
-  if (n < 3) return corners;
+  if (n < 2 || (n < 3 && !close)) return corners;
   for (let i = close ? 0 : 1; i < (close ? n : n - 1); i++) {
-    const point = points[i];
-    const prev = points[(i - 1 + n) % n];
-    const next = points[(i + 1) % n];
-    const lengthPrev = Math.hypot(prev.x - point.x, prev.y - point.y);
-    const lengthNext = Math.hypot(next.x - point.x, next.y - point.y);
-    const toPrev = {
-      x: (prev.x - point.x) / lengthPrev,
-      y: (prev.y - point.y) / lengthPrev,
-    };
-    const toNext = {
-      x: (next.x - point.x) / lengthNext,
-      y: (next.y - point.y) / lengthNext,
-    };
+    const point = vertices[i];
+    const prev = vertices[(i - 1 + n) % n];
+    const next = vertices[(i + 1) % n];
+    const prevBulge = bulgeOf(prev);
+    const nextBulge = bulgeOf(point);
+    const lengthPrev = segmentLength(prev, point, prevBulge);
+    const lengthNext = segmentLength(point, next, nextBulge);
+    if (!lengthPrev || !lengthNext) continue;
+    const arriving = tangentAt(prev, point, prevBulge, 1);
+    const toPrev = { x: -arriving.x, y: -arriving.y };
+    const toNext = tangentAt(point, next, nextBulge, 0);
     const cross = toNext.x * toPrev.y - toNext.y * toPrev.x;
     const dot = toNext.x * toPrev.x + toNext.y * toPrev.y;
     const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
@@ -102,25 +109,31 @@ function polygonCorners(
     const halfLength = Math.hypot(half.x, half.y);
     corners.push({
       index: i,
-      point,
+      point: { x: point.x, y: point.y },
       toPrev,
       toNext,
       lengthPrev,
       lengthNext,
       angle,
       convex,
-      bisector: { x: half.x / halfLength, y: half.y / halfLength },
+      bisector:
+        halfLength > 1e-12
+          ? { x: half.x / halfLength, y: half.y / halfLength }
+          : { x: -toNext.y, y: toNext.x },
     });
   }
   return corners;
 }
 
-function withoutRepeats(points: CamPoint[], close: boolean): CamPoint[] {
-  const result: CamPoint[] = [];
-  for (const p of points) {
+function withoutRepeats(vertices: CamVertex[], close: boolean): CamVertex[] {
+  const result: CamVertex[] = [];
+  for (const v of vertices) {
     const last = result[result.length - 1];
-    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 1e-9) {
-      result.push(p);
+    if (!last || Math.hypot(v.x - last.x, v.y - last.y) > 1e-9) {
+      result.push(v);
+    } else {
+      // A zero-length segment: the later vertex's bulge goes on.
+      result[result.length - 1] = v;
     }
   }
   if (close && result.length > 1) {
@@ -147,98 +160,90 @@ export function isSelected(corner: Corner, selection: CornerSelection) {
 }
 
 /**
- * Rounds (`fillet`) or bevels (`chamfer`) the selected corners: a fillet of
- * radius `size`, or a chamfer `size` mm along each edge. Where the edges are
- * too short, the corner is cut back to half of the shorter one.
+ * Rounds (`fillet`, an arc) or bevels (`chamfer`) the selected corners: a
+ * fillet of radius `size`, or a chamfer `size` mm along each edge. Where the
+ * edges are too short, the corner is cut back to half of the shorter one.
+ * Edges are trimmed along themselves (arcs stay arcs); a fillet's centre is
+ * set from the edges' directions at the corner, exact between lines.
  */
 export function roundCorners(
   polygon: CornerPolygon,
   mode: 'fillet' | 'chamfer',
   size: number,
   selection: CornerSelection,
-  curveTolerance: number,
 ): CamPolygon {
-  const byIndex = new Map(polygon.corners.map((c) => [c.index, c]));
-  const points: CamPoint[] = [];
-  polygon.points.forEach((point, i) => {
-    const corner = byIndex.get(i);
-    if (!corner || size <= 0 || !isSelected(corner, selection)) {
-      points.push(point);
-      return;
-    }
+  const { vertices, close } = polygon;
+  const n = vertices.length;
+  const segments = close ? n : n - 1;
+  // How much of each segment is cut off at its start and end.
+  const trimStart = new Array<number>(n).fill(0);
+  const trimEnd = new Array<number>(n).fill(0);
+  const rounded = new Map<number, { corner: Corner; trim: number }>();
+  for (const corner of polygon.corners) {
+    if (size <= 0 || !isSelected(corner, selection)) continue;
     const tanHalf = Math.tan(corner.angle / 2);
     const wanted = mode === 'fillet' ? size / tanHalf : size;
     const trim = Math.min(wanted, corner.lengthPrev / 2, corner.lengthNext / 2);
-    const start = along(point, corner.toPrev, trim);
-    const end = along(point, corner.toNext, trim);
-    if (mode === 'chamfer') {
-      points.push(start, end);
-      return;
+    if (!(trim > 0)) continue;
+    rounded.set(corner.index, { corner, trim });
+    trimStart[corner.index] = trim;
+    trimEnd[(corner.index - 1 + n) % n] = trim;
+  }
+  const length = (i: number) =>
+    segmentLength(vertices[i], vertices[(i + 1) % n], bulgeOf(vertices[i]));
+  // The part of segment i left after trimming, as a vertex at its start.
+  const remaining = (i: number): CamVertex => {
+    const a = vertices[i];
+    if (i >= segments) return { x: a.x, y: a.y };
+    const b = vertices[(i + 1) % n];
+    const bulge = bulgeOf(a);
+    const l = length(i);
+    const t0 = l ? trimStart[i] / l : 0;
+    const t1 = l ? 1 - trimEnd[i] / l : 1;
+    const start = pointAlong(a, b, bulge, t0);
+    return bulge
+      ? { ...start, bulge: Math.tan(((t1 - t0) * sweepOf(bulge)) / 4) }
+      : start;
+  };
+  const out: CamVertex[] = [];
+  for (let i = 0; i < n; i++) {
+    const round = rounded.get(i);
+    if (!round) {
+      out.push(remaining(i));
+      continue;
     }
-    const radius = trim * tanHalf;
-    const center = along(
-      point,
-      corner.bisector,
-      trim / Math.cos(corner.angle / 2),
+    const { corner, trim } = round;
+    const prev = (i - 1 + n) % n;
+    const prevBulge = bulgeOf(vertices[prev]);
+    const start = pointAlong(
+      vertices[prev],
+      vertices[i],
+      prevBulge,
+      1 - trim / length(prev),
     );
-    points.push(...arcPoints(center, radius, start, end, curveTolerance));
-  });
-  return { points, close: polygon.close };
-}
-
-/** Points from `start` to `end` (both included) around `center`, the short way. */
-export function arcPoints(
-  center: CamPoint,
-  radius: number,
-  start: CamPoint,
-  end: CamPoint,
-  curveTolerance: number,
-): CamPoint[] {
-  const a0 = Math.atan2(start.y - center.y, start.x - center.x);
-  let sweep = Math.atan2(end.y - center.y, end.x - center.x) - a0;
-  if (sweep > Math.PI) sweep -= 2 * Math.PI;
-  if (sweep < -Math.PI) sweep += 2 * Math.PI;
-  const steps = Math.max(
-    1,
-    Math.ceil(Math.abs(sweep) / segmentAngle(radius, curveTolerance)),
-  );
-  const points = [start];
-  for (let k = 1; k < steps; k++) {
-    const a = a0 + (sweep * k) / steps;
-    points.push({
-      x: center.x + radius * Math.cos(a),
-      y: center.y + radius * Math.sin(a),
-    });
+    // Turning left (the next edge counter-clockwise from the previous
+    // one's direction) makes a counter-clockwise fillet.
+    const arriving = { x: -corner.toPrev.x, y: -corner.toPrev.y };
+    const turn = arriving.x * corner.toNext.y - arriving.y * corner.toNext.x;
+    const bulge =
+      mode === 'fillet'
+        ? Math.sign(turn) * Math.tan((Math.PI - corner.angle) / 4)
+        : 0;
+    out.push(bulge ? { ...start, bulge } : start);
+    out.push(remaining(i));
   }
-  points.push(end);
-  return points;
+  return { vertices: out, close };
 }
 
-/** A full circle as a closed polygon, within `curveTolerance` of the curve. */
-export function circlePolygon(
-  center: CamPoint,
-  radius: number,
-  curveTolerance: number,
-): CamPolygon {
-  const steps = Math.max(
-    8,
-    Math.ceil((2 * Math.PI) / segmentAngle(radius, curveTolerance)),
-  );
-  const points: CamPoint[] = [];
-  for (let k = 0; k < steps; k++) {
-    const a = (2 * Math.PI * k) / steps;
-    points.push({
-      x: center.x + radius * Math.cos(a),
-      y: center.y + radius * Math.sin(a),
-    });
-  }
-  return { points, close: true };
-}
-
-/** The largest angle a chord can span and stay within the tolerance. */
-function segmentAngle(radius: number, curveTolerance: number) {
-  if (radius <= curveTolerance) return Math.PI / 2;
-  return Math.min(Math.PI / 4, 2 * Math.acos(1 - curveTolerance / radius));
+/** A full circle, counter-clockwise: two half circles. */
+export function circlePolygon(center: CamPoint, radius: number): CamPolygon {
+  return {
+    vertices: [
+      { x: center.x - radius, y: center.y, bulge: 1 },
+      { x: center.x + radius, y: center.y, bulge: 1 },
+    ],
+    close: true,
+  };
 }
 
 export function along(point: CamPoint, direction: CamPoint, distance: number) {

@@ -8,13 +8,13 @@ const shape: CamShape = {
   polygons: [
     {
       close: true,
-      points: [
+      vertices: [
         { x: 0, y: 0 },
-        { x: 1, y: 0 },
+        { x: 1, y: 0, bulge: 0.5 },
         { x: 1, y: 1.5 },
       ],
     },
-    { close: false, points: [{ x: -2, y: 3 }] },
+    { close: false, vertices: [{ x: -2, y: 3 }] },
   ],
 };
 
@@ -24,7 +24,13 @@ describe('codec', () => {
     expect(unpack(structuredClone(pack(args)))).toEqual(args);
   });
 
-  it('packs shape points into typed arrays', () => {
+  it('keeps arcs: a bulge only where there is one', () => {
+    const back = unpack(structuredClone(pack(shape))) as CamShape;
+    expect(back.polygons[0].vertices[1].bulge).toBe(0.5);
+    expect('bulge' in back.polygons[0].vertices[0]).toBeFalse();
+  });
+
+  it('packs shape vertices into typed arrays', () => {
     const packed = pack(shape) as any;
     expect(packed.coords instanceof Float64Array).toBeTrue();
     expect(transferables(packed).length).toBe(3);
@@ -35,7 +41,7 @@ describe('codec', () => {
     expect(pack(odd)).toEqual(odd);
     const oddPoints = {
       sourceShapeId: 'x',
-      polygons: [{ close: true, points: [{ x: 1, y: 2, d: 3 }] }],
+      polygons: [{ close: true, vertices: [{ x: 1, y: 2, d: 3 }] }],
     };
     expect(pack(oddPoints)).toEqual(oddPoints);
   });
@@ -79,7 +85,7 @@ describe('hashValue', () => {
     const moved = pack([
       {
         ...shape,
-        polygons: [{ ...shape.polygons[0], points: [{ x: 0, y: 1e-9 }] }],
+        polygons: [{ ...shape.polygons[0], vertices: [{ x: 0, y: 1e-9 }] }],
       },
     ]);
     const hashes = new Set([

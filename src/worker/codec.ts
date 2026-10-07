@@ -1,22 +1,25 @@
 import { GCodeBuilder, PackedGCode } from '../cam/gcode-builder';
-import { CamShape, CamTab } from '../cam/types';
+import { CamShape, CamTab, CamVertex } from '../cam/types';
 
 /**
  * Packs what crosses the worker boundary so it copies (or transfers)
- * quickly: a shape's points and a builder's moves become typed arrays,
+ * quickly: a shape's vertices and a builder's moves become typed arrays,
  * instead of one small object per point that structured clone has to walk.
  * Everything else passes through as is.
  */
 
-/** A `CamShape` with its points in typed arrays. */
+/** A `CamShape` with its vertices in typed arrays. */
 type PackedShape = {
   packedShape: true;
   sourceShapeId: string;
   /** 1 for a closed polygon, 0 for an open one. */
   close: Uint8Array;
-  /** Where each polygon's points start in `coords` (in points), plus the end. */
+  /**
+   * Where each polygon's vertices start in `coords` (in vertices), plus the
+   * end.
+   */
   offsets: Uint32Array;
-  /** x, y of every point, polygon after polygon. */
+  /** x, y and bulge of every vertex, polygon after polygon. */
   coords: Float64Array;
   /** Its tabs, as they are (there are few). */
   tabs?: CamTab[];
@@ -90,17 +93,18 @@ export function transferables(value: unknown, found: Transferable[] = []) {
 }
 
 function packShape(shape: CamShape): PackedShape {
-  const count = shape.polygons.reduce((n, p) => n + p.points.length, 0);
+  const count = shape.polygons.reduce((n, p) => n + p.vertices.length, 0);
   const close = new Uint8Array(shape.polygons.length);
   const offsets = new Uint32Array(shape.polygons.length + 1);
-  const coords = new Float64Array(count * 2);
+  const coords = new Float64Array(count * 3);
   let at = 0;
   shape.polygons.forEach((polygon, i) => {
     close[i] = polygon.close ? 1 : 0;
     offsets[i] = at;
-    for (const point of polygon.points) {
-      coords[at * 2] = point.x;
-      coords[at * 2 + 1] = point.y;
+    for (const vertex of polygon.vertices) {
+      coords[at * 3] = vertex.x;
+      coords[at * 3 + 1] = vertex.y;
+      coords[at * 3 + 2] = vertex.bulge ?? 0;
       at++;
     }
   });
@@ -121,11 +125,14 @@ function packShape(shape: CamShape): PackedShape {
 function unpackShape(packed: PackedShape): CamShape {
   const { close, offsets, coords } = packed;
   const polygons = Array.from(close, (closed, i) => {
-    const points = new Array(offsets[i + 1] - offsets[i]);
+    const vertices: CamVertex[] = new Array(offsets[i + 1] - offsets[i]);
     for (let k = offsets[i], j = 0; k < offsets[i + 1]; k++, j++) {
-      points[j] = { x: coords[k * 2], y: coords[k * 2 + 1] };
+      const bulge = coords[k * 3 + 2];
+      vertices[j] = bulge
+        ? { x: coords[k * 3], y: coords[k * 3 + 1], bulge }
+        : { x: coords[k * 3], y: coords[k * 3 + 1] };
     }
-    return { points, close: closed === 1 };
+    return { vertices, close: closed === 1 };
   });
   const shape: CamShape = { sourceShapeId: packed.sourceShapeId, polygons };
   if (packed.tabs) {
@@ -175,11 +182,19 @@ function isPolygonPoints(points: unknown) {
 
 function isPolygon(value: unknown) {
   if (!isPlainObject(value)) return false;
-  const points = value['points'];
+  const vertices = value['vertices'];
   return (
     keyCount(value) === 2 &&
     typeof value['close'] === 'boolean' &&
-    isPolygonPoints(points)
+    Array.isArray(vertices) &&
+    vertices.every(
+      (v) =>
+        isPlainObject(v) &&
+        typeof v['x'] === 'number' &&
+        typeof v['y'] === 'number' &&
+        (keyCount(v) === 2 ||
+          (keyCount(v) === 3 && typeof v['bulge'] === 'number')),
+    )
   );
 }
 

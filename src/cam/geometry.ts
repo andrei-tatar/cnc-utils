@@ -3,9 +3,16 @@
  * G-code section).
  */
 export type GeometrySettings = {
-  /** Max distance (mm) between a curve and the polygon that stands in for it. */
+  /**
+   * Max distance (mm) between a curve and what stands in for it (arcs fitted
+   * to Béziers, lines for arcs where only points will do).
+   */
   curveTolerance: number;
-  /** Decimal places Clipper works to (offsets, booleans): 2 = 0.01 mm. */
+  /**
+   * Decimal places of the precision: 2 = 0.01 mm. The geometry kernel works
+   * exactly; this is how finely routers search along cuts and tell points
+   * apart.
+   */
   decimals: number;
 };
 
@@ -28,12 +35,12 @@ export function useGeometry(settings?: Partial<GeometrySettings>) {
   }
 }
 
-/** Max distance (mm) between a curve and its polygon. */
+/** Max distance (mm) between a curve and what stands in for it. */
 export function curveTolerance(): number {
   return current.curveTolerance;
 }
 
-/** Decimal places for Clipper. */
+/** Decimal places of the precision. */
 export function decimals(): number {
   return current.decimals;
 }

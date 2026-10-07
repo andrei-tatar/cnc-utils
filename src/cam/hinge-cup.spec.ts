@@ -20,15 +20,20 @@ describe('hinge cup', () => {
   });
 
   it('makes the screw holes points to drill unless sized', () => {
-    const polygons = hingeCupPolygons(blum, 0.01);
+    const polygons = hingeCupPolygons(blum);
     expect(polygons.length).toBe(3);
     expect(polygons[1]).toEqual({
-      points: [{ x: -22.5, y: -32 }],
+      vertices: [{ x: -22.5, y: -32 }],
       close: false,
     });
-    const sized = hingeCupPolygons({ ...blum, screwDiameter: 8 }, 0.01);
+    const sized = hingeCupPolygons({ ...blum, screwDiameter: 8 });
     expect(sized[1].close).toBeTrue();
-    expect(hingeCupPolygons({ ...blum, parts: 'cup' }, 0.01).length).toBe(1);
+    // An exact circle: two half circles.
+    expect(sized[1].vertices).toEqual([
+      { x: -26.5, y: -32, bulge: 1 },
+      { x: -18.5, y: -32, bulge: 1 },
+    ]);
+    expect(hingeCupPolygons({ ...blum, parts: 'cup' }).length).toBe(1);
   });
 
   it('draws a bowtie narrower at its waist', () => {

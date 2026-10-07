@@ -1,4 +1,5 @@
-import { CamPoint } from './types';
+import { pointAlong, polygonsBounds, windingNumber } from './arcs';
+import { CamPoint, CamPolygon } from './types';
 
 export type NestedContour = {
   outer: CamPoint[];
@@ -130,4 +131,71 @@ export function distanceToBoundary(point: CamPoint, boundary: CamPoint[][]) {
     }
   }
   return min;
+}
+
+/** An outline of lines and arcs, and the holes directly inside it. */
+export type NestedPolygon = {
+  outer: CamPolygon;
+  holes: CamPolygon[];
+};
+
+/**
+ * `nestContours` for polygons of lines and arcs: outlines and their holes
+ * by even-odd nesting (closed polygons that don't cross each other).
+ */
+export function nestPolygons(polygons: CamPolygon[]): NestedPolygon[] {
+  const parents = containingPolygons(polygons);
+  const depth = parents.map((p) => p.length);
+  const nested = new Map<number, NestedPolygon>();
+  polygons.forEach((polygon, i) => {
+    if (depth[i] % 2 === 0) {
+      nested.set(i, { outer: polygon, holes: [] });
+    }
+  });
+  polygons.forEach((polygon, i) => {
+    if (depth[i] % 2 === 1) {
+      const parent = parents[i].find((j) => depth[j] === depth[i] - 1);
+      if (parent !== undefined) {
+        nested.get(parent)?.holes.push(polygon);
+      }
+    }
+  });
+  return [...nested.values()];
+}
+
+/**
+ * For each polygon, the polygons it lies inside (by its first vertex, nudged
+ * along its first segment so a vertex shared with another polygon doesn't
+ * decide). An odd number of them makes it a hole.
+ */
+export function containingPolygons(polygons: CamPolygon[]): number[][] {
+  const boxes = polygons.map((p) => polygonsBounds([p]));
+  return polygons.map((polygon, i) => {
+    if (!polygon.vertices.length) return [];
+    const probe = probePoint(polygon);
+    return polygons.flatMap((other, j) =>
+      j !== i &&
+      other.close &&
+      contains(boxes[j], boxes[i]) &&
+      windingNumber(probe, [other]) !== 0
+        ? [j]
+        : [],
+    );
+  });
+}
+
+/** A point on the polygon: its first segment's middle. */
+function probePoint(polygon: CamPolygon): CamPoint {
+  const v = polygon.vertices;
+  if (v.length < 2) return v[0];
+  return pointAlong(v[0], v[1], v[0].bulge ?? 0, 0.5);
+}
+
+/** Whether `point` is inside the closed polygons (even-odd). */
+export function insidePolygons(point: CamPoint, polygons: CamPolygon[]) {
+  let inside = false;
+  for (const p of polygons) {
+    if (p.close && windingNumber(point, [p]) !== 0) inside = !inside;
+  }
+  return inside;
 }

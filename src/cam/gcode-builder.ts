@@ -1,5 +1,6 @@
 import { Box, GcodeOptions, resolveGcodeOptions } from './gcode-options';
 import { fitArcs } from './arc-fit';
+import { arcOf, polygonsBounds, segmentPoints } from './arcs';
 import { CamPath, CamPoint, CamPoint3 } from './types';
 
 export class GCodeBuilder {
@@ -40,8 +41,13 @@ export class GCodeBuilder {
           nums.push(i.to.x, i.to.y);
           break;
         case 'carve':
-          ops.push(PackedOp.Carve);
-          nums.push(i.to.x, i.to.y, i.z ?? NaN);
+          if (i.bulge) {
+            ops.push(PackedOp.Arc);
+            nums.push(i.to.x, i.to.y, i.z ?? NaN, i.bulge);
+          } else {
+            ops.push(PackedOp.Carve);
+            nums.push(i.to.x, i.to.y, i.z ?? NaN);
+          }
           break;
         case 'plunge':
           ops.push(PackedOp.Plunge);
@@ -86,6 +92,17 @@ export class GCodeBuilder {
           n += 3;
           break;
         }
+        case PackedOp.Arc: {
+          const z = nums[n + 2];
+          instructions[k] = {
+            type: 'carve',
+            to: { x: nums[n], y: nums[n + 1] },
+            z: Number.isNaN(z) ? undefined : z,
+            bulge: nums[n + 3],
+          };
+          n += 4;
+          break;
+        }
         case PackedOp.Plunge:
           instructions[k] = { type: 'plunge', depth: nums[n] };
           n += 1;
@@ -125,6 +142,14 @@ export class GCodeBuilder {
         case 'carve':
           add(at);
           add(i.to);
+          if (i.bulge && at) {
+            // An arc reaches past its ends where it passes an axis.
+            const box = polygonsBounds([
+              { vertices: [{ ...at, bulge: i.bulge }, i.to], close: false },
+            ]);
+            add({ x: box.minX, y: box.minY });
+            add({ x: box.maxX, y: box.maxY });
+          }
           at = i.to;
           break;
         case 'drill-cycle':
@@ -164,6 +189,20 @@ export class GCodeBuilder {
 
   carveTo(x: number, y: number, z?: number) {
     this._instructions.push({ type: 'carve', to: { x, y }, z });
+    return this;
+  }
+
+  /**
+   * An arc from where the tool is to (x, y): `bulge` is tan(sweep / 4),
+   * positive counter-clockwise (see `src/cam/arcs.ts`); 0 is a line. With
+   * `z`, the height changes evenly along it (a helix).
+   */
+  arcTo(x: number, y: number, bulge: number, z?: number) {
+    this._instructions.push(
+      bulge
+        ? { type: 'carve', to: { x, y }, z, bulge }
+        : { type: 'carve', to: { x, y }, z },
+    );
     return this;
   }
 
@@ -478,6 +517,10 @@ export class GCodeBuilder {
 
         case 'carve': {
           startSpindle();
+          if (instruction.bulge && x !== null && y !== null && z !== null) {
+            carveArc(instruction.to, instruction.z, instruction.bulge);
+            break;
+          }
           if (arcs && x !== null && y !== null && z !== null) {
             if (pendingCuts.length && pendingFeed !== carveFeedRate) {
               flushCuts();
@@ -654,6 +697,39 @@ export class GCodeBuilder {
       move('G0', { z: top });
     }
 
+    /**
+     * An arc (a helix with a change in Z): one G2/G3 when writing arcs,
+     * else the lines standing in for it (within the curve tolerance).
+     */
+    function carveArc(to: CamPoint, toZ: number | undefined, bulge: number) {
+      // Where the tool is, in design coordinates (held-back cuts included).
+      const last = pendingCuts[pendingCuts.length - 1];
+      const from: CamPoint3 = last ?? {
+        x: x! - off.x,
+        y: y! - off.y,
+        z: z! - off.z,
+      };
+      const endZ = toZ ?? from.z;
+      if (arcs) {
+        flushCuts();
+        const arc = arcOf(from, to, bulge);
+        const end = { ...to, z: endZ };
+        if (arcMove(arc.sweep < 0, end, arc.center, carveFeedRate)) {
+          return;
+        }
+      }
+      const points = segmentPoints(from, to, bulge, o.curveTolerance);
+      points.forEach((p, k) => {
+        const pz = from.z + ((endZ - from.z) * (k + 1)) / points.length;
+        if (arcs) {
+          pendingFeed = carveFeedRate;
+          pendingCuts.push({ ...p, z: pz });
+        } else {
+          move('G1', { ...p, z: pz }, carveFeedRate);
+        }
+      });
+    }
+
     /** Write the held-back cuts, as arcs where they follow a circle. */
     function flushCuts() {
       if (!pendingCuts.length) return;
@@ -665,7 +741,7 @@ export class GCodeBuilder {
         const done =
           m.type === 'arc' &&
           helical(m.points as CamPoint3[], m.center, end) &&
-          arcMove(m.clockwise, end, m.center);
+          arcMove(m.clockwise, end, m.center, pendingFeed);
         if (!done) {
           for (const p of (m.type === 'line'
             ? [m.to]
@@ -713,7 +789,12 @@ export class GCodeBuilder {
      * are rounded: the centre moves onto their perpendicular bisector, so
      * both ends are exactly as far from it.
      */
-    function arcMove(clockwise: boolean, to: CamPoint3, center: CamPoint) {
+    function arcMove(
+      clockwise: boolean,
+      to: CamPoint3,
+      center: CamPoint,
+      feed: number,
+    ) {
       const sx = x!;
       const sy = y!;
       const ex = round(to.x + off.x);
@@ -742,8 +823,8 @@ export class GCodeBuilder {
       }
       changed.i = i;
       changed.j = j;
-      if (pendingFeed !== feedRate) {
-        feedRate = changed.feed = pendingFeed;
+      if (feed !== feedRate) {
+        feedRate = changed.feed = feed;
       }
       x = ex;
       y = ey;
@@ -843,6 +924,7 @@ const enum PackedOp {
   Carve,
   Plunge,
   Other,
+  Arc,
 }
 
 /**
@@ -881,7 +963,13 @@ export type PathInstruction =
   | { type: 'plunge'; depth: number }
   | { type: 'travel'; to: CamPoint }
   | { type: 'safety-height' }
-  | { type: 'carve'; to: CamPoint; z?: number }
+  | {
+      type: 'carve';
+      to: CamPoint;
+      z?: number;
+      /** An arc from the previous position (see `arcTo`). */
+      bulge?: number;
+    }
   | { type: 'source-shape'; id: string }
   | { type: 'source-operation'; id: string }
   | { type: 'carve-feedrate'; feedRate: number | null }

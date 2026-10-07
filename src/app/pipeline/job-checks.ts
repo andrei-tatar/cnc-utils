@@ -1,3 +1,4 @@
+import { hasArcs } from '../../cam/arcs';
 import { CheckedOperation, checkJob, JobWarning } from '../../cam/job-checks';
 import { resolveStock } from '../../cam/stock';
 import { CamPath, CamShape } from '../../cam/types';
@@ -8,7 +9,7 @@ import {
 } from '../model-editor/operations/describe';
 import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { shapeLabel } from '../model-editor/shapes/describe';
-import { nestContours } from '../../cam/polygon-nesting';
+import { nestPolygons } from '../../cam/polygon-nesting';
 
 /** Round bits, which leave corners rounded. */
 const ROUND = ['end-mill', 'ball-nose', 'bull-nose'];
@@ -79,11 +80,10 @@ export function jobChecks(
   const parts = checked
     .filter((op) => op.cutsOut)
     .flatMap((op) =>
-      nestContours(
+      nestPolygons(
         op.shape
           .flatMap((s) => s.polygons)
-          .filter((p) => p.close && p.points.length > 2)
-          .map((p) => p.points),
+          .filter((p) => p.close && (p.vertices.length > 2 || hasArcs(p))),
       ).map(({ outer }) => outer),
     );
 

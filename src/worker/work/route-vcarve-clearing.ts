@@ -1,5 +1,6 @@
 import { InlayPlug, inlayPlugShape } from './inlay-plug';
-import { CamPoint, CamShape } from '../../cam/types';
+import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
+import { fromPoints } from '../../cam/arcs';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import {
@@ -86,8 +87,7 @@ export async function routeVCarveClearing(
 
   const closed = input
     .flatMap((s) => s.polygons)
-    .filter((p) => p.close && p.points.length > 2)
-    .map((p) => p.points);
+    .filter((p) => p.close && p.vertices.length > 1);
   if (!closed.length || maxDepth <= 0) {
     return builder;
   }
@@ -126,7 +126,7 @@ export async function routeVCarveClearing(
       [
         {
           sourceShapeId,
-          polygons: area.map((points) => ({ points, close: true })),
+          polygons: area,
         },
       ],
       {
@@ -179,13 +179,13 @@ export async function clearedAtMaxDepth(
     optimizeTravel?: boolean;
   },
   clearings: ClearingTool[],
-): Promise<CamPoint[][]> {
+): Promise<CamPolygon[]> {
   const geometry = vCarveGeometry(vcarve);
   if (!geometry) {
     return [];
   }
   const bottom = -(vcarve.startDepth + geometry.maxDepth);
-  let cleared: CamPoint[][] = [];
+  let cleared: CamPolygon[] = [];
   for (const clearing of clearings) {
     const routed = await routeVCarveClearing(input, {
       ...clearing,
@@ -200,19 +200,20 @@ export async function clearedAtMaxDepth(
       geometry: vcarve.geometry,
       optimizeTravel: vcarve.optimizeTravel,
     });
-    // The runs of cuts at the bottom (ramps down to it don't count).
-    const runs: CamPoint[][] = [];
+    // The runs of cuts at the bottom (ramps down to it don't count), arcs
+    // as the preview's lines.
+    const runs: CamPolygon[] = [];
     for (const path of routed.toPaths()) {
       let run: CamPoint[] = [];
       for (const p of path.type === 'carve' ? path.points : []) {
         if (Math.abs(p.z - bottom) < 1e-4) {
-          run.push(p);
+          run.push({ x: p.x, y: p.y });
         } else {
-          if (run.length) runs.push(run);
+          if (run.length) runs.push(fromPoints(run, false));
           run = [];
         }
       }
-      if (run.length) runs.push(run);
+      if (run.length) runs.push(fromPoints(run, false));
     }
     const swept = await sweptArea(runs, clearing.toolSize / 2);
     cleared = cleared.length ? await combine(cleared, swept, 'union') : swept;

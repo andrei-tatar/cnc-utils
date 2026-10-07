@@ -6,10 +6,10 @@ import {
   segmentDistance,
   sharpCorners,
 } from './job-checks';
-import { CamPath, CamShape } from './types';
+import { CamPath, CamPolygon, CamShape } from './types';
 
-const square = (x: number, y: number, size: number) => ({
-  points: [
+const square = (x: number, y: number, size: number): CamPolygon => ({
+  vertices: [
     { x, y },
     { x: x + size, y },
     { x: x + size, y: y + size },
@@ -94,9 +94,14 @@ describe('checkJob', () => {
     expect(warnings[0].text).toContain('4 corners come out rounded (r3)');
     expect(sharpCorners(shape, 'concave')).toBe(0);
     // Only the corners on a part count, when parts are cut out.
-    expect(sharpCorners(shape, 'convex', [square(-10, -10, 30).points])).toBe(
-      1,
-    );
+    expect(sharpCorners(shape, 'convex', [square(-10, -10, 30)])).toBe(1);
+    // A part's own corners, on its outline, count too.
+    const part = square(0, 0, 10);
+    expect(
+      sharpCorners([{ sourceShapeId: 'p', polygons: [part] }], 'convex', [
+        part,
+      ]),
+    ).toBe(4);
   });
 
   it('allows a few tenths into the spoilboard', () => {

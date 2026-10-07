@@ -1,18 +1,8 @@
-import { PathD, PathsD } from 'clipper2-wasm/dist/clipper2z';
-import {
-  clipperInflateRaw,
-  getAreaResolver,
-  makePaths,
-  makePathsFromPath,
-  pathsIntersect,
-  pathIntersectsAnyFromGroup,
-  simplifyPath,
-} from '../../cam/clipper';
-import { CamShape, CamPoint } from '../../cam/types';
-import { getDistance, pointsEqual } from '../../util';
+import { CamPoint, CamPolygon, CamShape, CamVertex } from '../../cam/types';
+import { getDistance } from '../../util';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import {
-  decimals,
+  curveTolerance,
   GeometrySettings,
   precision,
   useGeometry,
@@ -21,12 +11,14 @@ import { getCentroid } from './utils';
 import { orderPoints } from '../../cam/travel-order';
 import { enterCut } from '../../cam/ramp';
 import { rasterLines, rasterPaths, staysInside } from '../../cam/raster';
-
-// Irrelevant with round joins.
-const MITER_LIMIT = 2;
-const ARC_TOLERANCE = 0;
-const offsetArgs = () =>
-  ['round', 'polygon', MITER_LIMIT, decimals(), ARC_TOLERANCE] as const;
+import { booleanOperation, inflatePaths, offsetRegion } from '../../cam/kernel';
+import {
+  bulgeOf,
+  polygonPoints,
+  polygonsBounds,
+  signedArea,
+  windingNumber,
+} from '../../cam/arcs';
 
 export async function routePocketHole(
   input: CamShape[],
@@ -61,18 +53,17 @@ export async function routePocketHole(
 
   const groups = await groupShapes(input);
   const sorted =
-    options.optimizeTravel === false ? groups : sortPaths(groups, start);
+    options.optimizeTravel === false ? groups : sortGroups(groups, start);
 
   if (options.strategy === 'raster') {
     for (const shape of sorted) {
       start = await routeRaster(builder, shape, { ...options, start });
     }
-    sorted.forEach((s) => s.delete());
     return builder;
   }
 
   for (const shape of sorted) {
-    const outlines = await getShapeOutlines(shape, { ...options, start });
+    const outlines = await getShapeOutlines(shape, options);
     // When ramping: where each loop's last ramp ended, so the next level's
     // ramp carries on from there (the same loops are cut at every level).
     const rampEnds = new Map<number, CamPoint>();
@@ -81,25 +72,18 @@ export async function routePocketHole(
       builder.goToSafeHeight();
       const depth = options.startDepth + options.depthPerStep * (step + 1);
 
-      let lastOutline: PathD | null = null;
+      let lastOutline: CamPolygon | null = null;
       for (const [index, outline] of outlines.entries()) {
-        const intersectsLastOutline = lastOutline
-          ? await pathsIntersect(outline, lastOutline, decimals())
+        const overlapsLastOutline = lastOutline
+          ? overlaps(outline, lastOutline)
           : false;
-
         lastOutline = outline;
 
-        let outlinePoints = getPoints(outline);
-        const closestPointIndex = findClosestPointIndex(start, outlinePoints);
-        const removed = outlinePoints.splice(0, closestPointIndex);
-        outlinePoints.push(...removed);
-
-        let firstPoint: CamPoint | null = null,
-          lastPoint: CamPoint | null = null;
+        let loop = startingNearest(outline.vertices, start);
 
         if (
-          !intersectsLastOutline ||
-          getDistance(start, outlinePoints[0]) > options.toolSize * 2
+          !overlapsLastOutline ||
+          getDistance(start, loop[0]) > options.toolSize * 2
         ) {
           builder.goToSafeHeight();
         }
@@ -108,9 +92,9 @@ export async function routePocketHole(
         if (entering) {
           // Ramp along this loop, from the level above.
           const rampEnd = rampEnds.get(index);
-          outlinePoints = enterCut(
+          loop = enterCut(
             builder,
-            outlinePoints,
+            loop,
             true,
             -(depth - options.depthPerStep),
             -depth,
@@ -120,47 +104,52 @@ export async function routePocketHole(
             rampEnd && { point: rampEnd, down: false },
           );
           if (options.rampAngle) {
-            rampEnds.set(index, outlinePoints[0]);
+            rampEnds.set(index, loop[0]);
           }
+        } else {
+          // Still down: across to this loop.
+          builder.carveTo(loop[0].x, loop[0].y);
         }
-
-        for (let i = 0; i < outlinePoints.length; i++) {
-          const pt = outlinePoints[i];
-
-          if (i === 0) {
-            firstPoint = pt;
-          }
-          if (i === outlinePoints.length - 1) {
-            lastPoint = pt;
-          }
-
-          // (Entering left the bit at the first point.)
-          if (i > 0 || !entering) {
-            builder.carveTo(pt.x, pt.y);
-          }
-        }
-
-        if (firstPoint && lastPoint && !pointsEqual(firstPoint, lastPoint)) {
-          builder.carveTo(firstPoint.x, firstPoint.y);
-          start = firstPoint;
-        } else if (lastPoint) {
-          start = lastPoint;
-        }
+        start = carveLoop(builder, loop);
       }
     }
-
-    outlines.forEach((o) => o.delete());
   }
 
-  sorted.forEach((s) => s.delete());
-
   return builder;
+}
+
+/**
+ * Round a closed loop from its first vertex and back to it (the bit is
+ * there already), arcs as arcs. Returns where it ends.
+ */
+function carveLoop(builder: GCodeBuilder, loop: CamVertex[]): CamPoint {
+  for (let i = 1; i < loop.length; i++) {
+    builder.arcTo(loop[i].x, loop[i].y, bulgeOf(loop[i - 1]));
+  }
+  if (loop.length > 1) {
+    builder.arcTo(loop[0].x, loop[0].y, bulgeOf(loop[loop.length - 1]));
+  }
+  return loop[0];
+}
+
+/** The closed loop starting at its vertex nearest `point`. */
+function startingNearest(loop: CamVertex[], point: CamPoint): CamVertex[] {
+  let best = 0;
+  let bestDistance = Infinity;
+  loop.forEach((v, i) => {
+    const d = getDistance(point, v);
+    if (d < bestDistance) {
+      best = i;
+      bestDistance = d;
+    }
+  });
+  return [...loop.slice(best), ...loop.slice(0, best)];
 }
 
 /** Cut one group of shapes as raster lines; returns where the bit ends up. */
 async function routeRaster(
   builder: GCodeBuilder,
-  shape: PathsD,
+  shape: CamPolygon[],
   options: {
     toolSize: number;
     toolEngagement: number;
@@ -176,16 +165,12 @@ async function routeRaster(
 ): Promise<CamPoint> {
   let start = options.start;
   const area = await toolCenterArea(shape, options);
-  const loops: CamPoint[][] = [];
-  for (let i = 0; i < area.size(); i++) {
-    const path = area.get(i);
-    loops.push(getPoints(path));
-    path.delete();
-  }
-  area.delete();
-  if (!loops.length) {
+  if (!area.length) {
     return start;
   }
+  // The lines are worked out on the outline's points (arcs within the
+  // curve tolerance); the pass round the outline follows its arcs.
+  const loops = area.map((p) => polygonPoints(p, curveTolerance()));
 
   const along = options.alongAxis ?? 'y';
   const lines = rasterLines(
@@ -211,12 +196,12 @@ async function routeRaster(
         builder.goToSafeHeight();
       }
     };
-    const cut = (points: CamPoint[], close: boolean) => {
-      goTo(points[0]);
+    const cut = (path: CamVertex[], close: boolean) => {
+      goTo(path[0]);
       if (builder.isAtSafetyHeight) {
-        points = enterCut(
+        path = enterCut(
           builder,
-          points,
+          path,
           close,
           -(depth - options.depthPerStep),
           -depth,
@@ -224,15 +209,16 @@ async function routeRaster(
           options.toolSize,
         );
       } else {
-        builder.carveTo(points[0].x, points[0].y);
-      }
-      for (const pt of points.slice(1)) {
-        builder.carveTo(pt.x, pt.y);
+        builder.carveTo(path[0].x, path[0].y);
       }
       if (close) {
-        builder.carveTo(points[0].x, points[0].y);
+        start = carveLoop(builder, path);
+        return;
       }
-      start = close ? points[0] : points[points.length - 1];
+      for (let i = 1; i < path.length; i++) {
+        builder.arcTo(path[i].x, path[i].y, bulgeOf(path[i - 1]));
+      }
+      start = path[path.length - 1];
     };
 
     builder.goToSafeHeight();
@@ -242,18 +228,18 @@ async function routeRaster(
 
     // Round the outline (and any islands), nearest first, to clean up
     // between the ends of the lines.
-    const left = [...loops];
+    const left = area.map((p) => p.vertices);
     while (left.length) {
-      let best = { loop: 0, point: 0, distance: Infinity };
+      let best = { loop: 0, distance: Infinity };
       left.forEach((loop, i) => {
-        const point = findClosestPointIndex(start, loop);
-        const distance = getDistance(start, loop[point]);
+        const nearest = startingNearest(loop, start)[0];
+        const distance = getDistance(start, nearest);
         if (distance < best.distance) {
-          best = { loop: i, point, distance };
+          best = { loop: i, distance };
         }
       });
       const [loop] = left.splice(best.loop, 1);
-      cut([...loop.slice(best.point), ...loop.slice(0, best.point)], true);
+      cut(startingNearest(loop, start), true);
     }
   }
 
@@ -261,198 +247,149 @@ async function routeRaster(
 }
 
 /**
- * Where the centre of the tool can go: the shapes joined, less the stock to
- * leave and half the tool.
+ * Where the centre of the tool can go: the shapes as one region, less the
+ * stock to leave and half the tool. Exact: arcs stay arcs. Outlines are read
+ * as offsets read them (see `inflatePaths`: overlapping ones merge), and
+ * ones a hair apart are joined first (grown and shrunk back by twice the
+ * precision).
  */
 async function toolCenterArea(
-  paths: PathsD,
+  polygons: CamPolygon[],
   options: { leaveStock: number; toolSize: number },
-): Promise<PathsD> {
-  //small grow to join any overlapping polygons
-  paths = await clipperInflateRaw(paths, precision() * 2, ...offsetArgs());
-
-  //shrink to leave stock and half tool size
-  paths = await clipperInflateRaw(paths, -options.leaveStock, ...offsetArgs());
-
-  return clipperInflateRaw(paths, -options.toolSize / 2, ...offsetArgs());
+): Promise<CamPolygon[]> {
+  const join = 2 * precision();
+  const region = await inflatePaths(polygons, join, 'round', 'polygon');
+  return offsetRegion(
+    region,
+    -(join + options.leaveStock + options.toolSize / 2),
+  );
 }
 
+/**
+ * The loops to cut, innermost first: the tool-centre area and successive
+ * insets of it, a stepover apart. Each inset is taken from the area itself
+ * (exact, no rounding builds up), and goes in before the first loop it
+ * lies within (or around), so the bit works outwards and stays down from
+ * one loop to the next.
+ */
 async function getShapeOutlines(
-  currentPaths: PathsD,
+  polygons: CamPolygon[],
   options: {
     leaveStock: number;
     toolSize: number;
     toolEngagement: number;
-    start: CamPoint;
   },
-): Promise<PathD[]> {
-  const outlines: PathD[] = [];
-  const stepSize = -options.toolSize * options.toolEngagement;
-  let firstStep = true;
-  while (true) {
-    // get the next outline
-    currentPaths = firstStep
-      ? await toolCenterArea(currentPaths, options)
-      : await clipperInflateRaw(currentPaths, stepSize, ...offsetArgs());
-
-    firstStep = false;
-
-    // no polygons, end.
-    const pathsSize = currentPaths.size();
-    if (!pathsSize) {
+): Promise<CamPolygon[]> {
+  const area = await toolCenterArea(polygons, options);
+  const outlines: CamPolygon[] = [...area];
+  const step = options.toolSize * options.toolEngagement;
+  if (!(step > 0)) {
+    return outlines;
+  }
+  for (let k = 1; ; k++) {
+    const level = await offsetRegion(area, -step * k);
+    if (!level.length) {
       break;
     }
-
-    // insert the polygons so that there's minimum amount of travel
-    const currentBatch: PathD[] = [];
-    for (let i = 0; i < pathsSize; i++) {
-      const path = currentPaths.get(i);
-      const simplified = await simplifyPath(path, precision());
-      currentBatch.push(simplified);
-      path.delete();
-    }
-
-    if (outlines.length === 0) {
-      outlines.push(...currentBatch);
-    } else {
-      const areas = new Map<PathD, number>();
-      const areaResolver = await getAreaResolver();
-      const getAreaAndCache = (path: PathD) => {
-        const cached = areas.get(path);
-        if (typeof cached === 'number') {
-          return cached;
-        }
-
-        const area = areaResolver(path);
-        areas.set(path, area);
-        return area;
-      };
-      currentBatch.sort((a, b) => {
-        const areaA = getAreaAndCache(a);
-        const areaB = getAreaAndCache(b);
-        return areaB - areaA;
-      });
-
-      // insert the polygons so that there's minimum amount of travel
-      for (const path of currentBatch) {
-        let inserted = false;
-        for (const testOutline of outlines) {
-          if (await pathsIntersect(path, testOutline, decimals())) {
-            const index = outlines.indexOf(testOutline);
-            outlines.splice(index, 0, path);
-            inserted = true;
-            break;
-          }
-        }
-
-        if (!inserted) {
-          //TODO: all outlines should intersect with the previous batch
-          //since they are generated from it
-          path.delete();
-          // outlines.push(path);
-
-          console.log('orphan path :(');
-        }
+    const batch = [...level].sort(
+      (a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)),
+    );
+    for (const loop of batch) {
+      const at = outlines.findIndex((o) => overlaps(loop, o));
+      if (at >= 0) {
+        outlines.splice(at, 0, loop);
       }
     }
   }
-
   return outlines;
 }
 
 /**
- * Group polygons so that intersecting ones are processed together.
- * This is to optimize travel and go depth first
+ * Whether two loops that don't cross overlap as filled areas: one lies in
+ * the other.
  */
-async function groupShapes(input: CamShape[]) {
-  const polygons = input.flatMap((p) => p.polygons).map((p) => p.points);
-  const paths = await makePaths(polygons);
+function overlaps(a: CamPolygon, b: CamPolygon): boolean {
+  const ba = polygonsBounds([a]);
+  const bb = polygonsBounds([b]);
+  if (
+    ba.minX > bb.maxX ||
+    bb.minX > ba.maxX ||
+    ba.minY > bb.maxY ||
+    bb.minY > ba.maxY
+  ) {
+    return false;
+  }
+  const inside = (p: CamPoint, loop: CamPolygon) =>
+    windingNumber(p, [{ ...loop, close: true }]) !== 0;
+  return inside(a.vertices[0], b) || inside(b.vertices[0], a);
+}
 
-  const groups: PathsD[] = [];
-
-  const pathsSize = paths.size();
-  for (let i = 0; i < pathsSize; i++) {
-    const test = paths.get(i);
-
+/**
+ * Group polygons so that overlapping ones are processed together.
+ * This is to optimize travel and go depth first.
+ */
+async function groupShapes(input: CamShape[]): Promise<CamPolygon[][]> {
+  const polygons = input
+    .flatMap((p) => p.polygons)
+    .filter((p) => p.vertices.length > 1)
+    .map((p) => ({ ...p, close: true }));
+  const groups: CamPolygon[][] = [];
+  for (const polygon of polygons) {
     let found = false;
     for (const group of groups) {
-      if (await pathIntersectsAnyFromGroup(test, group, decimals())) {
-        group.push_back(test);
+      if (await overlapsAny(polygon, group)) {
+        group.push(polygon);
         found = true;
         break;
       }
     }
-
     if (!found) {
-      const newGroup = await makePathsFromPath(test);
-      groups.push(newGroup);
+      groups.push([polygon]);
     }
   }
-
   return groups;
 }
 
-function sortPaths(input: PathsD[], start: CamPoint = { x: 0, y: 0 }) {
+/** Whether the polygon's area overlaps any of the group's (non-zero). */
+async function overlapsAny(polygon: CamPolygon, group: CamPolygon[]) {
+  const box = polygonsBounds([polygon]);
+  const near = group.filter((g) => {
+    const b = polygonsBounds([g]);
+    return !(
+      box.minX > b.maxX ||
+      b.minX > box.maxX ||
+      box.minY > b.maxY ||
+      b.minY > box.maxY
+    );
+  });
+  if (!near.length) {
+    return false;
+  }
+  return (
+    (await booleanOperation([polygon], near, 'intersection', 'non-zero'))
+      .length > 0
+  );
+}
+
+function sortGroups(
+  input: CamPolygon[][],
+  start: CamPoint = { x: 0, y: 0 },
+): CamPolygon[][] {
   if (input.length <= 1) {
     return input;
   }
-
-  const centers = new Map<PathsD, CamPoint>(
-    input.map((paths) => {
-      const centroids: CamPoint[] = [];
-      for (let i = 0; i < paths.size(); i++) {
-        const path = paths.get(i);
-
-        const allPoints: CamPoint[] = [];
-        for (let j = 0; j < path.size(); j++) {
-          const point = path.get(j);
-          allPoints.push({ x: point.x, y: point.y });
-        }
-        centroids.push(getCentroid(allPoints));
-      }
-
+  const centers = new Map<CamPolygon[], CamPoint>(
+    input.map((group) => {
+      const centroids = group.map((p) =>
+        getCentroid(p.vertices.map(({ x, y }) => ({ x, y }))),
+      );
       const cx = centroids.reduce((s, a) => s + a.x, 0) / centroids.length;
       const cy = centroids.reduce((s, a) => s + a.y, 0) / centroids.length;
-
-      return [paths, { x: cx, y: cy }];
+      return [group, { x: cx, y: cy }];
     }),
   );
-
   return orderPoints(
-    input.map((paths) => ({ ...centers.get(paths)!, paths })),
+    input.map((group) => ({ ...centers.get(group)!, group })),
     start,
-  ).map(({ paths }) => paths);
-}
-
-function getPoints(path: PathD): CamPoint[] {
-  const size = path.size();
-  const points: CamPoint[] = [];
-  for (let i = 0; i < size; i++) {
-    const point = path.get(i);
-    points.push({ x: point.x, y: point.y });
-  }
-  return points;
-}
-
-function findClosestPointIndex(pt: CamPoint, points: CamPoint[]) {
-  return findClosestPointMapIndex(pt, points, (p) => p);
-}
-
-function findClosestPointMapIndex<T>(
-  pt: CamPoint,
-  items: T[],
-  map: (item: T) => CamPoint,
-) {
-  let index = -1;
-  let min = Infinity;
-
-  for (let i = 0; i < items.length; i++) {
-    const distance = getDistance(pt, map(items[i]));
-    if (distance < min) {
-      min = distance;
-      index = i;
-    }
-  }
-
-  return index;
+  ).map(({ group }) => group);
 }

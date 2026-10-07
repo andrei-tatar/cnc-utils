@@ -1,12 +1,21 @@
 import { GCodeBuilder, PathInstruction } from './gcode-builder';
+import { containingPolygons, pointInPolygon } from './polygon-nesting';
 import {
-  containingContours,
-  pointInPolygon,
-  signedArea2,
-} from './polygon-nesting';
+  bulgeOf,
+  closestOnSegment,
+  paramOnSegment,
+  pointAlong,
+  polygonsBounds,
+  segmentLength,
+  segmentPoints,
+  signedArea,
+  tangentAlong,
+} from './arcs';
 import { CamPoint, CamShape, CamTab } from './types';
 
 const EPS = 1e-6;
+/** Arcs near a tab are cut as lines this close to them (mm). */
+const ARC_STEP = 0.005;
 /** How closely the edges of a tab are found along a cut (mm). */
 const PRECISION = 1e-5;
 
@@ -40,7 +49,8 @@ export type TabPlacement = {
 type Loop = {
   /** Which of the input's shapes it's in. */
   shape: number;
-  edges: { a: CamPoint; b: CamPoint; length: number }[];
+  /** Its segments: lines, or arcs (`bulge`, see `src/cam/arcs.ts`). */
+  edges: { a: CamPoint; b: CamPoint; bulge: number; length: number }[];
   perimeter: number;
   /** 1 when away from the shape's area is left of the way round, else -1. */
   away: number;
@@ -67,13 +77,13 @@ export function placeTabs(
   }
   const closed = input.flatMap((shape, s) =>
     shape.polygons
-      .filter((p) => p.close && p.points.length > 2)
-      .map((p) => ({ s, points: p.points })),
+      .filter((p) => p.close && p.vertices.length > 1)
+      .map((polygon) => ({ s, polygon })),
   );
-  const holes = containingContours(closed.map((l) => l.points)).map(
+  const holes = containingPolygons(closed.map((l) => l.polygon)).map(
     (around) => around.length % 2 === 1,
   );
-  const loops: Loop[] = closed.flatMap(({ s, points }, i) => {
+  const loops: Loop[] = closed.flatMap(({ s, polygon }, i) => {
     const hole = holes[i];
     if (
       (placement.on === 'contours' && hole) ||
@@ -81,9 +91,11 @@ export function placeTabs(
     ) {
       return [];
     }
+    const points = polygon.vertices;
     const edges = points.map((a, k) => {
       const b = points[(k + 1) % points.length];
-      return { a, b, length: Math.hypot(b.x - a.x, b.y - a.y) };
+      const bulge = bulgeOf(a);
+      return { a, b, bulge, length: segmentLength(a, b, bulge) };
     });
     const perimeter = edges.reduce((sum, e) => sum + e.length, 0);
     if (!(perimeter > EPS)) {
@@ -91,7 +103,7 @@ export function placeTabs(
     }
     // Left of the way round is inside a counter-clockwise loop; away from
     // the shape's area is out of an outline, but into a hole.
-    const into = signedArea2(points) > 0 ? 1 : -1;
+    const into = signedArea(polygon) > 0 ? 1 : -1;
     return [{ shape: s, edges, perimeter, away: hole ? into : -into }];
   });
 
@@ -152,19 +164,10 @@ function nearestOnLoops(loops: Loop[], point: CamPoint) {
   for (const loop of loops) {
     for (const edge of loop.edges) {
       if (!(edge.length > EPS)) continue;
-      const { a, b } = edge;
-      const t = Math.max(
-        0,
-        Math.min(
-          1,
-          ((point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y)) /
-            (edge.length * edge.length),
-        ),
-      );
-      const d = Math.hypot(
-        point.x - (a.x + (b.x - a.x) * t),
-        point.y - (a.y + (b.y - a.y) * t),
-      );
+      const { a, b, bulge } = edge;
+      const nearest = closestOnSegment(point, a, b, bulge);
+      const t = paramOnSegment(a, b, bulge, nearest.point);
+      const d = nearest.distance;
       if (d < bestDistance - EPS) {
         bestDistance = d;
         best = { loop, edge, t };
@@ -188,12 +191,10 @@ function tabOn(
       : side === 'inside'
         ? [-length, 0]
         : [-length, length];
-  const dx = (edge.b.x - edge.a.x) / edge.length;
-  const dy = (edge.b.y - edge.a.y) / edge.length;
-  const c = {
-    x: edge.a.x + (edge.b.x - edge.a.x) * t,
-    y: edge.a.y + (edge.b.y - edge.a.y) * t,
-  };
+  // Square to the line where the tab's middle is (on an arc, its tangent
+  // there).
+  const { x: dx, y: dy } = tangentAlong(edge.a, edge.b, edge.bulge, t);
+  const c = pointAlong(edge.a, edge.b, edge.bulge, t);
   // Square to the line, away from the shape's area.
   const ox = -dy * loop.away;
   const oy = dx * loop.away;
@@ -292,6 +293,70 @@ export function keepTabs(
     }
   };
 
+  /**
+   * A straight cut from `from` to `to` (Z from `zA` to `zB`), over any tab
+   * in the way; `original`, when given, is the instruction to keep if
+   * nothing changes.
+   */
+  const carveStraight = (
+    from: CamPoint,
+    to: CamPoint,
+    zA: number,
+    zB: number,
+    original: PathInstruction | null,
+  ) => {
+    // (Tabs it stays above don't matter.)
+    const lowest = Math.min(zA, zB);
+    const spans = keepOuts.flatMap((k) => {
+      if (k.top <= lowest + EPS) return [];
+      const span = within(k, from, to);
+      return span ? [{ ...span, top: k.top }] : [];
+    });
+    if (!spans.length && Math.abs(z - zA) <= EPS) {
+      out.push(
+        original ??
+          (Math.abs(zB - zA) > EPS
+            ? { type: 'carve', to, z: zB }
+            : { type: 'carve', to }),
+      );
+      z = zB;
+      return;
+    }
+    const depthAt = (t: number) => zA + (zB - zA) * t;
+    const cuts = [
+      0,
+      ...spans.flatMap((s) => [s.from, s.to]).filter((t) => t > 0 && t < 1),
+      1,
+    ].sort((a, b) => a - b);
+    for (let k = 1; k < cuts.length; k++) {
+      const [ta, tb] = [cuts[k - 1], cuts[k]];
+      if (tb - ta <= 0) continue;
+      const mid = (ta + tb) / 2;
+      const top = spans.reduce(
+        (t, s) => (s.from <= mid && s.to >= mid && s.top > t ? s.top : t),
+        -Infinity,
+      );
+      // A ramp through the tab's top: split where it gets there.
+      const parts = [ta, tb];
+      if (Number.isFinite(top) && zA !== zB) {
+        const tc = (top - zA) / (zB - zA);
+        if (tc > ta && tc < tb) parts.splice(1, 0, tc);
+      }
+      for (let p = 1; p < parts.length; p++) {
+        const start = Math.max(depthAt(parts[p - 1]), top);
+        const end = Math.max(depthAt(parts[p]), top);
+        moveZ(start);
+        const point = lerp(from, to, parts[p]);
+        out.push(
+          Math.abs(end - z) > EPS
+            ? { type: 'carve', to: point, z: end }
+            : { type: 'carve', to: point },
+        );
+        z = end;
+      }
+    }
+  };
+
   for (const i of builder.instructions) {
     switch (i.type) {
       case 'safety-height':
@@ -345,51 +410,38 @@ export function keepTabs(
           if (i.z !== undefined) z = i.z;
           break;
         }
-        // (Tabs it stays above don't matter.)
+        if (!i.bulge) {
+          carveStraight(from, i.to, zA, zB, i);
+          break;
+        }
+        // An arc: as it is unless it comes near a tab below its top, else
+        // as short lines, kept out of the tabs like any other cut.
         const lowest = Math.min(zA, zB);
-        const spans = keepOuts.flatMap((k) => {
-          if (k.top <= lowest + EPS) return [];
-          const span = within(k, from, i.to);
-          return span ? [{ ...span, top: k.top }] : [];
-        });
-        if (!spans.length && Math.abs(z - zA) <= EPS) {
+        const arcBox = polygonsBounds([
+          { vertices: [{ ...from, bulge: i.bulge }, i.to], close: false },
+        ]);
+        const near = keepOuts.some(
+          (k) =>
+            k.top > lowest + EPS &&
+            k.box.minX <= arcBox.maxX &&
+            k.box.maxX >= arcBox.minX &&
+            k.box.minY <= arcBox.maxY &&
+            k.box.maxY >= arcBox.minY,
+        );
+        if (!near) {
+          moveZ(zA);
           out.push(i);
           z = zB;
           break;
         }
-        const depthAt = (t: number) => zA + (zB - zA) * t;
-        const cuts = [
-          0,
-          ...spans.flatMap((s) => [s.from, s.to]).filter((t) => t > 0 && t < 1),
-          1,
-        ].sort((a, b) => a - b);
-        for (let k = 1; k < cuts.length; k++) {
-          const [ta, tb] = [cuts[k - 1], cuts[k]];
-          if (tb - ta <= 0) continue;
-          const mid = (ta + tb) / 2;
-          const top = spans.reduce(
-            (t, s) => (s.from <= mid && s.to >= mid && s.top > t ? s.top : t),
-            -Infinity,
-          );
-          // A ramp through the tab's top: split where it gets there.
-          const parts = [ta, tb];
-          if (Number.isFinite(top) && zA !== zB) {
-            const tc = (top - zA) / (zB - zA);
-            if (tc > ta && tc < tb) parts.splice(1, 0, tc);
-          }
-          for (let p = 1; p < parts.length; p++) {
-            const start = Math.max(depthAt(parts[p - 1]), top);
-            const end = Math.max(depthAt(parts[p]), top);
-            moveZ(start);
-            const to = lerp(from, i.to, parts[p]);
-            out.push(
-              Math.abs(end - z) > EPS
-                ? { type: 'carve', to, z: end }
-                : { type: 'carve', to },
-            );
-            z = end;
-          }
-        }
+        const points = segmentPoints(from, i.to, i.bulge, ARC_STEP);
+        let previous = from;
+        points.forEach((p, k) => {
+          const zp = zA + ((zB - zA) * (k + 1)) / points.length;
+          const zq = zA + ((zB - zA) * k) / points.length;
+          carveStraight(previous, p, zq, zp, null);
+          previous = p;
+        });
         break;
       }
 

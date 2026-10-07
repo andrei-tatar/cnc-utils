@@ -1,24 +1,24 @@
 import {
-  clipperBooleanOperation,
-  ClipperClipType,
-  ClipperFillRule,
-  makePaths,
-} from '../../cam/clipper';
+  BooleanOp,
+  booleanOperation,
+  FillRule,
+  normalize,
+} from '../../cam/kernel';
 import { CamPolygon, CamShape } from '../../cam/types';
-import { decimals, GeometrySettings, useGeometry } from '../../cam/geometry';
+import { GeometrySettings, useGeometry } from '../../cam/geometry';
 
 /** A shape in a chain of boolean operations (see `applyBooleanOperations`). */
 export type BooleanOperand = {
   shape: CamShape[];
   /** How it's combined with the result so far; ignored for the first. */
-  operation?: ClipperClipType;
+  operation?: BooleanOp;
 };
 
 export async function applyBooleanOperation(
   shape1: CamShape[],
   shape2: CamShape[],
-  clipType: ClipperClipType,
-  fillRule: ClipperFillRule,
+  clipType: BooleanOp,
+  fillRule: FillRule,
   resultShapeId: string,
   geometry?: GeometrySettings,
 ): Promise<CamShape[]> {
@@ -37,7 +37,7 @@ export async function applyBooleanOperation(
  */
 export async function applyBooleanOperations(
   operands: BooleanOperand[],
-  fillRule: ClipperFillRule,
+  fillRule: FillRule,
   resultShapeId: string,
   geometry?: GeometrySettings,
 ): Promise<CamShape[]> {
@@ -46,58 +46,27 @@ export async function applyBooleanOperations(
     return [];
   }
 
-  const regionOf = async (shape: CamShape[]) =>
-    makePaths(shape.flatMap((p) => p.polygons).map((p) => p.points));
+  const polygonsOf = (shape: CamShape[]): CamPolygon[] =>
+    shape.flatMap((p) => p.polygons).filter((p) => p.close);
 
-  let result = await regionOf(operands[0].shape);
-  if (operands.length === 1) {
-    // Still read through the fill rule, as with more shapes.
-    result = await normalize(result, fillRule);
-  }
+  // Each shape read through the fill rule (a clean region, which non-zero
+  // reads as it is), then combined with the result so far.
+  let result = await normalize(polygonsOf(operands[0].shape), fillRule);
   for (let i = 1; i < operands.length; i++) {
     const { shape, operation } = operands[i];
-    // The first step reads both shapes through the fill rule. Its result is
-    // a clean region (outers one way, holes the other), which non-zero
-    // reads as it is whatever the fill rule, so later steps read the shape
-    // being added through the fill rule first, then combine with non-zero.
-    const first = i === 1;
-    let clip = await regionOf(shape);
-    if (!first) {
-      clip = await normalize(clip, fillRule);
-    }
-    const combined = await clipperBooleanOperation(
+    const clip = await normalize(polygonsOf(shape), fillRule);
+    result = await booleanOperation(
       result,
       clip,
       operation ?? 'union',
-      first ? fillRule : 'non-zero',
-      decimals(),
+      'non-zero',
     );
-    result.delete();
-    clip.delete();
-    result = combined;
   }
 
-  const pathsSize = result.size();
   const output: CamShape = {
-    polygons: [],
+    polygons: result,
     sourceShapeId: resultShapeId,
   };
-
-  for (let i = 0; i < pathsSize; i++) {
-    const path = result.get(i);
-    const poly: CamPolygon = {
-      points: [],
-      close: true,
-    };
-    const pathSize = path.size();
-    for (let j = 0; j < pathSize; j++) {
-      const point = path.get(j);
-      poly.points.push({ x: point.x, y: point.y });
-    }
-
-    output.polygons.push(poly);
-  }
-  result.delete();
 
   // Tabs on the shapes combined stay where they are.
   const tabs = operands.flatMap(({ shape }) =>
@@ -107,25 +76,4 @@ export async function applyBooleanOperations(
     output.tabs = tabs;
   }
   return output.polygons.length || tabs.length ? [output] : [];
-}
-
-/**
- * The region `paths` cover under `fillRule`, as clean polygons. Takes
- * ownership of `paths`.
- */
-async function normalize(
-  paths: Awaited<ReturnType<typeof makePaths>>,
-  fillRule: ClipperFillRule,
-) {
-  const empty = await makePaths([]);
-  const result = await clipperBooleanOperation(
-    paths,
-    empty,
-    'union',
-    fillRule,
-    decimals(),
-  );
-  paths.delete();
-  empty.delete();
-  return result;
 }

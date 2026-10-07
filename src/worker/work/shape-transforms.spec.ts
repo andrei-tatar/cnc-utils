@@ -1,5 +1,6 @@
 import { CamPoint, CamShape } from '../../cam/types';
 import { findCorners } from '../../cam/corners';
+import { arcOf } from '../../cam/arcs';
 import {
   centerMarks,
   fitToSize,
@@ -19,7 +20,7 @@ const square = (x: number, y: number, size: number): CamPoint[] => [
 const shape = (...polygons: CamPoint[][]): CamShape[] => [
   {
     sourceShapeId: 's',
-    polygons: polygons.map((points) => ({ points, close: true })),
+    polygons: polygons.map((vertices) => ({ vertices, close: true })),
   },
 ];
 
@@ -66,9 +67,13 @@ describe('shapeCorners', () => {
       cornerWhich: 'all',
       cornerMaxAngle: 160,
     });
-    expect(result.polygons[0].points.length).toBe(8);
-    expect(result.polygons[0].points[0]).toEqual({ x: 0, y: 2 });
-    expect(result.polygons[0].points[1]).toEqual({ x: 2, y: 0 });
+    const [first, second] = result.polygons[0].vertices;
+    expect(result.polygons[0].vertices.length).toBe(8);
+    expect(first.x).toBeCloseTo(0, 12);
+    expect(first.y).toBeCloseTo(2, 12);
+    expect(second.x).toBeCloseTo(2, 12);
+    expect(second.y).toBeCloseTo(0, 12);
+    expect(result.polygons[0].vertices.some((v) => v.bulge)).toBeFalse();
   });
 
   it('fillets corners with arcs tangent to the edges', () => {
@@ -79,13 +84,16 @@ describe('shapeCorners', () => {
       cornerWhich: 'convex',
       cornerMaxAngle: 160,
     });
-    const points = result.polygons[0].points;
-    // Every point of the first corner's arc is 3 from (3, 3).
-    const arc = points.filter((p) => p.x <= 3 + 1e-9 && p.y <= 3 + 1e-9);
-    expect(arc.length).toBeGreaterThan(3);
-    for (const p of arc) {
-      expect(Math.hypot(p.x - 3, p.y - 3)).toBeCloseTo(3, 9);
-    }
+    const vertices = result.polygons[0].vertices;
+    // Each corner becomes a quarter circle of radius 3: the first one's
+    // centre is (3, 3), turning left round it.
+    expect(vertices.length).toBe(8);
+    const [start, end] = vertices;
+    expect(start.bulge).toBeCloseTo(Math.tan(Math.PI / 8), 12);
+    const { center, radius } = arcOf(start, end, start.bulge!);
+    expect(center.x).toBeCloseTo(3, 9);
+    expect(center.y).toBeCloseTo(3, 9);
+    expect(radius).toBeCloseTo(3, 9);
   });
 
   it('leaves unselected corners alone', () => {
@@ -96,7 +104,7 @@ describe('shapeCorners', () => {
       cornerWhich: 'concave',
       cornerMaxAngle: 160,
     });
-    expect(result.polygons[0].points).toEqual(square(0, 0, 10));
+    expect(result.polygons[0].vertices).toEqual(square(0, 0, 10));
   });
 });
 
@@ -195,8 +203,11 @@ describe('centerMarks', () => {
       centersOf: 'outlines',
       centersKeepOriginal: false,
     });
-    expect(result.polygons).toEqual([
-      { points: [{ x: 5, y: 5 }], close: false },
-    ]);
+    expect(result.polygons.length).toBe(1);
+    const [mark] = result.polygons;
+    expect(mark.close).toBeFalse();
+    expect(mark.vertices.length).toBe(1);
+    expect(mark.vertices[0].x).toBeCloseTo(5, 12);
+    expect(mark.vertices[0].y).toBeCloseTo(5, 12);
   });
 });

@@ -4,7 +4,8 @@ import {
   GeometrySettings,
   useGeometry,
 } from '../../cam/geometry';
-import { containingContours } from '../../cam/polygon-nesting';
+import { containingPolygons } from '../../cam/polygon-nesting';
+import { bulgeOf, isArea, pointAlong } from '../../cam/arcs';
 import { CamPoint, CamShape } from '../../cam/types';
 import { orderPoints } from '../../cam/travel-order';
 import { centerOf } from './shape-transforms';
@@ -45,21 +46,20 @@ export type Bore = { center: CamPoint; radius: number };
  * out. Single points can't be bored.
  */
 export function boreHoles(input: CamShape[]): Bore[] {
-  const closed = input
-    .flatMap((s) => s.polygons)
-    .filter((p) => p.close && p.points.length > 2);
-  const parents = containingContours(closed.map((p) => p.points));
+  const closed = input.flatMap((s) => s.polygons).filter(isArea);
+  const parents = containingPolygons(closed);
   return closed
     .filter((_, i) => parents[i].length % 2 === 0)
     .flatMap((p) => {
-      const center = centerOf(p.points, true);
-      // Corners and the middles of the sides: a square's corners alone are
-      // all as far from its centre.
-      const distances = p.points.flatMap((q, i) => {
-        const r = p.points[(i + 1) % p.points.length];
+      const center = centerOf(p);
+      // Corners and the middles of the sides (of arcs, along them): a
+      // square's corners alone are all as far from its centre.
+      const distances = p.vertices.flatMap((q, i) => {
+        const r = p.vertices[(i + 1) % p.vertices.length];
+        const mid = pointAlong(q, r, bulgeOf(q), 0.5);
         return [
           Math.hypot(q.x - center.x, q.y - center.y),
-          Math.hypot((q.x + r.x) / 2 - center.x, (q.y + r.y) / 2 - center.y),
+          Math.hypot(mid.x - center.x, mid.y - center.y),
         ];
       });
       const radius = Math.min(...distances);

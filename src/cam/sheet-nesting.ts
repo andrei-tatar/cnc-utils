@@ -1,3 +1,4 @@
+import { fromPoints, polygonsBounds } from './arcs';
 import { CamPoint, CamShape } from './types';
 
 /** A kind of part to lay out: `count` copies of a `width` × `height` box. */
@@ -190,22 +191,30 @@ function split(free: Rect[], used: Rect) {
 
 export type Box = { minX: number; minY: number; maxX: number; maxY: number };
 
-/** The box around every point of the shapes (null when there are none). */
+/** The box around the shapes, arcs included (null when there are none). */
 export function shapesBox(shapes: CamShape[]): Box | null {
   let box: Box | null = null;
   for (const shape of shapes) {
     for (const polygon of shape.polygons) {
-      for (const p of polygon.points) {
-        if (!Number.isFinite(p.x + p.y)) continue;
-        box = box
-          ? {
-              minX: Math.min(box.minX, p.x),
-              minY: Math.min(box.minY, p.y),
-              maxX: Math.max(box.maxX, p.x),
-              maxY: Math.max(box.maxY, p.y),
-            }
-          : { minX: p.x, minY: p.y, maxX: p.x, maxY: p.y };
-      }
+      const finite = polygon.vertices.every((v) => Number.isFinite(v.x + v.y));
+      // Vertices that can't be placed are left out (and the arcs by them).
+      const b = polygonsBounds([
+        finite
+          ? polygon
+          : fromPoints(
+              polygon.vertices.filter((v) => Number.isFinite(v.x + v.y)),
+              false,
+            ),
+      ]);
+      if (!(b.minX <= b.maxX)) continue;
+      box = box
+        ? {
+            minX: Math.min(box.minX, b.minX),
+            minY: Math.min(box.minY, b.minY),
+            maxX: Math.max(box.maxX, b.maxX),
+            maxY: Math.max(box.maxY, b.maxY),
+          }
+        : b;
     }
   }
   return box;
@@ -229,9 +238,12 @@ export function placeShapes(
   return shapes.map((shape) => {
     const moved: CamShape = {
       sourceShapeId,
+      // A turn and a move keep arcs as they are.
       polygons: shape.polygons.map((polygon) => ({
         close: polygon.close,
-        points: polygon.points.map(move),
+        vertices: polygon.vertices.map((v) =>
+          v.bulge ? { ...move(v), bulge: v.bulge } : move(v),
+        ),
       })),
     };
     if (shape.tabs) {

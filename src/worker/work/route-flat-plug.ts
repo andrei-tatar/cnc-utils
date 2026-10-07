@@ -1,6 +1,7 @@
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { CamShape } from '../../cam/types';
+import { reversePolygon, transformPolygon } from '../../cam/arcs';
 import { inflate, reachable, regionShape, shapeRegion } from './regions';
 import { getBoundingBox } from './shape-transforms';
 import { routeProfile } from './route-profile';
@@ -26,7 +27,7 @@ export async function flatPlugShape(
     const box = getBoundingBox(regionShape(plug, sourceShapeId));
     const middle = box.x + box.width / 2;
     plug = plug.map((contour) =>
-      contour.map((p) => ({ x: 2 * middle - p.x, y: p.y })).reverse(),
+      reversePolygon(transformPolygon(contour, [-1, 0, 0, 1, 2 * middle, 0])),
     );
   }
   return regionShape(plug, sourceShapeId);

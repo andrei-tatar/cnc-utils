@@ -1,9 +1,10 @@
-import { decimals, GeometrySettings, useGeometry } from '../../cam/geometry';
+import { GeometrySettings, useGeometry } from '../../cam/geometry';
 import { CamPolygon, CamShape } from '../../cam/types';
-import { clipperInflateRaw, makePaths } from '../../cam/clipper';
+import { inflatePaths } from '../../cam/kernel';
+import { polygonsBounds } from '../../cam/arcs';
 import { TransformParameters } from '../../app/model-editor/model';
 import { applyConvexHull } from './convex-hull-transform';
-import { pointInPolygon } from '../../cam/polygon-nesting';
+import { containingPolygons } from '../../cam/polygon-nesting';
 import {
   boxPoint,
   centerMarks,
@@ -17,7 +18,7 @@ import {
   transformShapes,
   translation,
 } from './shape-transforms';
-import { dogbones, simplifyShapes } from './clipper-transforms';
+import { dogbones, simplifyShapes } from './kernel-transforms';
 import { placeTabs } from '../../cam/tabs';
 import { finitePoints } from '../../cam/point-patterns';
 
@@ -139,43 +140,19 @@ async function transformed(
           ),
         );
 
-      case 'offset':
-        let paths = await makePaths(
-          input.flatMap((p) => p.polygons).map((p) => p.points),
-        );
-
-        paths = await clipperInflateRaw(
-          paths,
+      case 'offset': {
+        const polygons = await inflatePaths(
+          input.flatMap((p) => p.polygons),
           transform.offset,
           transform.joinType,
           transform.endType,
           transform.miterLimit,
-          decimals(),
           transform.arcTolerance,
         );
-
-        const pathsSize = paths.size();
-        const result: CamShape = {
-          polygons: [],
-          sourceShapeId: input[0]?.sourceShapeId,
-        };
-
-        for (let i = 0; i < pathsSize; i++) {
-          const path = paths.get(i);
-          const poly: CamPolygon = {
-            points: [],
-            close: true,
-          };
-          const pathSize = path.size();
-          for (let j = 0; j < pathSize; j++) {
-            const point = path.get(j);
-            poly.points.push({ x: point.x, y: point.y });
-          }
-
-          result.polygons.push(poly);
-        }
-
-        return result.polygons.length ? [result] : [];
+        return polygons.length
+          ? [{ polygons, sourceShapeId: input[0]?.sourceShapeId }]
+          : [];
+      }
       case 'bounds':
         return boundingRectangles(input, transform.boundsOf);
 
@@ -239,21 +216,14 @@ function boundingRectangles(
   of: 'shape' | 'polygon',
 ): CamShape[] {
   const sourceShapeId = input[0]?.sourceShapeId;
-  const rectangle = (points: CamPolygon['points']): CamPolygon | null => {
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const [x0, x1, y0, y1] = [
-      Math.min(...xs),
-      Math.max(...xs),
-      Math.min(...ys),
-      Math.max(...ys),
-    ];
+  const rectangle = (of: CamPolygon[]): CamPolygon | null => {
+    const { minX: x0, maxX: x1, minY: y0, maxY: y1 } = polygonsBounds(of);
     if (!(x1 > x0) || !(y1 > y0)) {
       return null; // no area (a straight line or a point)
     }
     return {
       close: true,
-      points: [
+      vertices: [
         { x: x0, y: y0 },
         { x: x1, y: y0 },
         { x: x1, y: y1 },
@@ -264,21 +234,17 @@ function boundingRectangles(
 
   const polygons = input.flatMap((s) => s.polygons);
   if (of === 'shape') {
-    const r = rectangle(polygons.flatMap((p) => p.points));
+    const r = rectangle(polygons);
     return r ? [{ sourceShapeId, polygons: [r] }] : [];
   }
-  const closed = polygons.filter((p) => p.close && p.points.length > 2);
-  const isHole = (p: CamPolygon) =>
-    p.close &&
-    closed.filter((o) => o !== p && pointInPolygon(p.points[0], o.points))
-      .length %
-      2 ===
-      1;
+  const closed = polygons.filter((p) => p.close && p.vertices.length > 1);
+  const parents = containingPolygons(closed);
+  const holes = new Set(closed.filter((_, i) => parents[i].length % 2 === 1));
   return input.map((shape) => ({
     ...shape,
     polygons: shape.polygons
-      .filter((p) => p.points.length && !isHole(p))
-      .map((p) => rectangle(p.points))
+      .filter((p) => p.vertices.length && !holes.has(p))
+      .map((p) => rectangle([p]))
       .filter((r): r is CamPolygon => r !== null),
   }));
 }

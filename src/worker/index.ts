@@ -16,8 +16,9 @@ const MAX_WORKERS = Math.max(
 /** Idle workers are kept this long, then terminated. */
 const KEEP_IDLE_FOR = 5 * 60 * 1000;
 /**
- * A cancelled job may finish within this long, and its worker (with clipper
- * and any fonts already loaded) goes back to the pool; after that it's
+ * A cancelled job may finish within this long, and its worker (with the
+ * geometry kernel and any fonts already loaded) goes back to the pool; after
+ * that it's
  * terminated. Most jobs are short, and starting a worker isn't.
  */
 const CANCEL_GRACE = 1500;

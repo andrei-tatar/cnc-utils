@@ -1,3 +1,5 @@
+import { polygonPoints } from './arcs';
+import { circlePolygon } from './corners';
 import { fitOutline, Outline, pathData, shapesToSvg } from './svg-export';
 import { CamPoint, CamPolygon } from './types';
 
@@ -5,7 +7,7 @@ const TOLERANCE = { points: 0.01, chords: 0.02 };
 
 function ellipse(rx: number, ry: number, count: number): CamPolygon {
   return {
-    points: Array.from({ length: count }, (_, i) => {
+    vertices: Array.from({ length: count }, (_, i) => {
       const a = (2 * Math.PI * i) / count;
       return { x: rx * Math.cos(a), y: ry * Math.sin(a) };
     }),
@@ -76,7 +78,7 @@ describe('fitOutline', () => {
     const outline = fitOutline(circle, TOLERANCE);
     expect(outline.segments.length).toBeLessThanOrEqual(3);
     expect(outline.segments.every((s) => s.type === 'arc')).toBeTrue();
-    expect(farthest(circle.points, sample(outline))).toBeLessThan(0.02);
+    expect(farthest(polygonPoints(circle), sample(outline))).toBeLessThan(0.02);
   });
 
   it('fits an ellipse with few Béziers, close to the points', () => {
@@ -84,12 +86,12 @@ describe('fitOutline', () => {
     const outline = fitOutline(shape, TOLERANCE, false);
     expect(outline.segments.length).toBeLessThan(20);
     expect(outline.segments.every((s) => s.type === 'cubic')).toBeTrue();
-    expect(farthest(shape.points, sample(outline))).toBeLessThan(0.012);
+    expect(farthest(polygonPoints(shape), sample(outline))).toBeLessThan(0.012);
   });
 
   it('keeps corners and straight sides', () => {
     const square: CamPolygon = {
-      points: [
+      vertices: [
         { x: 0, y: 0 },
         { x: 5, y: 0 },
         { x: 10, y: 0 },
@@ -114,9 +116,27 @@ describe('fitOutline', () => {
     expect(outline.segments.every((s) => s.type === 'line')).toBeTrue();
   });
 
+  it('keeps the polygon’s own arcs', () => {
+    // A slot: two half circles joined by straight sides.
+    const slot: CamPolygon = {
+      vertices: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0, bulge: 1 },
+        { x: 10, y: 4 },
+        { x: 0, y: 4, bulge: 1 },
+      ],
+      close: true,
+    };
+    const outline = fitOutline(slot, TOLERANCE);
+    expect(outline.start).toEqual({ x: 10, y: 0 });
+    expect(outline.segments.map((s) => s.type)).toEqual(['arc', 'line', 'arc']);
+    expect(pathData([outline])).toBe('M10 0a2 2 0 0 1 0 4h-10a2 2 0 0 1 0-4z');
+    expect(farthest(polygonPoints(slot), sample(outline))).toBeLessThan(1e-3);
+  });
+
   it('leaves an open polyline open', () => {
     const line: CamPolygon = {
-      points: [
+      vertices: [
         { x: 0, y: 0 },
         { x: 10, y: 0 },
       ],
@@ -165,7 +185,7 @@ describe('shapesToSvg', () => {
           sourceShapeId: 'a',
           polygons: [
             {
-              points: [
+              vertices: [
                 { x: 0, y: 0 },
                 { x: 40, y: 0 },
                 { x: 40, y: 20 },
@@ -185,12 +205,20 @@ describe('shapesToSvg', () => {
     expect(svg).toContain('d="M0.5 20.5h40v-20h-40z"');
   });
 
+  it('writes circles as arcs', () => {
+    const svg = shapesToSvg(
+      [{ sourceShapeId: 'c', polygons: [circlePolygon({ x: 0, y: 0 }, 10)] }],
+      TOLERANCE,
+    );
+    expect(svg).toContain('d="M0.5 10.5a10 10 0 0 0 20 0 10 10 0 0 0-20 0z"');
+  });
+
   it('draws drill points as small circles', () => {
     const svg = shapesToSvg(
       [
         {
           sourceShapeId: 'p',
-          polygons: [{ points: [{ x: 5, y: 5 }], close: false }],
+          polygons: [{ vertices: [{ x: 5, y: 5 }], close: false }],
         },
       ],
       TOLERANCE,

@@ -13,7 +13,7 @@ const square = (x: number, y: number, size: number): CamPoint[] => [
 const shape = (...polygons: CamPoint[][]): CamShape[] => [
   {
     sourceShapeId: 's',
-    polygons: polygons.map((points) => ({ points, close: true })),
+    polygons: polygons.map((vertices) => ({ vertices, close: true })),
   },
 ];
 
