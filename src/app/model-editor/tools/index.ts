@@ -7,7 +7,7 @@ import type { HeaderAction } from '../components/array-type-component';
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 
 export type BitType =
-  'end-mill' | 'ball-nose' | 'bull-nose' | 'v-bit' | 'drill';
+  'end-mill' | 'ball-nose' | 'bull-nose' | 'v-bit' | 'drill' | 'keyhole';
 
 /** Bits that cut sideways (everything but a drill). */
 export const SIDE_CUTTING: readonly BitType[] = [
@@ -29,6 +29,7 @@ export const BIT_TYPE_LABELS: Record<BitType, string> = {
   'bull-nose': 'bull nose',
   'v-bit': 'v-bit',
   drill: 'drill',
+  keyhole: 'keyhole',
 };
 
 const hideUnlessBit = (type: BitType) => (field: FormlyFieldConfig) =>
@@ -53,6 +54,10 @@ export type ToolType = {
   cornerRadius?: number;
   /** Drill: the angle of its point (degrees, 118 for most twist drills). */
   pointAngle?: number;
+  /** Keyhole: the diameter of the neck above its head (mm). */
+  neckDiameter?: number;
+  /** Keyhole: how tall its head is (mm). */
+  headHeight?: number;
   /** Optional; overrides the G-code section's carve feed rate. */
   feedRate?: number | null;
   /** Optional; overrides the G-code section's plunge feed rate. */
@@ -156,6 +161,12 @@ export function describeTool(tool: Partial<ToolType> | undefined): string {
     case 'ball-nose':
     case 'drill':
       parts.push(BIT_TYPE_LABELS[tool.bitType]);
+      break;
+    case 'keyhole':
+      parts.push('keyhole');
+      if (tool.neckDiameter) {
+        parts.push(`(neck Ø${tool.neckDiameter})`);
+      }
       break;
     default:
       parts.push('end mill');
@@ -276,6 +287,7 @@ export const field: FormlyFieldConfig = {
             { value: 'bull-nose', label: 'bull nose (rounded corners)' },
             { value: 'v-bit', label: 'v-bit / chamfer / engraving' },
             { value: 'drill', label: 'drill' },
+            { value: 'keyhole', label: 'keyhole (T-slot) cutter' },
           ],
         },
       },
@@ -334,6 +346,30 @@ export const field: FormlyFieldConfig = {
           required: true,
         },
         expressions: { hide: hideUnlessBit('drill') },
+      },
+      {
+        key: 'neckDiameter',
+        type: 'number',
+        defaultValue: 4.8,
+        props: {
+          min: 0,
+          label: 'neck diameter',
+          description: 'mm, the narrow part above the head: the slot’s width',
+          required: true,
+        },
+        expressions: { hide: hideUnlessBit('keyhole') },
+      },
+      {
+        key: 'headHeight',
+        type: 'number',
+        defaultValue: 3.2,
+        props: {
+          min: 0,
+          label: 'head height',
+          description: 'mm, how tall the cutting head is',
+          required: true,
+        },
+        expressions: { hide: hideUnlessBit('keyhole') },
       },
       toolFeedsAndSpeeds,
     ],
