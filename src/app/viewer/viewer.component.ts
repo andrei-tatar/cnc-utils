@@ -72,6 +72,7 @@ import { DirectionArrows } from './helpers/direction-arrows';
 import { nestContours } from '../../cam/polygon-nesting';
 import { CamPath, CamShape, CamTab, Highlight } from '../../cam/types';
 import { StockView, TimeSummary } from '../services/cam.service';
+import { JobWarning } from '../../cam/job-checks';
 
 /** Half the size of the cross marking a single point, in mm. */
 const POINT_MARK_SIZE = 1;
@@ -115,12 +116,43 @@ const EMPTY_VIEW_SIZE = 400;
         </svg>
       </button>
     </div>
+    @if (warnings.length) {
+      <div class="checks">
+        @if (showWarnings) {
+          <ul class="checks_list" aria-label="Checks before cutting">
+            @for (w of warnings; track w.text) {
+              <li [class.checks_warning]="w.level === 'warning'">
+                {{ w.level === 'warning' ? '⚠ ' : '' }}{{ w.text }}
+              </li>
+            }
+          </ul>
+        }
+        <button
+          type="button"
+          class="checks_toggle"
+          [class.checks_toggle--notes]="!warningCount"
+          [attr.aria-expanded]="showWarnings"
+          (click)="showWarnings = !showWarnings"
+        >
+          {{
+            warningCount
+              ? '⚠ ' +
+                warningCount +
+                ' warning' +
+                (warningCount === 1 ? '' : 's')
+              : ''
+          }}{{ warningCount && noteCount ? ' · ' : ''
+          }}{{
+            noteCount ? noteCount + ' note' + (noteCount === 1 ? '' : 's') : ''
+          }}
+        </button>
+      </div>
+    }
     <div class="hud">
       <span #cursorReadout class="hud_cursor"></span>
       @if (timeText) {
         <span class="hud_time" [title]="timeDetails">≈ {{ timeText }}</span>
       }
-      <span #stockWarning class="hud_warning"></span>
       <span #gridReadout class="hud_grid"></span>
       <span #depthLegend class="hud_depth" hidden>
         <span>depth 0</span>
@@ -212,8 +244,52 @@ const EMPTY_VIEW_SIZE = 400;
       }
     }
 
-    .hud_warning {
-      color: #ff8a80;
+    .checks {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      max-width: min(420px, calc(100% - 16px));
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      font:
+        12px/1.4 system-ui,
+        sans-serif;
+    }
+
+    .checks_toggle {
+      border: 1px solid #5a3b2e;
+      border-radius: 6px;
+      background: rgba(30, 20, 18, 0.9);
+      color: #ffb4a2;
+      padding: 3px 10px;
+      cursor: pointer;
+
+      &.checks_toggle--notes {
+        border-color: #3a3a3a;
+        background: rgba(30, 30, 30, 0.85);
+        color: #ccc;
+      }
+    }
+
+    .checks_list {
+      margin: 0;
+      padding: 6px 10px 6px 26px;
+      max-height: 40vh;
+      overflow-y: auto;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      background: rgba(20, 20, 20, 0.92);
+      color: #ccc;
+
+      li {
+        margin: 3px 0;
+      }
+
+      .checks_warning {
+        color: #ffb4a2;
+      }
     }
 
     .hud_depth {
@@ -310,9 +386,6 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
   private stock$ = new BehaviorSubject<StockView | null>(null);
 
-  @ViewChild('stockWarning', { static: true })
-  private stockWarning!: ElementRef<HTMLElement>;
-
   /** How long the job takes, for the HUD. */
   @Input()
   set time(value: TimeSummary | null) {
@@ -328,6 +401,27 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
   timeText = '';
   timeDetails = '';
+
+  /** What to look at before cutting (see `checkJob`). */
+  @Input()
+  set checks(value: JobWarning[] | null) {
+    this.warnings = value ?? [];
+    this.warningCount = this.warnings.filter(
+      (w) => w.level === 'warning',
+    ).length;
+    this.noteCount = this.warnings.length - this.warningCount;
+  }
+  warnings: JobWarning[] = [];
+  warningCount = 0;
+  noteCount = 0;
+  showWarnings = false;
+
+  /** Shapes marked as clamps: drawn in red. */
+  @Input()
+  set clampShapes(value: string[] | null) {
+    this.clampShapes$.next(value ?? []);
+  }
+  private clampShapes$ = new BehaviorSubject<string[]>([]);
 
   /** Shapes toggled off in the editor: not drawn (toolpaths unaffected). */
   @Input()
@@ -455,7 +549,6 @@ export class ViewerComponent implements OnInit, OnDestroy {
         top.translate(x + width / 2, y + height / 2, 0);
         stockBox.add(edges, new Mesh(top, stockTop));
       }
-      this.checkStock();
       this.requestRender();
     });
 
@@ -544,6 +637,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
       opacity: 0,
       transparent: true,
     });
+    const clampEdges = new LineBasicMaterial({ color: '#ef4444' });
+    const clampFaces = new MeshBasicMaterial({
+      color: '#ef4444',
+      transparent: true,
+      opacity: 0.25,
+      depthWrite: false,
+    });
     const tabEdges = new LineBasicMaterial({ color: '#4dd0e1' });
     const tabFaces = new MeshBasicMaterial({
       color: '#4dd0e1',
@@ -609,6 +709,12 @@ export class ViewerComponent implements OnInit, OnDestroy {
                     nullMaterial,
                     tabEdges,
                     tabFaces,
+                    clampEdges,
+                    clampFaces,
+                    clamp$: this.clampShapes$.pipe(
+                      map((ids) => ids.includes(shape.sourceShapeId)),
+                      distinctUntilChanged(),
+                    ),
                     highlight$: isHighlighted$,
                     hidden$: this.hiddenShapes$.pipe(
                       map((hidden) => hidden.includes(shape.sourceShapeId)),
@@ -833,15 +939,6 @@ export class ViewerComponent implements OnInit, OnDestroy {
     }
     this.depthLegend.nativeElement.hidden = deepest >= 0;
     this.deepestReadout.nativeElement.textContent = `${formatMm(deepest)} mm`;
-    this.checkStock();
-  }
-
-  /** Warn when the toolpaths cut deeper than the stock is thick. */
-  private checkStock() {
-    const stock = this.stock$.value?.stock;
-    const below = stock?.enabled ? -this.deepest$.value - stock.thickness : 0;
-    this.stockWarning.nativeElement.textContent =
-      below > 1e-6 ? `⚠ cuts ${formatMm(below)} mm into the spoilboard` : '';
   }
 
   /**
@@ -1090,6 +1187,9 @@ export class ViewerComponent implements OnInit, OnDestroy {
     nullMaterial: Material;
     tabEdges: Material;
     tabFaces: Material;
+    clampEdges: Material;
+    clampFaces: Material;
+    clamp$: Observable<boolean>;
     highlight$: Observable<boolean>;
     hidden$: Observable<boolean>;
   }) {
@@ -1199,19 +1299,27 @@ export class ViewerComponent implements OnInit, OnDestroy {
             }
 
             clean.add(
-              o.highlight$.subscribe((highlight) => {
-                sceneItems.forEach((item) => {
-                  if (item instanceof LineSegments) {
-                    item.material = highlight
-                      ? o.materialHighlight
-                      : o.material;
-                  }
-                  if (item instanceof Mesh) {
-                    item.material = highlight ? o.material : o.nullMaterial;
-                  }
-                });
-                this.requestRender();
-              }),
+              combineLatest([o.highlight$, o.clamp$]).subscribe(
+                ([highlight, clamp]) => {
+                  sceneItems.forEach((item) => {
+                    if (item instanceof LineSegments) {
+                      item.material = clamp
+                        ? o.clampEdges
+                        : highlight
+                          ? o.materialHighlight
+                          : o.material;
+                    }
+                    if (item instanceof Mesh) {
+                      item.material = clamp
+                        ? o.clampFaces
+                        : highlight
+                          ? o.material
+                          : o.nullMaterial;
+                    }
+                  });
+                  this.requestRender();
+                },
+              ),
             );
 
             clean.add(

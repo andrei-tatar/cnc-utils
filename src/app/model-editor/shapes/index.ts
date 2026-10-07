@@ -75,6 +75,11 @@ type CommonShape = {
   expanded: boolean;
   /** Not drawn in the preview (still usable by operations and booleans). */
   hidden?: boolean;
+  /**
+   * A clamp or other zone to keep the bit away from: drawn in red, and
+   * cuts that come within reach of it are flagged.
+   */
+  clamp?: boolean;
 } & TransformsModelType;
 
 type ShapeType =
@@ -180,6 +185,14 @@ export const field: FormlyFieldConfig = {
         },
       },
       ...shapes.map((t) => t.fieldGroup),
+      {
+        key: 'clamp',
+        type: 'boolean',
+        defaultValue: false,
+        props: {
+          label: 'clamp / keep-out zone: flag cuts that come within reach',
+        },
+      },
       transformsField,
     ],
   },

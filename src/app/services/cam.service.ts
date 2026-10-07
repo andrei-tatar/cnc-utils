@@ -4,6 +4,7 @@ import {
   concatMap,
   filter,
   firstValueFrom,
+  debounceTime,
   map,
   Observable,
   of,
@@ -36,6 +37,8 @@ import { generateShapesFromModel } from '../pipeline/shapes';
 import { downloadFile, fileNameFrom } from '../project-file';
 import { createZip } from '../zip';
 import { setupSheetHtml } from '../setup-sheet';
+import { JobWarning } from '../../cam/job-checks';
+import { jobChecks } from '../pipeline/job-checks';
 import { numberedToolLabel } from '../model-editor/tools';
 import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
@@ -84,6 +87,26 @@ export class CamService implements ShapeExporter {
   readonly paths$: Observable<CamPath[]> = this.program$.pipe(
     map((program) => programPaths(program)),
     reuseUnchangedPaths(),
+    shareReplay({ bufferSize: 1, refCount: true }),
+  );
+
+  /** What to look at before cutting (see `checkJob`), warnings first. */
+  readonly warnings$: Observable<JobWarning[]> = combineLatest([
+    this.model$,
+    this.paths$,
+    this.shapes$,
+  ]).pipe(
+    // Shapes and paths settle one after the other: check once they have.
+    debounceTime(150),
+    map(([model, paths, shapes]) => jobChecks(model, paths, shapes)),
+    distinctJson(),
+    shareReplay({ bufferSize: 1, refCount: true }),
+  );
+
+  /** The shapes marked as clamps (keep-out zones), for the preview. */
+  readonly clampShapes$: Observable<string[]> = this.model$.pipe(
+    map((model) => model.shapes.filter((s) => s.clamp).map((s) => s.id)),
+    distinctJson(),
   );
 
   readonly hiddenShapes$: Observable<string[]> = hiddenShapeIds(
@@ -132,7 +155,11 @@ export class CamService implements ShapeExporter {
   );
 
   /** What to check before cutting, one line each (for the setup sheet). */
-  readonly notes$: Observable<string[]> = of([]);
+  readonly notes$: Observable<string[]> = this.warnings$.pipe(
+    map((warnings) =>
+      warnings.map((w) => (w.level === 'warning' ? `⚠ ${w.text}` : w.text)),
+    ),
+  );
 
   private download$ = new Subject<'one' | 'per-tool'>();
 

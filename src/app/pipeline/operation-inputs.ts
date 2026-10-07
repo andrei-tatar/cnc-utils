@@ -87,6 +87,7 @@ export function operationInputs(
         spindleSpeed: ____,
         feedRate: _____,
         plungeFeedRate: ______,
+        fluteLength: ________,
         ...parameters
       }) => parameters)(tool)
     : null;

@@ -41,6 +41,8 @@
       [hiddenShapes]="(cam.hiddenShapes$ | async) ?? []"
       [stock]="cam.stock$ | async"
       [time]="cam.time$ | async"
+      [checks]="cam.warnings$ | async"
+      [clampShapes]="cam.clampShapes$ | async"
     />
   </div>
 </div>

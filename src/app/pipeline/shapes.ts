@@ -81,6 +81,7 @@ export function generateShapesFromModel(
             expanded: _,
             name: __,
             hidden: ___,
+            clamp: ____,
             ...shapeParameters
           }) => {
             const existing = ctx.find((e) => e.shapeId === shapeId);
