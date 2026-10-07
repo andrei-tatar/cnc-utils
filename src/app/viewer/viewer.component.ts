@@ -70,9 +70,22 @@ import {
 } from './helpers/grid-labels';
 import { DirectionArrows } from './helpers/direction-arrows';
 import { nestContours } from '../../cam/polygon-nesting';
-import { CamPath, CamShape, CamTab, Highlight } from '../../cam/types';
+import {
+  CamPath,
+  CamPoint,
+  CamShape,
+  CamTab,
+  Highlight,
+} from '../../cam/types';
 import { StockView, TimeSummary } from '../services/cam.service';
 import { JobWarning } from '../../cam/job-checks';
+
+/** The measuring line, drawn over everything. */
+const MEASURE_MATERIAL = new LineBasicMaterial({
+  color: '#ffd54f',
+  depthTest: false,
+  transparent: true,
+});
 
 /** Half the size of the cross marking a single point, in mm. */
 const POINT_MARK_SIZE = 1;
@@ -115,6 +128,20 @@ const EMPTY_VIEW_SIZE = 400;
           <path d="M2.5 2.5h11v11h-11zM8 5v6M5 8h6" />
         </svg>
       </button>
+      <button
+        type="button"
+        title="Measure: click two points (M; Esc to stop)"
+        aria-label="Measure"
+        [class.active]="measuring"
+        [attr.aria-pressed]="measuring"
+        (click)="toggleMeasure()"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M1.5 10.5 10.5 1.5l4 4-9 9zM4 8l1.5 1.5M6 6l2 2M8 4l1.5 1.5M10 2l2 2"
+          />
+        </svg>
+      </button>
     </div>
     @if (warnings.length) {
       <div class="checks">
@@ -150,6 +177,7 @@ const EMPTY_VIEW_SIZE = 400;
     }
     <div class="hud">
       <span #cursorReadout class="hud_cursor"></span>
+      <span #measureReadout class="hud_measure"></span>
       @if (timeText) {
         <span class="hud_time" [title]="timeDetails">≈ {{ timeText }}</span>
       }
@@ -207,6 +235,11 @@ const EMPTY_VIEW_SIZE = 400;
         &:hover {
           color: #fff;
           border-color: #666;
+        }
+
+        &.active {
+          color: #ffd54f;
+          border-color: #ffd54f;
         }
       }
 
@@ -292,6 +325,10 @@ const EMPTY_VIEW_SIZE = 400;
       }
     }
 
+    .hud_measure {
+      color: #ffd54f;
+    }
+
     .hud_depth {
       display: inline-flex;
       align-items: center;
@@ -332,6 +369,19 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   @ViewChild('cursorReadout', { static: true })
   private cursorReadout!: ElementRef<HTMLElement>;
+
+  @ViewChild('measureReadout', { static: true })
+  private measureReadout!: ElementRef<HTMLElement>;
+
+  /** Measuring: clicks on the preview pick the two ends of a measurement. */
+  measuring = false;
+  /** The measurement's ends, the second null while it's being picked. */
+  private measureFrom: Vector3 | null = null;
+  private measureTo: Vector3 | null = null;
+  private measureGroup = new Group();
+  /** Where shapes' vertices are, to snap measurements to. */
+  private snapPoints: CamPoint[] = [];
+  private pixelsPerUnit = 1;
 
   @ViewChild('gridReadout', { static: true })
   private gridReadout!: ElementRef<HTMLElement>;
@@ -507,6 +557,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const grid = new AdaptiveGrid();
     scene.add(grid);
     scene.add(this.content);
+    scene.add(this.measureGroup);
 
     // Axis arrows of a constant on-screen size (scaled per frame below).
     const origin = new Vector3(0, 0, 0);
@@ -560,6 +611,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const frame = () => {
       const pixelsPerUnit =
         (renderer.domElement.clientHeight * this.camera.zoom) / frustumSize;
+      this.pixelsPerUnit = pixelsPerUnit;
 
       // Grid, labels, axes and arrows only change when the view does.
       const { clientWidth: width, clientHeight: height } = renderer.domElement;
@@ -677,6 +729,17 @@ export class ViewerComponent implements OnInit, OnDestroy {
       transparent: true,
       opacity: 0.7,
     });
+
+    this.shapes$
+      .pipe(
+        switchMap((shapes$) => shapes$),
+        takeUntil(this.destroy$),
+      )
+      .subscribe((shapes) => {
+        this.snapPoints = shapes.flatMap((shape) =>
+          shape.polygons.flatMap((polygon) => polygon.points),
+        );
+      });
 
     this.shapes$
       .pipe(
@@ -1033,7 +1096,91 @@ export class ViewerComponent implements OnInit, OnDestroy {
       this.fitToView();
     } else if (event.key === 't' || event.key === 'T') {
       this.viewFromTop();
+    } else if (event.key === 'm' || event.key === 'M') {
+      this.toggleMeasure();
+    } else if (event.key === 'Escape' && this.measuring) {
+      this.toggleMeasure();
     }
+  }
+
+  /** Starts or stops measuring (stopping clears the measurement). */
+  toggleMeasure() {
+    this.measuring = !this.measuring;
+    this.measureFrom = null;
+    this.measureTo = null;
+    this.drawMeasurement(null);
+  }
+
+  /**
+   * The point on the XY plane under the pointer, snapped to the nearest
+   * shape vertex within a few pixels.
+   */
+  private measurePoint(hit: Vector3): Vector3 {
+    const reach = 8 / Math.max(this.pixelsPerUnit, 1e-9);
+    let best: CamPoint | null = null;
+    let bestDistance = reach;
+    for (const p of this.snapPoints) {
+      const d = Math.hypot(p.x - hit.x, p.y - hit.y);
+      if (d < bestDistance) {
+        best = p;
+        bestDistance = d;
+      }
+    }
+    return best ? new Vector3(best.x, best.y, 0) : hit.clone();
+  }
+
+  /** Draws the measurement from `measureFrom` to `to`, and its readout. */
+  private drawMeasurement(to: Vector3 | null) {
+    this.measureGroup.children.forEach((child) =>
+      (child as LineSegments).geometry.dispose(),
+    );
+    this.measureGroup.clear();
+    const from = this.measureFrom;
+    const readout = this.measureReadout.nativeElement;
+    if (!from) {
+      readout.textContent = this.measuring
+        ? 'measure: click the first point'
+        : '';
+      this.requestRender();
+      return;
+    }
+    const end = to ?? from;
+    const mark = 4 / Math.max(this.pixelsPerUnit, 1e-9);
+    const positions = [
+      from.x,
+      from.y,
+      0,
+      end.x,
+      end.y,
+      0,
+      ...[from, end].flatMap((p) => [
+        p.x - mark,
+        p.y - mark,
+        0,
+        p.x + mark,
+        p.y + mark,
+        0,
+        p.x - mark,
+        p.y + mark,
+        0,
+        p.x + mark,
+        p.y - mark,
+        0,
+      ]),
+    ];
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new BufferAttribute(new Float32Array(positions), 3),
+    );
+    const line = new LineSegments(geometry, MEASURE_MATERIAL);
+    line.renderOrder = 10;
+    this.measureGroup.add(line);
+    const dx = end.x - from.x;
+    const dy = end.y - from.y;
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+    readout.textContent = `${formatMm(Math.hypot(dx, dy))} mm  (ΔX ${formatMm(dx)}  ΔY ${formatMm(dy)}  ${angle.toFixed(1)}°)`;
+    this.requestRender();
   }
 
   /** Show the cursor's position on the XY plane, in mm. */
@@ -1044,17 +1191,48 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const ndc = new Vector2();
     const hit = new Vector3();
 
-    canvas.addEventListener('pointermove', (event) => {
+    const pointAt = (event: MouseEvent) => {
       ndc.set(
         (event.offsetX / canvas.clientWidth) * 2 - 1,
         -(event.offsetY / canvas.clientHeight) * 2 + 1,
       );
       raycaster.setFromCamera(ndc, this.camera);
-      readout.textContent = raycaster.ray.intersectPlane(plane, hit)
-        ? `X ${hit.x.toFixed(2)}  Y ${hit.y.toFixed(2)} mm`
+      return raycaster.ray.intersectPlane(plane, hit);
+    };
+
+    canvas.addEventListener('pointermove', (event) => {
+      const at = pointAt(event);
+      readout.textContent = at
+        ? `X ${at.x.toFixed(2)}  Y ${at.y.toFixed(2)} mm`
         : '';
+      // While picking the second end, follow the pointer.
+      if (at && this.measuring && this.measureFrom && !this.measureTo) {
+        this.drawMeasurement(this.measurePoint(at));
+      }
     });
     canvas.addEventListener('pointerleave', () => (readout.textContent = ''));
+
+    // A click (not the end of a drag to orbit or pan) picks a measurement's
+    // ends: the first, the second, then a new first.
+    let down: { x: number; y: number } | null = null;
+    canvas.addEventListener('pointerdown', (event) => {
+      down = { x: event.clientX, y: event.clientY };
+    });
+    canvas.addEventListener('click', (event) => {
+      const moved =
+        !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4;
+      if (!this.measuring || moved) return;
+      const at = pointAt(event);
+      if (!at) return;
+      const point = this.measurePoint(at);
+      if (!this.measureFrom || this.measureTo) {
+        this.measureFrom = point;
+        this.measureTo = null;
+      } else {
+        this.measureTo = point;
+      }
+      this.drawMeasurement(this.measureTo ?? point);
+    });
   }
 
   ngOnDestroy(): void {
