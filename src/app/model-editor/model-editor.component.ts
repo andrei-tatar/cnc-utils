@@ -15,9 +15,7 @@ import {
 } from '@angular/forms';
 import { FormlyFieldConfig, FormlyModule } from '@ngx-formly/core';
 import { debounceTime, Subject, takeUntil } from 'rxjs';
-import { ModelType, ModelFieldConfig } from './model';
-import { resolveGcodeOptions } from '../../cam/gcode-options';
-import { resolveStock } from '../../cam/stock';
+import { emptyModel, ModelType, ModelFieldConfig } from './model';
 
 @Component({
   selector: 'app-model-editor',
@@ -40,14 +38,7 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
   fields: FormlyFieldConfig[] = ModelFieldConfig;
 
   @Input()
-  model: ModelType = {
-    variables: [],
-    shapes: [],
-    tools: [],
-    operations: [],
-    gcode: resolveGcodeOptions(undefined),
-    stock: resolveStock(undefined),
-  };
+  model: ModelType = emptyModel();
 
   @Output()
   modelChange = new EventEmitter<ModelType>(true);

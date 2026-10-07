@@ -1,4 +1,4 @@
-import { migrateModel, ModelType } from '../model-editor/model';
+import { emptyModel, ModelType } from '../model-editor/model';
 import {
   openAppDb,
   openedAppDb,
@@ -12,13 +12,11 @@ import {
  * imported files (SVG, images) that would overflow localStorage's few
  * megabytes, and stores the model as is instead of as one big JSON string.
  * When IndexedDB can't be used it falls back to localStorage; each copy
- * carries the time it was saved, and the newer one is loaded. Projects
- * saved by older versions (in localStorage, no time) are still read, and
- * moved over on the next save.
+ * carries the time it was saved, and the newer one is loaded.
  */
 
-const LEGACY_KEY = 'model';
-const LEGACY_SAVED_AT_KEY = 'modelSavedAt';
+const FALLBACK_KEY = 'model';
+const FALLBACK_SAVED_AT_KEY = 'modelSavedAt';
 const MODEL_KEY = 'model';
 
 /**
@@ -37,23 +35,20 @@ export async function preloadModel(): Promise<void> {
     const value = await requestResult(
       db.transaction(PROJECT_STORE).objectStore(PROJECT_STORE).get(MODEL_KEY),
     );
-    if (value !== undefined) {
-      // Saved before copies carried a time: older than anything that does.
-      preloaded = isSaved(value) ? value : { model: value, savedAt: 0 };
-    }
+    preloaded = isSaved(value) ? value : null;
   } catch {
     preloaded = null;
   }
 }
 
-/** The saved project (migrated), or an empty one. */
+/** The saved project, or an empty one. */
 export function loadModel(): ModelType {
-  const legacy = readLegacy();
+  const fallback = readFallback();
   const newest =
-    preloaded && (!legacy || preloaded.savedAt >= legacy.savedAt)
+    preloaded && (!fallback || preloaded.savedAt >= fallback.savedAt)
       ? preloaded
-      : legacy;
-  return migrateModel(newest?.model ?? {});
+      : fallback;
+  return (newest?.model as ModelType | undefined) ?? emptyModel();
 }
 
 /**
@@ -61,8 +56,8 @@ export function loadModel(): ModelType {
  * the newer copy is the localStorage one, which doesn't keep it).
  */
 export function loadProjectId(): string | null {
-  const legacy = readLegacy();
-  return preloaded && (!legacy || preloaded.savedAt >= legacy.savedAt)
+  const fallback = readFallback();
+  return preloaded && (!fallback || preloaded.savedAt >= fallback.savedAt)
     ? (preloaded.projectId ?? null)
     : null;
 }
@@ -82,28 +77,28 @@ export async function saveModel(model: ModelType, projectId: string | null) {
       tx.commit?.();
       await transactionDone(tx);
       // Saved where it fits: free the old copy's space.
-      localStorage.removeItem(LEGACY_KEY);
-      localStorage.removeItem(LEGACY_SAVED_AT_KEY);
+      localStorage.removeItem(FALLBACK_KEY);
+      localStorage.removeItem(FALLBACK_SAVED_AT_KEY);
       return;
     } catch (error) {
       console.warn('[model] could not save to IndexedDB', error);
     }
   }
   try {
-    localStorage.setItem(LEGACY_KEY, JSON.stringify(model));
-    localStorage.setItem(LEGACY_SAVED_AT_KEY, String(saved.savedAt));
+    localStorage.setItem(FALLBACK_KEY, JSON.stringify(model));
+    localStorage.setItem(FALLBACK_SAVED_AT_KEY, String(saved.savedAt));
   } catch (error) {
     console.error('[model] could not save the project', error);
   }
 }
 
-function readLegacy(): Saved | null {
+function readFallback(): Saved | null {
   try {
-    const text = localStorage.getItem(LEGACY_KEY);
+    const text = localStorage.getItem(FALLBACK_KEY);
     if (!text) return null;
     return {
       model: JSON.parse(text),
-      savedAt: Number(localStorage.getItem(LEGACY_SAVED_AT_KEY)) || -1,
+      savedAt: Number(localStorage.getItem(FALLBACK_SAVED_AT_KEY)) || 0,
     };
   } catch {
     return null;

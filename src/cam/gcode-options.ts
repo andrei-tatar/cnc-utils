@@ -100,7 +100,7 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   referenceY: 0,
 };
 
-/** Complete options from a (possibly partial or older) stored value. */
+/** Complete options from a (possibly partial) stored value. */
 export function resolveGcodeOptions(
   stored: Partial<GcodeOptions> | null | undefined,
 ): GcodeOptions {

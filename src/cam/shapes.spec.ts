@@ -1,11 +1,6 @@
 import { boxPanelOutline, fingerCount } from './box-joints';
 import { traceContours } from './marching-squares';
-import {
-  circlePoints,
-  finitePoints,
-  gridPoints,
-  parsePointList,
-} from './point-patterns';
+import { circlePoints, finitePoints, gridPoints } from './point-patterns';
 import { signedArea2 } from './polygon-nesting';
 
 describe('finitePoints', () => {
@@ -23,17 +18,6 @@ describe('finitePoints', () => {
       { x: -5, y: 0.5 },
     ]);
     expect(finitePoints(undefined)).toEqual([]);
-  });
-});
-
-describe('parsePointList', () => {
-  it('reads points in any common separator, skipping other lines', () => {
-    expect(parsePointList('x,y\n1, 2\n3 4\n5;6\n\t7\t8\nfoo')).toEqual([
-      { x: 1, y: 2 },
-      { x: 3, y: 4 },
-      { x: 5, y: 6 },
-      { x: 7, y: 8 },
-    ]);
   });
 });
 

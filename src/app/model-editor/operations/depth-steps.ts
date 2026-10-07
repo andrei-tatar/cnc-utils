@@ -11,8 +11,7 @@ export type DepthMode = 'per-step' | 'total';
 /** The depth settings of operations that cut in steps down. */
 export interface DepthSteps {
   startDepth: number;
-  /** Missing in projects from before it existed: per step. */
-  depthMode?: DepthMode;
+  depthMode: DepthMode;
   depth: number;
   steps: number;
 }
