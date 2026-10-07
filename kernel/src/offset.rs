@@ -221,6 +221,97 @@ pub fn inflate(
     if d == 0.0 {
         return Vec::new();
     }
+    if join == Join::Round && end == End::Round {
+        return round_strokes(paths, d);
+    }
+    stroke_by_pieces(paths, d, join, end, miter_limit, arc_tolerance)
+}
+
+/**
+ * Open paths stroked `d` either side, round joins and ends: each path's
+ * outline (see stroke_outline), merged where they wind positively — as
+ * Clipper strokes, but with arcs. Far fewer pieces to merge than sweeping
+ * each segment's band.
+ */
+pub fn round_strokes(paths: &[Pline], d: f64) -> Vec<Pline> {
+    let mut outlines = Vec::with_capacity(paths.len());
+    for path in paths {
+        let path = open_copy(path);
+        let path = path.remove_repeat_pos(EPS).unwrap_or(path);
+        if path.vertex_count() < 2 {
+            if path.vertex_count() == 1 {
+                outlines.push(disk(path.at(0).pos(), d));
+            }
+            continue;
+        }
+        outlines.push(stroke_outline(&path, d));
+    }
+    normalize(&outlines, FillRule::Positive)
+}
+
+/**
+ * The outline round an open path `d` either side, counter-clockwise: along
+ * its right side, round its end, back along its left side, round its start.
+ * Each segment's side is the segment with its ends moved `d` along their
+ * normals, keeping its bulge (an arc tighter than `d` comes out mirrored
+ * through its centre, winding the same way). Consecutive sides that part
+ * are joined by an arc round the vertex; ones that cross, through the vertex
+ * itself, so what folds over winds back on itself.
+ */
+fn stroke_outline(path: &Pline, d: f64) -> Pline {
+    let forward = segments(path);
+    let backward: Vec<Seg> = forward.iter().rev().map(|s| s.reversed()).collect();
+    let mut out = Pline::with_capacity(4 * forward.len() + 4, true);
+    for segs in [&forward, &backward] {
+        side(segs, d, &mut out);
+        // Round the end: a half turn from its right to its left.
+        let last = segs[segs.len() - 1];
+        let n = right_normal(last.tangent(last.end()));
+        let e = last.end() + n.scale(d);
+        out.add(e.x, e.y, 1.0);
+    }
+    out.remove_repeat_pos(EPS).unwrap_or(out)
+}
+
+/// The right side of a chain of segments, `d` out, its last end left out.
+fn side(segs: &[Seg], d: f64, out: &mut Pline) {
+    for (i, seg) in segs.iter().enumerate() {
+        let s = seg.start() + right_normal(seg.tangent(seg.start())).scale(d);
+        out.add(s.x, s.y, seg.v1.bulge);
+        let Some(next) = segs.get(i + 1) else {
+            break;
+        };
+        let v = seg.end();
+        let before = right_normal(seg.tangent(v));
+        let after = right_normal(next.tangent(v));
+        let e = v + before.scale(d);
+        let (sin, cos) = (cross(before, after), dot(before, after));
+        if cos > -0.999 && sin < 0.0 {
+            // They cross: through the vertex.
+            out.add(e.x, e.y, 0.0);
+            out.add(v.x, v.y, 0.0);
+        } else {
+            // They part: round the vertex, the way the path turns (round
+            // the outside of a turn back on itself).
+            let mut turn = sin.atan2(cos);
+            if turn < 0.0 {
+                turn += 2.0 * std::f64::consts::PI;
+            }
+            out.add(e.x, e.y, (turn / 4.0).tan());
+        }
+    }
+}
+
+/// Paths stroked by sweeping each segment's band, joins and caps (any join
+/// or end), the pieces merged.
+pub fn stroke_by_pieces(
+    paths: &[Pline],
+    d: f64,
+    join: Join,
+    end: End,
+    miter_limit: f64,
+    arc_tolerance: f64,
+) -> Vec<Pline> {
     let mut pieces = Vec::new();
     for path in paths {
         let path = if end == End::Joined {

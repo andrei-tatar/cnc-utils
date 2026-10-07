@@ -304,7 +304,7 @@ impl Graph {
 
 /// How far apart (mm) the ends of pieces may be and still be joined, where
 /// they don't meet exactly (see stitch).
-const HEAL: f64 = 1e-2;
+const HEAL: f64 = 5e-2;
 
 /// Joins directed pieces end to end into closed loops.
 fn stitch(kept: &[Seg]) -> Vec<Pline> {
