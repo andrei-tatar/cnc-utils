@@ -144,6 +144,32 @@ import { Project } from '../projects';
         </svg>
         <span class="label">Save</span>
       </button>
+      <span class="history" role="group" aria-label="History">
+        <button
+          class="btn btn-sm btn-outline-secondary toolbar_button"
+          type="button"
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo"
+          [disabled]="!canUndo()"
+          (click)="undo.emit()"
+        >
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M5.5 3 2.5 6l3 3M2.5 6h7a4 4 0 0 1 0 8H7" />
+          </svg>
+        </button>
+        <button
+          class="btn btn-sm btn-outline-secondary toolbar_button"
+          type="button"
+          title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+          aria-label="Redo"
+          [disabled]="!canRedo()"
+          (click)="redo.emit()"
+        >
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M10.5 3l3 3-3 3M13.5 6h-7a4 4 0 0 0 0 8H9" />
+          </svg>
+        </button>
+      </span>
 
       @if (working()) {
         <span class="working" role="status" title="Working…">
@@ -267,6 +293,15 @@ import { Project } from '../projects';
 
     .toolbar_spacer {
       flex: 1;
+    }
+
+    .history {
+      display: inline-flex;
+      gap: 2px;
+
+      .toolbar_button {
+        --bs-btn-padding-x: 0.4rem;
+      }
     }
 
     .toolbar_button,
@@ -489,6 +524,10 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
   readonly project = input<Project | null>(null);
   /** Whether there's work not saved as a project. */
   readonly pending = input(false);
+  readonly canUndo = input(false);
+  readonly canRedo = input(false);
+  readonly undo = output();
+  readonly redo = output();
   readonly newProject = output();
   readonly load = output();
   readonly openTemplate = output<Template>();

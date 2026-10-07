@@ -124,6 +124,14 @@ export class ModelStore {
     this.model$.next(model);
   }
 
+  /**
+   * Puts an earlier state of the same work back (undo / redo): unlike
+   * opening something, it stays the same project and isn't framed afresh.
+   */
+  restore(model: ModelType) {
+    this.model$.next(snapshot(model));
+  }
+
   /** Loads the project embedded in a previously downloaded .nc file. */
   open() {
     this.open$.next();
@@ -248,7 +256,7 @@ function hasPendingWork(model: ModelType, saved: SavedProject | null) {
  * The model as the pipelines see it, for comparing: stock and G-code options
  * with defaults in place of what's unset (the editor clears hidden fields).
  */
-function work(model: ModelType): ModelType {
+export function work(model: ModelType): ModelType {
   return {
     ...model,
     stock: resolveStock(model.stock),
@@ -263,7 +271,7 @@ function isEmptyModel(model: ModelType): boolean {
 }
 
 /** A copy of the objects and arrays in `value`, sharing everything else. */
-function snapshot<T>(value: T): T {
+export function snapshot<T>(value: T): T {
   if (Array.isArray(value)) {
     return value.map(snapshot) as T;
   }
