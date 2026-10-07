@@ -37,6 +37,11 @@ import { generateShapesFromModel } from '../pipeline/shapes';
 import { downloadFile, fileNameFrom } from '../project-file';
 import { createZip } from '../zip';
 import { setupSheetHtml } from '../setup-sheet';
+import { CutListRow, cutListCsv } from '../cut-list';
+import { nestLayout } from '../pipeline/nest';
+import { shapeLabel } from '../model-editor/shapes/describe';
+import { borrowedShapeId } from '../model-editor/operations/describe';
+import { nestContours } from '../../cam/polygon-nesting';
 import { JobWarning } from '../../cam/job-checks';
 import { jobChecks } from '../pipeline/job-checks';
 import { numberedToolLabel } from '../model-editor/tools';
@@ -265,6 +270,118 @@ export class CamService implements ShapeExporter {
     tab.document.open();
     tab.document.write(html);
     tab.document.close();
+  }
+
+  /**
+   * Downloads the cut list as CSV: every nest's parts with where they go,
+   * or, without nests, the parts the outside profiles cut out.
+   */
+  async downloadCutList() {
+    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+    const model = await firstValueFrom(this.model$);
+    const stock = resolveStock(model.stock);
+    const thickness = stock.enabled ? stock.thickness : null;
+    const label = (id: string) =>
+      shapeLabel(
+        model.shapes.find((s) => s.id === id),
+        model.shapes,
+      );
+    const resultOf = (id: string) => firstValueFrom(this.shapes.byId(id));
+    const rows: CutListRow[] = [];
+
+    for (const nest of model.shapes) {
+      if (nest.type !== 'nest') continue;
+      const items = nest.nestItems ?? [];
+      const itemShapes = await Promise.all(
+        items.map((item) => resultOf(item?.shapeId)),
+      );
+      const { result, boxes } = nestLayout(nest, itemShapes);
+      const nestName = label(nest.id);
+      const sorted = [...result.placements].sort(
+        (a, b) => a.sheet - b.sheet || Number(a.key) - Number(b.key),
+      );
+      const size = (i: number) => {
+        const box = boxes[i]!;
+        const w = box.maxX - box.minX;
+        const h = box.maxY - box.minY;
+        return { length: Math.max(w, h), width: Math.min(w, h) };
+      };
+      for (const p of sorted) {
+        const i = Number(p.key);
+        rows.push({
+          part: label(items[i].shapeId),
+          copy: p.copy + 1,
+          ...size(i),
+          thickness,
+          sheet: p.sheet + 1,
+          x: p.x,
+          y: p.y,
+          turned: p.rotated,
+          note: nestName,
+        });
+      }
+      for (const u of result.unplaced) {
+        const i = Number(u.key);
+        rows.push({
+          part: label(items[i].shapeId),
+          copy: u.copy + 1,
+          ...size(i),
+          thickness,
+          sheet: null,
+          x: null,
+          y: null,
+          turned: null,
+          note: `${nestName}: bigger than the sheet`,
+        });
+      }
+    }
+
+    if (!rows.length) {
+      // No nests: what the outside profiles cut out, one row per outline.
+      const operations = model.operations ?? [];
+      const seen = new Set<string>();
+      for (const op of operations) {
+        if (op.disabled || op.type !== 'profile' || op.side !== 'outside') {
+          continue;
+        }
+        const shapeId = borrowedShapeId(op, operations);
+        if (!shapeId || seen.has(shapeId)) continue;
+        seen.add(shapeId);
+        const shapes = await resultOf(shapeId);
+        const outlines = nestContours(
+          shapes
+            .flatMap((s) => s.polygons)
+            .filter((p) => p.close && p.points.length > 2)
+            .map((p) => p.points),
+        );
+        outlines.forEach(({ outer }, k) => {
+          const xs = outer.map((p) => p.x);
+          const ys = outer.map((p) => p.y);
+          const w = Math.max(...xs) - Math.min(...xs);
+          const h = Math.max(...ys) - Math.min(...ys);
+          rows.push({
+            part: label(shapeId),
+            copy: k + 1,
+            length: Math.max(w, h),
+            width: Math.min(w, h),
+            thickness,
+            sheet: null,
+            x: null,
+            y: null,
+            turned: null,
+            note: '',
+          });
+        });
+      }
+    }
+
+    const name = fileNameFrom(this.store.project?.name ?? '');
+    // With a byte order mark, so spreadsheets read it as UTF-8 (Ø, ×).
+    downloadFile(
+      '\ufeff' + cutListCsv(rows),
+      `${name ? `${name}-` : ''}cut-list.csv`,
+      'text/csv',
+    );
   }
 
   /**

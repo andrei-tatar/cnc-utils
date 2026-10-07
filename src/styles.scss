@@ -207,6 +207,7 @@ app-model-editor .path-command-row {
 // "operation  shape" (the first shape has no operation); a point: "x  y".
 app-model-editor .variable-row,
 app-model-editor .operand-row,
+app-model-editor .nest-row,
 app-model-editor .point-row,
 app-model-editor .path-command-row {
   display: flex;
@@ -230,9 +231,22 @@ app-model-editor .path-command-row {
   }
 
   > .variable-value,
-  > .operand-shape {
+  > .operand-shape,
+  > .nest-shape {
     flex: 1;
     min-width: 0;
+  }
+
+  // A nest's part: "shape  count  may turn".
+  > .nest-count {
+    flex: 0 0 22%;
+    min-width: 0;
+  }
+
+  > .nest-rotate {
+    flex: none;
+    line-height: 30px;
+    white-space: nowrap;
   }
 
   // Each coordinate after its letter, which stays when the field is filled.

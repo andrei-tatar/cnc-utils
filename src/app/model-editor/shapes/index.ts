@@ -68,6 +68,14 @@ import {
   Definition as BowtieDefinition,
   ModelType as BowtieModelType,
 } from './shape-bowtie';
+import {
+  Definition as NestDefinition,
+  ModelType as NestModelType,
+} from './shape-nest';
+import {
+  Definition as NestLayerDefinition,
+  ModelType as NestLayerModelType,
+} from './shape-nest-layer';
 
 type CommonShape = {
   id: string;
@@ -97,7 +105,9 @@ type ShapeType =
   | BoxPanelModelType
   | TraceModelType
   | HingeCupModelType
-  | BowtieModelType;
+  | BowtieModelType
+  | NestModelType
+  | NestLayerModelType;
 
 export type ModelType = {
   shapes: Array<ShapeType & CommonShape>;
@@ -119,6 +129,8 @@ const shapes = [
   BowtieDefinition,
   BooleanDefinition,
   CopyDefinition,
+  NestDefinition,
+  NestLayerDefinition,
 ];
 
 export const field: FormlyFieldConfig = {

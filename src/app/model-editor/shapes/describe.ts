@@ -55,6 +55,15 @@ export function describeShape(
     }
     case 'polyline':
       return shape['polylineClosed'] ? 'polygon' : 'lines';
+    case 'nest': {
+      const items: any[] = shape['nestItems'] ?? [];
+      const count = items.reduce((n, i) => n + (+i?.count || 0), 0);
+      return `nest of ${count} on ${shape['nestSheetWidth']}×${shape['nestSheetHeight']}`;
+    }
+    case 'nest-layer': {
+      const nest = shapes.find((s) => s.id === shape['nestOfId']);
+      return nest ? `with ${nest.name || 'nest'}` : 'with a nest';
+    }
     case 'hinge-cup':
       return `hinge cup Ø${shape['hingeCupDiameter']}`;
     case 'bowtie':
@@ -123,6 +132,13 @@ export function shapeSources(shape: any): string[] {
       return [shape.copyOfId];
     case 'boolean':
       return (shape.operands ?? []).map((o: any) => o?.shapeId);
+    case 'nest':
+      return (shape.nestItems ?? []).map((i: any) => i?.shapeId);
+    case 'nest-layer':
+      return [
+        shape.nestOfId,
+        ...(shape.nestLayers ?? []).map((l: any) => l?.shapeId),
+      ];
     default:
       return [];
   }

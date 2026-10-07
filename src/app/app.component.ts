@@ -50,6 +50,12 @@ export class AppComponent {
       description:
         'A page to print for the machine: stock, zero, tools in order, times and a drawing.',
     },
+    {
+      id: 'cut-list',
+      label: 'Cut list (.csv)',
+      description:
+        'The parts with their sizes: nested parts with their sheet and place, else what the outside profiles cut out.',
+    },
   ];
 
   readonly editorWidth = signal(loadEditorWidth());
@@ -69,6 +75,9 @@ export class AppComponent {
     switch (id) {
       case 'setup-sheet':
         this.cam.openSetupSheet();
+        break;
+      case 'cut-list':
+        this.cam.downloadCutList();
         break;
     }
   }
