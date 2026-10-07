@@ -15,6 +15,7 @@ import {
 import { CamPath, CamShape, Highlight } from '../../cam/types';
 import {
   buildProgram,
+  buildProgramPerTool,
   generateGcodeFromOperations,
   Program,
   programPaths,
@@ -32,6 +33,7 @@ import {
 } from '../pipeline/preview';
 import { generateShapesFromModel } from '../pipeline/shapes';
 import { downloadFile, fileNameFrom } from '../project-file';
+import { createZip } from '../zip';
 import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { resolveModel } from '../model-editor/variables/resolve';
@@ -126,27 +128,54 @@ export class CamService implements ShapeExporter {
     })),
   );
 
-  private download$ = new Subject<void>();
+  private download$ = new Subject<'one' | 'per-tool'>();
 
   constructor() {
     this.download$
       .pipe(
         withLatestFrom(this.program$),
         // The project as it is now, not as it was when last routed.
-        concatMap(async ([, program]) =>
-          buildProgram(program, await getModelMetadata(this.store.value)),
-        ),
+        concatMap(async ([how, program]) => ({
+          how,
+          program,
+          metadata: await getModelMetadata(this.store.value),
+        })),
       )
-      .subscribe((gcode) => {
+      .subscribe(({ how, program, metadata }) => {
         // Named after the saved project the work belongs to, if any.
-        const name = fileNameFrom(this.store.project?.name ?? '');
-        downloadFile(gcode, `${name || 'gcode'}-${new Date().getTime()}.nc`);
+        const name = `${
+          fileNameFrom(this.store.project?.name ?? '') || 'gcode'
+        }-${new Date().getTime()}`;
+        if (how === 'one') {
+          downloadFile(buildProgram(program, metadata), `${name}.nc`);
+          return;
+        }
+        const files = buildProgramPerTool(program, metadata);
+        const entries = files.map((file, i) => ({
+          name: `${String(i + 1).padStart(2, '0')}-${
+            fileNameFrom(
+              file.toolNumber === null
+                ? 'no-tool'
+                : `T${file.toolNumber} ${file.label}`,
+            ) || 'tool'
+          }.nc`,
+          data: file.gcode,
+        }));
+        downloadFile(createZip(entries), `${name}-by-tool.zip`);
       });
   }
 
   /** Downloads the latest G-code (with the project embedded). */
   download() {
-    this.download$.next();
+    this.download$.next('one');
+  }
+
+  /**
+   * Downloads the G-code as one file per tool, in a zip: for machines that
+   * can't change tools in a program.
+   */
+  downloadPerTool() {
+    this.download$.next('per-tool');
   }
 
   /**

@@ -221,6 +221,63 @@ export function buildProgram(program: Program, modelMetadata?: string): string {
   return wholeProgram(program, modelMetadata).build(program.options);
 }
 
+/** One file of a program split by tool (see `buildProgramPerTool`). */
+export type ToolFile = {
+  /** The tool's number (T2), null for moves before any tool. */
+  toolNumber: number | null;
+  label: string;
+  gcode: string;
+};
+
+/**
+ * The program as one file per tool, for machines without a tool changer:
+ * a new file wherever the tool changes (operations keep their order, so a
+ * tool used again later gets another file). Every file starts and ends at
+ * safe height, has the project embedded, and keeps the same X / Y zero; Z
+ * is set again for each tool.
+ */
+export function buildProgramPerTool(
+  program: Program,
+  modelMetadata?: string,
+): ToolFile[] {
+  type Run = {
+    toolNumber: number | null;
+    label: string;
+    builders: GCodeBuilder[];
+  };
+  const runs: Run[] = [];
+  for (const builder of program.builders) {
+    if (!builder.cutBounds()) continue;
+    const tool = builder.instructions.find((i) => i.type === 'tool');
+    const toolNumber = tool?.type === 'tool' ? tool.toolNumber : null;
+    const label = tool?.type === 'tool' ? tool.label : '';
+    const last = runs[runs.length - 1];
+    if (last && last.toolNumber === toolNumber) {
+      last.builders.push(builder);
+    } else {
+      runs.push({ toolNumber, label, builders: [builder] });
+    }
+  }
+  return runs.map((run, i) => {
+    const name =
+      run.toolNumber === null ? 'no tool' : `T${run.toolNumber} ${run.label}`;
+    const note = new GCodeBuilder()
+      .comment(`File ${i + 1} of ${runs.length}: ${name}`)
+      .comment(
+        'Fit this tool and set Z zero (probe) before running; keep X / Y zero as it was.',
+      );
+    return {
+      toolNumber: run.toolNumber,
+      label: run.label,
+      gcode:
+        wholeProgram(
+          { ...program, builders: [note, ...run.builders] },
+          modelMetadata,
+        ).build(program.options) + '\n',
+    };
+  });
+}
+
 /**
  * The program's moves as paths for the preview, without writing G-code (in
  * design coordinates, like the shapes).
