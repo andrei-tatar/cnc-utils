@@ -12,6 +12,7 @@ import {
   field as variablesField,
 } from './variables';
 import { resolveStock } from '../../cam/stock';
+import { parsePointList } from '../../cam/point-patterns';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { OmitUnion } from '../../util';
 import { ToolOverrides } from './tools/feeds-and-speeds';
@@ -209,7 +210,7 @@ function migrateShape(shape: any) {
             centersOf: 'all',
             centersKeepOriginal: true,
           }
-        : migrateOffset(transform),
+        : migrateTabPoints(migrateOffset(transform)),
     ),
   };
 }
@@ -226,6 +227,25 @@ function migrateOffset(transform: any) {
   }
   const { precision, miterLimit: _, ...rest } = transform;
   return { ...rest, type: 'offset', miterLimit: precision };
+}
+
+/**
+ * A tabs transform's points were text, one "x, y" per line; now they're a
+ * list, x and y each its own field (so each can be an expression). Ids come
+ * from the transform's, so loading the same project gives the same ones.
+ */
+function migrateTabPoints(transform: any) {
+  if (transform?.type !== 'tabs' || typeof transform.tabPoints !== 'string') {
+    return transform;
+  }
+  return {
+    ...transform,
+    tabPoints: parsePointList(transform.tabPoints).map(({ x, y }, i) => ({
+      id: `${transform.id}-${i}`,
+      x,
+      y,
+    })),
+  };
 }
 
 /**

@@ -139,9 +139,10 @@ app-model-editor .code-input .form-control {
 }
 
 // A variable: "name  value" on one row, without labels; a boolean's shape:
-// "operation  shape" (the first shape has no operation).
+// "operation  shape" (the first shape has no operation); a point: "x  y".
 app-model-editor .variable-row,
-app-model-editor .operand-row {
+app-model-editor .operand-row,
+app-model-editor .point-row {
   display: flex;
   align-items: flex-start;
   gap: 6px;
@@ -166,6 +167,36 @@ app-model-editor .operand-row {
   > .operand-shape {
     flex: 1;
     min-width: 0;
+  }
+
+  // Each coordinate after its letter, which stays when the field is filled.
+  > .point-x,
+  > .point-y {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+
+    &::before {
+      line-height: 30px;
+      font-family: var(--code-font);
+      font-size: 0.8rem;
+      color: var(--bs-secondary-color);
+    }
+
+    > * {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  > .point-x::before {
+    content: "x";
+  }
+
+  > .point-y::before {
+    content: "y";
   }
 
   // Formly's field wrapper keeps 1rem below every field; a row needs none.
