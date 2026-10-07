@@ -76,6 +76,13 @@ import { StockView, TimeSummary } from '../services/cam.service';
 /** Half the size of the cross marking a single point, in mm. */
 const POINT_MARK_SIZE = 1;
 
+/**
+ * How much fitting frames across X and Y (mm) when the content has next to
+ * no extent there (under 1 mm: only a point, or the vertical move an empty
+ * project's program makes), or there's none: ±200 mm.
+ */
+const EMPTY_VIEW_SIZE = 400;
+
 @Component({
   selector: 'app-viewer',
   imports: [CubePreviewComponent],
@@ -495,13 +502,11 @@ export class ViewerComponent implements OnInit, OnDestroy {
       // and toolpaths arrive or change. Wait for the real viewport size
       // (before the first resize the camera has a ±1 frustum).
       if (this.autoFit && this.camera.right - this.camera.left > 2) {
-        const box = new Box3().setFromObject(this.content);
-        const boxKey = box.isEmpty()
-          ? ''
-          : [...box.min.toArray(), ...box.max.toArray()]
-              .map((v) => v.toFixed(2))
-              .join();
-        if (boxKey && boxKey !== this.fittedBox) {
+        const box = this.viewBox();
+        const boxKey = [...box.min.toArray(), ...box.max.toArray()]
+          .map((v) => v.toFixed(2))
+          .join();
+        if (boxKey !== this.fittedBox) {
           this.fittedBox = boxKey;
           this.fitToView(box);
         }
@@ -839,12 +844,27 @@ export class ViewerComponent implements OnInit, OnDestroy {
       below > 1e-6 ? `⚠ cuts ${formatMm(below)} mm into the spoilboard` : '';
   }
 
-  /** Frame all shapes and toolpaths, keeping the current viewing angle. */
-  fitToView(box = new Box3().setFromObject(this.content)) {
+  /**
+   * The box fitting frames: the shapes and toolpaths, or `EMPTY_VIEW_SIZE`
+   * around them (around the origin when there are none) when they have no
+   * extent across X and Y.
+   */
+  private viewBox(): Box3 {
+    const box = new Box3().setFromObject(this.content);
     if (box.isEmpty()) {
-      return;
+      box.setFromCenterAndSize(new Vector3(), new Vector3());
     }
+    const size = box.getSize(new Vector3());
+    if (Math.max(size.x, size.y) < 1) {
+      box.expandByVector(
+        new Vector3(EMPTY_VIEW_SIZE / 2, EMPTY_VIEW_SIZE / 2, 0),
+      );
+    }
+    return box;
+  }
 
+  /** Frame all shapes and toolpaths, keeping the current viewing angle. */
+  fitToView(box = this.viewBox()) {
     const center = box.getCenter(new Vector3());
     const offset = this.camera.position.clone().sub(this.controls.target);
     this.controls.target.copy(center);
