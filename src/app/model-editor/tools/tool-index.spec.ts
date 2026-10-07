@@ -1,22 +1,9 @@
-import { migrateModel } from '../model';
 import { operationInputs } from '../../pipeline/operation-inputs';
 import { freeToolIndex, numberedToolLabel, toolNumber, ToolType } from '.';
 
 describe('tool index', () => {
   const tool = (id: string, index?: number): ToolType =>
     ({ id, diameter: 3, ...(index === undefined ? {} : { index }) }) as any;
-
-  it('is given to older projects’ tools by their place in the list', () => {
-    const { tools } = migrateModel({ tools: [tool('a'), tool('b')] });
-    expect(tools.map((t) => t.index)).toEqual([1, 2]);
-  });
-
-  it('is kept, and a tool without one gets a free one', () => {
-    const { tools } = migrateModel({
-      tools: [tool('a', 2), tool('b'), tool('c')],
-    });
-    expect(tools.map((t) => t.index)).toEqual([2, 1, 3]);
-  });
 
   it('numbers the tool in the G-code, whatever its place in the list', () => {
     const tools = [tool('a', 5), tool('b', 2)];

@@ -1,26 +1,6 @@
 import { CamPoint } from './types';
 
 /**
- * Points typed as text: one per line, x and y separated by a comma, space,
- * semicolon or tab. Lines that don't hold two numbers are skipped (e.g. a
- * header pasted from a spreadsheet).
- */
-export function parsePointList(text: string | null | undefined): CamPoint[] {
-  const points: CamPoint[] = [];
-  for (const line of (text ?? '').split(/\r?\n/)) {
-    const numbers = line
-      .trim()
-      .split(/[\s,;]+/)
-      .filter(Boolean)
-      .map(Number);
-    if (numbers.length >= 2 && numbers.every(Number.isFinite)) {
-      points.push({ x: numbers[0], y: numbers[1] });
-    }
-  }
-  return points;
-}
-
-/**
  * A typed list's points with both coordinates worked out: a point whose x
  * or y is an expression that can't be (resolved to `null`) is left out.
  */

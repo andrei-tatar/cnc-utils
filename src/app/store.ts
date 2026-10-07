@@ -50,8 +50,7 @@ export async function loadModelFromMetadata(
 }
 
 /**
- * The project embedded in a .nc file's text, as stored (not migrated), or
- * null when it has none.
+ * The project embedded in a .nc file's text, or null when it has none.
  */
 export async function loadModelFromGcode(
   content: string,

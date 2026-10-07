@@ -24,7 +24,7 @@ export async function listTemplates(): Promise<Template[]> {
   }
 }
 
-/** The project in a template's file, as stored (not migrated). */
+/** The project in a template's file. */
 export async function loadTemplate(template: Template): Promise<unknown> {
   const response = await fetch(`templates/${template.file}`);
   if (!response.ok) {

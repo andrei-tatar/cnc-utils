@@ -39,8 +39,7 @@ export async function getProject(id: string): Promise<Project | null> {
 }
 
 /**
- * A saved project's model, as stored (not migrated); undefined when there's
- * no such project.
+ * A saved project's model; undefined when there's no such project.
  */
 export async function loadProject(id: string): Promise<unknown> {
   const db = await openAppDb();

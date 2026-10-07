@@ -1,4 +1,3 @@
-import { migrateModel } from '../model';
 import { convertDepth, depthPerStep, totalDepth } from './depth-steps';
 
 describe('depth steps', () => {
@@ -25,21 +24,5 @@ describe('depth steps', () => {
     expect(convertDepth('d + 1', 'n', 'per-step')).toBe('(d + 1) / n');
     expect(convertDepth(undefined, 2, 'total')).toBeUndefined();
     expect(convertDepth(5, 0, 'per-step')).toBeUndefined();
-  });
-
-  it("moves an old flat operation's depth per step to depth", () => {
-    const model = migrateModel({
-      operations: [
-        { id: 'f', type: 'flat', depthPerStep: 0.5, steps: 2 },
-        { id: 'c', type: 'v-carve-clear', depthPerStep: 2 },
-      ],
-    });
-    expect(model.operations[0]).toEqual({
-      id: 'f',
-      type: 'flat',
-      depth: 0.5,
-      steps: 2,
-    } as any);
-    expect((model.operations[1] as any).depthPerStep).toBe(2);
   });
 });

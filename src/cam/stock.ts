@@ -31,7 +31,7 @@ export const DEFAULT_STOCK: StockOptions = {
   xyZero: 'design',
 };
 
-/** Complete stock settings from a (possibly partial or older) stored value. */
+/** Complete stock settings from a (possibly partial) stored value. */
 export function resolveStock(
   stored: Partial<StockOptions> | null | undefined,
 ): StockOptions {

@@ -1,6 +1,6 @@
 import { EMPTY, from, Observable, switchMap } from 'rxjs';
 import { readFile } from '../util';
-import { migrateModel, ModelType } from './model-editor/model';
+import { ModelType } from './model-editor/model';
 import { loadModelFromGcode } from './store';
 
 /** Saves `data` as a file through the browser's download. */
@@ -30,13 +30,13 @@ export function fileNameFrom(name: string): string {
 }
 
 /**
- * Asks for a G-code file and emits the project embedded in it (migrated to
- * the current model). Completes without emitting for a file without one.
+ * Asks for a G-code file and emits the project embedded in it. Completes
+ * without emitting for a file without one.
  */
 export function readModelFromNcFile(): Observable<ModelType> {
   return readFile().pipe(
     switchMap((file) => file.text()),
     switchMap((content) => loadModelFromGcode(content)),
-    switchMap((model) => (model ? from([migrateModel(model)]) : EMPTY)),
+    switchMap((model) => (model ? from([model as ModelType]) : EMPTY)),
   );
 }

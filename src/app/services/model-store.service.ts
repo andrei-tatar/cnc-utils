@@ -13,11 +13,7 @@ import {
   Subject,
   switchMap,
 } from 'rxjs';
-import {
-  migrateModel,
-  ModelFieldConfig,
-  ModelType,
-} from '../model-editor/model';
+import { emptyModel, ModelFieldConfig, ModelType } from '../model-editor/model';
 import { sameWork } from '../model-editor/same-work';
 import { readModelFromNcFile } from '../project-file';
 import { loadTemplate, Template } from '../templates';
@@ -135,12 +131,12 @@ export class ModelStore {
 
   /** Replaces the project with an empty one (as on a first visit). */
   clear() {
-    this.replace(migrateModel({}), null);
+    this.replace(emptyModel(), null);
   }
 
   /** Replaces the project with a template one. */
   async openTemplate(template: Template) {
-    this.replace(migrateModel(await loadTemplate(template)), null);
+    this.replace((await loadTemplate(template)) as ModelType, null);
   }
 
   /** The saved project the work belongs to, if any. */
@@ -190,7 +186,7 @@ export class ModelStore {
       await this.refreshProjects();
       throw new Error(`“${project.name}” is no longer saved.`);
     }
-    this.replace(migrateModel(stored), project);
+    this.replace(stored as ModelType, project);
   }
 
   /**
@@ -235,7 +231,7 @@ export class ModelStore {
     if (this.saved$.value !== placeholder) return;
     this.saved$.next(
       project && stored !== undefined
-        ? { project, model: snapshot(migrateModel(stored)) }
+        ? { project, model: snapshot(stored as ModelType) }
         : null,
     );
   }
@@ -250,8 +246,7 @@ function hasPendingWork(model: ModelType, saved: SavedProject | null) {
 
 /**
  * The model as the pipelines see it, for comparing: stock and G-code options
- * with defaults in place of what's unset (the editor clears hidden fields,
- * `migrateModel()` fills them in).
+ * with defaults in place of what's unset (the editor clears hidden fields).
  */
 function work(model: ModelType): ModelType {
   return {
