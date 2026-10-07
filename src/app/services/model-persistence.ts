@@ -21,8 +21,11 @@ const LEGACY_KEY = 'model';
 const LEGACY_SAVED_AT_KEY = 'modelSavedAt';
 const MODEL_KEY = 'model';
 
-/** The project as stored in IndexedDB. */
-type Saved = { model: unknown; savedAt: number };
+/**
+ * The project as stored in IndexedDB, with the saved project (`projects/`)
+ * it was opened from or saved as, if any.
+ */
+type Saved = { model: unknown; savedAt: number; projectId?: string };
 
 let preloaded: Saved | null = null;
 
@@ -53,9 +56,24 @@ export function loadModel(): ModelType {
   return migrateModel(newest?.model ?? {});
 }
 
+/**
+ * The id of the saved project the loaded one belongs to, or null (also when
+ * the newer copy is the localStorage one, which doesn't keep it).
+ */
+export function loadProjectId(): string | null {
+  const legacy = readLegacy();
+  return preloaded && (!legacy || preloaded.savedAt >= legacy.savedAt)
+    ? (preloaded.projectId ?? null)
+    : null;
+}
+
 /** Saves the project; starts at once if the database is already open. */
-export async function saveModel(model: ModelType) {
-  const saved: Saved = { model, savedAt: Date.now() };
+export async function saveModel(model: ModelType, projectId: string | null) {
+  const saved: Saved = {
+    model,
+    savedAt: Date.now(),
+    ...(projectId ? { projectId } : {}),
+  };
   const db = openedAppDb() ?? (await openAppDb());
   if (db) {
     try {

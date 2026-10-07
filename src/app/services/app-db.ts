@@ -1,12 +1,16 @@
 /**
- * The app's own IndexedDB database: the open project, and the tool library
- * shared by all projects.
+ * The app's own IndexedDB database: the open project, the projects saved by
+ * name, and the tool library shared by all projects.
  */
 
 const DB_NAME = 'cnc-utils';
-const VERSION = 2;
+const VERSION = 3;
 export const PROJECT_STORE = 'project';
 export const TOOLS_STORE = 'tools';
+/** The saved projects' names and times (listed without their models). */
+export const PROJECTS_STORE = 'projects';
+/** The saved projects' models, by project id. */
+export const PROJECT_MODELS_STORE = 'projectModels';
 /** Some browsers never answer an open; carry on without the database. */
 const OPEN_TIMEOUT = 3000;
 
@@ -25,7 +29,12 @@ export function openAppDb(): Promise<IDBDatabase | null> {
       const request = indexedDB.open(DB_NAME, VERSION);
       request.onupgradeneeded = () => {
         const db = request.result;
-        for (const store of [PROJECT_STORE, TOOLS_STORE]) {
+        for (const store of [
+          PROJECT_STORE,
+          TOOLS_STORE,
+          PROJECTS_STORE,
+          PROJECT_MODELS_STORE,
+        ]) {
           if (!db.objectStoreNames.contains(store)) {
             db.createObjectStore(store);
           }
