@@ -216,6 +216,20 @@ function route({
         toolEngagement: op.toolEngagement,
       });
 
+    case 'keyhole':
+      if (bitType !== 'keyhole') {
+        return null;
+      }
+      return worker.routeKeyhole(shape, {
+        geometry,
+        optimizeTravel,
+        keyholeAt: op.keyholeAt ?? 'centers',
+        startDepth: op.startDepth,
+        depth: op.depth,
+        slotLength: op.slotLength,
+        slotAngle: op.slotAngle,
+      });
+
     case 'chamfer':
       if (bitType !== 'v-bit') {
         return null;

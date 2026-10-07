@@ -56,6 +56,9 @@ export function describeOperation(
     case 'helix':
       what = `helical bore ${total(operation.startDepth, operation.depth)}`;
       break;
+    case 'keyhole':
+      what = `keyhole ${total(operation.startDepth, operation.depth)} × ${mm(+operation.slotLength || 0)}`;
+      break;
     case 'chamfer':
       what = `chamfer ${mm(operation.chamferWidth ?? 0)}`;
       break;

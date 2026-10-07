@@ -65,6 +65,11 @@ import {
   ModelType as RestModelType,
 } from './operation-rest';
 
+import {
+  Definition as KeyholeDefinition,
+  ModelType as KeyholeModelType,
+} from './operation-keyhole';
+
 const operations = [
   PocketDefinition,
   ProfileDefinition,
@@ -72,6 +77,7 @@ const operations = [
   FlatDefinition,
   DrillDefinition,
   HelixDefinition,
+  KeyholeDefinition,
   ChamferDefinition,
   VCarveDefinition,
   VCarveClearDefinition,
@@ -98,6 +104,7 @@ const allowedBits: Record<
   [InlayDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
   [ChamferDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
   [VCarveClearDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
+  [KeyholeDefinition.type]: { bits: ['keyhole'], needs: 'a keyhole bit' },
 };
 
 function allowsBit(type: string, bit: BitType) {
@@ -133,6 +140,7 @@ export type ModelType = {
         | ChamferModelType
         | InlayModelType
         | RestModelType
+        | KeyholeModelType
       )
   >;
 };
