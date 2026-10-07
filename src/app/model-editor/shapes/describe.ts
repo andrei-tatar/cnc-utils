@@ -55,6 +55,10 @@ export function describeShape(
     }
     case 'polyline':
       return shape['polylineClosed'] ? 'polygon' : 'lines';
+    case 'hinge-cup':
+      return `hinge cup Ø${shape['hingeCupDiameter']}`;
+    case 'bowtie':
+      return `bowtie ${shape['bowtieLength']}×${shape['bowtieEndWidth']}`;
     case 'box-panel':
       return `box panel ${shape['boxWidth']}×${shape['boxHeight']}`;
     case 'trace':

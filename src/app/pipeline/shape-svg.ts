@@ -1,4 +1,5 @@
 import { boxPanelOutline } from '../../cam/box-joints';
+import { bowtieOutline } from '../../cam/hinge-cup';
 import { pathCommandsData } from '../../cam/path-commands';
 import { finitePoints, pathData } from '../../cam/point-patterns';
 import { ShapeParameters } from '../model-editor/model';
@@ -9,7 +10,7 @@ import { ShapeParameters } from '../model-editor/model';
  */
 export type SvgShapeParameters = Exclude<
   ShapeParameters,
-  { type: 'boolean' | 'text' | 'copy' | 'points' | 'trace' }
+  { type: 'boolean' | 'text' | 'copy' | 'points' | 'trace' | 'hinge-cup' }
 >;
 
 /** The shape as an SVG document, for the worker's `importSvg`. */
@@ -34,6 +35,11 @@ export function createSvgFromShape(t: SvgShapeParameters) {
       return `<svg><path d="${pathData(
         finitePoints(t.polylinePoints),
         t.polylineClosed,
+      )}" /></svg>`;
+    case 'bowtie':
+      return `<svg><path d="${pathData(
+        bowtieOutline(t.bowtieLength, t.bowtieEndWidth, t.bowtieWaist),
+        true,
       )}" /></svg>`;
     case 'box-panel':
       return `<svg><path d="${pathData(
