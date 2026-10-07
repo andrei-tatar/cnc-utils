@@ -81,7 +81,9 @@ impl Seg {
 }
 
 /// The segments of a polyline (closing segment included when closed),
-/// skipping ones that have no length.
+/// skipping ones that have no length. Arcs of more than half a turn come
+/// as two halves: CavalierContours' segment functions (intersections,
+/// closest points) can get those wrong.
 pub fn segments(pline: &Pline) -> Vec<Seg> {
     let n = pline.vertex_count();
     let count = if pline.is_closed() {
@@ -94,7 +96,20 @@ pub fn segments(pline: &Pline) -> Vec<Seg> {
         let v1 = pline.at(i);
         let v2 = pline.at((i + 1) % n);
         if (v2.pos() - v1.pos()).length() > EPS {
-            out.push(Seg { v1, v2 });
+            if v1.bulge.abs() > 1.0 {
+                // Half the sweep each: tan(sweep / 8).
+                let half = (v1.bulge.atan() / 2.0).tan();
+                // The arc's middle: the sagitta (bulge × half the chord) off
+                // the chord's middle, to its right (worked out here, as
+                // seg_midpoint is one of those functions).
+                let chord = v2.pos() - v1.pos();
+                let right = V2::new(chord.y, -chord.x);
+                let mid = (v1.pos() + v2.pos()).scale(0.5) + right.scale(v1.bulge / 2.0);
+                out.push(Seg::new(Vertex::new(v1.x, v1.y, half), mid));
+                out.push(Seg::new(Vertex::new(mid.x, mid.y, half), v2.pos()));
+            } else {
+                out.push(Seg { v1, v2 });
+            }
         }
     }
     out
