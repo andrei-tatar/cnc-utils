@@ -555,9 +555,27 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
     const toolbar = this.toolbar().nativeElement;
     for (const level of ['0', '1', '2', '3', '4']) {
       toolbar.dataset['compact'] = level;
-      if (toolbar.scrollWidth <= toolbar.clientWidth) {
+      if (this.fits(toolbar)) {
         break;
       }
     }
+  }
+
+  /**
+   * Whether the last item ends within the toolbar's padding (once the
+   * spacer has shrunk away, what doesn't fit pushes it out). Not
+   * `scrollWidth`: that counts an open menu, which hangs past the edge
+   * while it's being opened or closed (before it's positioned, after it's
+   * unpositioned).
+   */
+  private fits(toolbar: HTMLElement) {
+    const last = toolbar.lastElementChild;
+    if (!last) {
+      return true;
+    }
+    const end =
+      toolbar.getBoundingClientRect().right -
+      parseFloat(getComputedStyle(toolbar).paddingRight);
+    return last.getBoundingClientRect().right <= end + 0.5;
   }
 }
