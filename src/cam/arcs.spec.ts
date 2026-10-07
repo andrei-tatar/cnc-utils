@@ -4,6 +4,7 @@ import {
   closestOnSegment,
   distanceToPolygons,
   fromPoints,
+  insideTester,
   isArea,
   paramOnSegment,
   pointAlong,
@@ -18,6 +19,7 @@ import {
   transformPolygon,
   windingNumber,
 } from './arcs';
+import { insidePolygons } from './polygon-nesting';
 import { CamPolygon } from './types';
 
 /** A circle as two half-circle arcs, counter-clockwise. */
@@ -162,6 +164,29 @@ describe('arcs', () => {
     expect(windingNumber({ x: 0.7, y: -0.7 }, [circle(0, 0, 1)])).toBe(1);
     expect(windingNumber({ x: -1.5, y: 2 }, [slot])).toBe(1);
     expect(windingNumber({ x: -2.5, y: 2 }, [slot])).toBe(0);
+  });
+
+  it('tests many points the way insidePolygons does', () => {
+    // A square with a round hole, a slot overlapping it, a circle inside
+    // the hole (an island), and an open path (left out).
+    const polygons: CamPolygon[] = [
+      square,
+      reversePolygon(circle(5, 5, 3)),
+      transformPolygon(slot, [1, 0, 0, 1, 6, 3]),
+      circle(5, 5, 1),
+      { ...square, close: false },
+    ];
+    const inside = insideTester(polygons);
+    // On a grid that hits vertices' and arcs' tops exactly too.
+    for (let x = -3; x <= 21; x += 0.25) {
+      for (let y = -3; y <= 13; y += 0.25) {
+        const p = { x, y };
+        expect(inside(p))
+          .withContext(`${x}, ${y}`)
+          .toBe(insidePolygons(p, polygons));
+      }
+    }
+    expect(insideTester([])({ x: 0, y: 0 })).toBeFalse();
   });
 
   it('tells areas from lines', () => {

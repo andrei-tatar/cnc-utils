@@ -23,10 +23,11 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { getDistance } from '../../util';
-import { insidePolygons, nestPolygons } from '../../cam/polygon-nesting';
+import { nestPolygons } from '../../cam/polygon-nesting';
 import {
   bulgeOf,
   distanceToPolygons,
+  insideTester,
   pointAlong,
   polygonPoints,
   polygonsBounds,
@@ -279,6 +280,7 @@ export async function routeVCarve(
         depthAt,
         maxInset,
         boundary: region,
+        insideBoundary: insideTester(region),
         shift,
       }
     : null;
@@ -292,9 +294,8 @@ export async function routeVCarve(
           CLEARED_OVERLAP * stepover,
         )
       : [];
-  const uncut = cleared.length
-    ? (p: CamPoint) => !insidePolygons(p, cleared)
-    : null;
+  const inCleared = cleared.length ? insideTester(cleared) : null;
+  const uncut = inCleared ? (p: CamPoint) => !inCleared(p) : null;
   const flatBottom = (inset: number) =>
     !!uncut && inset > maxInset + precision();
   // A long edge can cross what's cleared between its ends: give the
@@ -426,10 +427,11 @@ export async function routeVCarve(
     const bottom = polygonsOf(
       await inside(loopsOf(area), 0, maxInset - 2 * precision()),
     );
+    const inBottom = insideTester(bottom);
     const link = (a: CamPoint, b: CamPoint) =>
       options.mode !== 'holes' &&
       getDistance(a, b) <= LINK_DISTANCE &&
-      segmentInside(a, b, bottom);
+      segmentInside(a, b, inBottom);
     position = cutPieces(builder, pieces, enter, link, position);
   }
 
@@ -763,13 +765,17 @@ function startingFrom(piece: Piece, k: number): PiecePoint[] {
   return [...rotated, rotated[0]];
 }
 
-/** Whether the segment from `a` to `b` stays inside `region`. */
-function segmentInside(a: CamPoint, b: CamPoint, region: CamPolygon[]) {
+/** Whether the segment from `a` to `b` stays inside a region. */
+function segmentInside(
+  a: CamPoint,
+  b: CamPoint,
+  inside: (p: CamPoint) => boolean,
+) {
   const samples = Math.max(1, Math.ceil(getDistance(a, b) / 0.05));
   for (let k = 0; k <= samples; k++) {
     const t = k / samples;
     const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    if (!insidePolygons(p, region)) {
+    if (!inside(p)) {
       return false;
     }
   }
@@ -797,6 +803,8 @@ type CornerOptions = {
   maxInset: number;
   /** The original outline, used to make sure a corner run never gouges it. */
   boundary: CamPolygon[];
+  /** Whether a point is inside `boundary`. */
+  insideBoundary: (p: CamPoint) => boolean;
   /** How far outside `boundary` the insets count from (an inlay plug's). */
   shift: number;
 };
@@ -1169,8 +1177,7 @@ function cornerRun(
         distanceToPolygons(at(t), corners.boundary) - (t - corners.shift),
       ) <=
         3 * precision() &&
-      (t - corners.shift <= 3 * precision() ||
-        insidePolygons(at(t), corners.boundary)),
+      (t - corners.shift <= 3 * precision() || corners.insideBoundary(at(t))),
   );
   if (!isValid) {
     return null;
