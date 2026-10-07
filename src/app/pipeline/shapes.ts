@@ -28,6 +28,7 @@ import {
 } from '../model-editor/model';
 import { createSvgFromShape } from './shape-svg';
 import { hingeCup, pointPattern } from './point-pattern';
+import { nestLayerShapes, nestShapes } from './nest';
 import { geometrySettings } from './geometry-settings';
 import { distinctJson, shareLatest } from './operators';
 
@@ -214,6 +215,54 @@ function resolveShape(
 
     case 'hinge-cup':
       return of(hingeCup(t, shapeId, geometry));
+
+    case 'nest': {
+      const items = t.nestItems ?? [];
+      if (!items.length) {
+        return of([]);
+      }
+      return combineLatest(
+        items.map((item) => resultOf(entries$, item?.shapeId)),
+      ).pipe(
+        debounceTime(0),
+        map((shapes) => nestShapes(t, shapes, shapeId)),
+      );
+    }
+
+    case 'nest-layer': {
+      const layers = t.nestLayers ?? [];
+      // The nest's settings, as they change.
+      const nest$ = entries$.pipe(
+        map((entries) => entries.find((e) => e.shapeId === t.nestOfId)),
+        distinctUntilChanged(),
+        switchMap((entry) => entry?.shapeParameters$ ?? of(null)),
+        distinctUntilChanged((a, b) => deepEqual(a, b)),
+      );
+      return nest$.pipe(
+        switchMap((nest) => {
+          if (nest?.type !== 'nest' || !layers.length) {
+            return of([] as CamShape[]);
+          }
+          const items = nest.nestItems ?? [];
+          if (!items.length) {
+            return of([] as CamShape[]);
+          }
+          return combineLatest([
+            combineLatest(
+              items.map((item) => resultOf(entries$, item?.shapeId)),
+            ),
+            combineLatest(
+              layers.map((layer) => resultOf(entries$, layer?.shapeId)),
+            ),
+          ]).pipe(
+            debounceTime(0),
+            map(([itemShapes, layerShapes]) =>
+              nestLayerShapes(nest, itemShapes, layers, layerShapes, shapeId),
+            ),
+          );
+        }),
+      );
+    }
 
     default:
       return worker.importSvg(createSvgFromShape(t), shapeId, geometry);

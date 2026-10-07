@@ -10,7 +10,17 @@ import { ShapeParameters } from '../model-editor/model';
  */
 export type SvgShapeParameters = Exclude<
   ShapeParameters,
-  { type: 'boolean' | 'text' | 'copy' | 'points' | 'trace' | 'hinge-cup' }
+  {
+    type:
+      | 'boolean'
+      | 'text'
+      | 'copy'
+      | 'points'
+      | 'trace'
+      | 'hinge-cup'
+      | 'nest'
+      | 'nest-layer';
+  }
 >;
 
 /** The shape as an SVG document, for the worker's `importSvg`. */
