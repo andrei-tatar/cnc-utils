@@ -26,7 +26,7 @@ export type ModelType = VariablesModelType &
 export type ShapeType = ModelType['shapes'][number];
 export type ShapeParameters = OmitUnion<
   ShapeType,
-  'id' | 'transforms' | 'expanded' | 'name' | 'hidden'
+  'id' | 'transforms' | 'expanded' | 'name' | 'hidden' | 'clamp'
 >;
 export type TransformType = ShapeType['transforms'][number];
 export type TransformParameters = OmitUnion<
@@ -54,6 +54,7 @@ export type ToolParameters = OmitUnion<
   | 'spindleSpeed'
   | 'feedRate'
   | 'plungeFeedRate'
+  | 'fluteLength'
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [
   variablesField,
