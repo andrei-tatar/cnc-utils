@@ -1,4 +1,4 @@
-import { GeometrySettings, useGeometry } from '../../cam/geometry';
+import { decimals, GeometrySettings, useGeometry } from '../../cam/geometry';
 import { CamPolygon, CamShape } from '../../cam/types';
 import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
@@ -139,7 +139,7 @@ async function transformed(
           ),
         );
 
-      case 'clipper-inflate':
+      case 'offset':
         let paths = await makePaths(
           input.flatMap((p) => p.polygons).map((p) => p.points),
         );
@@ -149,11 +149,8 @@ async function transformed(
           transform.offset,
           transform.joinType,
           transform.endType,
-          // The transform's "precision" has always reached Clipper as the
-          // miter limit and its "miter limit" as the decimal places; kept so
-          // existing projects come out the same.
-          transform.precision,
           transform.miterLimit,
+          decimals(),
           transform.arcTolerance,
         );
 

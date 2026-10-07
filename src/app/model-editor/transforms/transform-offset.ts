@@ -1,11 +1,11 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
 
 export interface ModelType {
-  type: 'clipper-inflate';
+  type: 'offset';
   offset: number;
   joinType: 'square' | 'round' | 'miter';
   endType: 'polygon' | 'joined' | 'butt' | 'square' | 'round';
-  precision: number;
+  /** How far a miter join may reach, in offsets (1 or less: squared off). */
   miterLimit: number;
   arcTolerance: number;
 }
@@ -76,20 +76,13 @@ const field: FormlyFieldConfig = {
       },
     },
     {
-      key: 'precision',
-      type: 'number',
-      defaultValue: 0.05,
-      props: {
-        label: 'precision',
-        required: true,
-      },
-    },
-    {
       key: 'miterLimit',
       type: 'number',
       defaultValue: 2,
       props: {
         label: 'miter limit',
+        description:
+          'how far a miter join may reach, in offsets; sharper corners are squared off',
         required: true,
       },
     },
@@ -111,7 +104,7 @@ const field: FormlyFieldConfig = {
 };
 
 export const Definition = {
-  type: 'clipper-inflate',
-  label: 'clipper:inflate',
+  type: 'offset',
+  label: 'offset',
   fieldGroup: field,
 } as const;

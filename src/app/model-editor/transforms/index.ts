@@ -25,9 +25,9 @@ import {
   ModelType as FlipModelType,
 } from './transform-flip';
 import {
-  Definition as ClipperInflateDefinition,
-  ModelType as ClipperInflateModelType,
-} from './transform-clipper-inflate';
+  Definition as OffsetDefinition,
+  ModelType as OffsetModelType,
+} from './transform-offset';
 import {
   Definition as ConvexHullDefinition,
   ModelType as ConvexHullModelType,
@@ -78,7 +78,7 @@ export type ModelType = {
       | RotateModelType
       | ScaleModelType
       | FlipModelType
-      | ClipperInflateModelType
+      | OffsetModelType
       | ConvexHullModelType
       | BoundsModelType
       | PolarModelType
@@ -108,7 +108,7 @@ const transforms = [
   MirrorDefinition,
   RepeatDefinition,
   PolarDefinition,
-  ClipperInflateDefinition,
+  OffsetDefinition,
   CornersDefinition,
   DogboneDefinition,
   SimplifyDefinition,

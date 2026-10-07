@@ -1,11 +1,6 @@
 import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
 import { GCodeBuilder } from '../../cam/gcode-builder';
-import {
-  decimals,
-  GeometrySettings,
-  precision,
-  useGeometry,
-} from '../../cam/geometry';
+import { GeometrySettings, precision, useGeometry } from '../../cam/geometry';
 import { ShapePart, filledOutlines, holeSide } from '../../cam/vcarve-geometry';
 import { enterCut, Resume } from '../../cam/ramp';
 import { applyTransform } from './apply-transform';
@@ -67,14 +62,11 @@ export async function routeProfile(
     offset === 0
       ? input
       : await applyTransform(input, {
-          type: 'clipper-inflate',
+          type: 'offset',
           offset,
           endType: 'polygon',
           joinType: 'round',
-          // The offset transform's fields reach Clipper swapped (see
-          // applyTransform): miter limit 2, the settings' decimal places.
-          precision: 2,
-          miterLimit: decimals(),
+          miterLimit: 2,
           arcTolerance: 0,
         });
 
