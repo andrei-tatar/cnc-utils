@@ -1,6 +1,5 @@
-import { Matrix3, Vector2 } from 'three';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
-import { CamPoint, CamPolygon, CamShape } from '../../cam/types';
+import { CamPolygon, CamShape } from '../../cam/types';
 import { clipperInflateRaw, makePaths } from '../../cam/clipper';
 import { TransformParameters } from '../../app/model-editor/model';
 import { applyConvexHull } from './convex-hull-transform';
@@ -12,7 +11,11 @@ import {
   getBoundingBox,
   mirrorCopy,
   polarArray,
+  rotationAround,
+  scalingAround,
   shapeCorners,
+  transformShapes,
+  translation,
 } from './shape-transforms';
 import { dogbones, simplifyShapes } from './clipper-transforms';
 import { placeTabs } from '../../cam/tabs';
@@ -51,11 +54,10 @@ async function transformed(
   try {
     switch (transform.type) {
       case 'translate':
-        const translateMatrix = new Matrix3().translate(
-          transform.translateX,
-          transform.translateY,
+        return transformShapes(
+          input,
+          translation(transform.translateX, transform.translateY),
         );
-        return input.map((i) => applyMatrixTransform(i, translateMatrix));
 
       case 'align': {
         const box = getBoundingBox(input);
@@ -75,35 +77,35 @@ async function transformed(
           middle: box.y + box.height / 2,
           bottom: box.y,
         }[transform.alignY];
-        const alignMatrix = new Matrix3().translate(
-          x === null ? 0 : transform.alignXTo - x,
-          y === null ? 0 : transform.alignYTo - y,
+        return transformShapes(
+          input,
+          translation(
+            x === null ? 0 : transform.alignXTo - x,
+            y === null ? 0 : transform.alignYTo - y,
+          ),
         );
-        return input.map((i) => applyMatrixTransform(i, alignMatrix));
       }
 
       case 'rotate': {
         const box = getBoundingBox(input);
 
-        const { x: dx, y: dy } =
+        const center =
           transform.around === 'point'
             ? { x: transform.aroundX ?? 0, y: transform.aroundY ?? 0 }
             : boxPoint(box, transform.around);
 
-        const rotateMatrix = new Matrix3()
-          .translate(-dx, -dy)
-          .rotate((transform.rotateAngle * Math.PI) / 180)
-          .translate(dx, dy);
-
-        return input.map((i) => applyMatrixTransform(i, rotateMatrix));
+        // Clockwise, as it has always turned (three's Matrix3.rotate did).
+        return transformShapes(
+          input,
+          rotationAround(center, -transform.rotateAngle),
+        );
       }
 
       case 'scale':
-        const scaleMatrix = new Matrix3().scale(
-          transform.scaleX,
-          transform.scaleY,
+        return transformShapes(
+          input,
+          scalingAround({ x: 0, y: 0 }, transform.scaleX, transform.scaleY),
         );
-        return input.map((i) => applyMatrixTransform(i, scaleMatrix));
 
       case 'repeat':
         const output: CamShape[] = [];
@@ -120,29 +122,22 @@ async function transformed(
 
         for (let y = 0; y < transform.repeatCountY; y++)
           for (let x = 0; x < transform.repeatCountX; x++) {
-            const translate = new Matrix3().translate(deltaX * x, deltaY * y);
             output.push(
-              ...input.map((i) => applyMatrixTransform(i, translate)),
+              ...transformShapes(input, translation(deltaX * x, deltaY * y)),
             );
           }
         return output;
 
       case 'flip':
-        const box = getBoundingBox(input);
-        let matrix = new Matrix3();
-        if (transform.flipHorizontal) {
-          matrix = matrix
-            .translate(-(box.x + box.width / 2), 0)
-            .scale(-1, 1)
-            .translate(box.x + box.width / 2, 0);
-        }
-        if (transform.flipVertical) {
-          matrix = matrix
-            .translate(0, -(box.y + box.height / 2))
-            .scale(1, -1)
-            .translate(0, box.y + box.height / 2);
-        }
-        return input.map((i) => applyMatrixTransform(i, matrix));
+        // Mirrored in place, across the middle of its bounding box.
+        return transformShapes(
+          input,
+          scalingAround(
+            boxPoint(getBoundingBox(input), 'xcenter-ycenter'),
+            transform.flipHorizontal ? -1 : 1,
+            transform.flipVertical ? -1 : 1,
+          ),
+        );
 
       case 'clipper-inflate':
         let paths = await makePaths(
@@ -289,25 +284,4 @@ function boundingRectangles(
       .map((p) => rectangle(p.points))
       .filter((r): r is CamPolygon => r !== null),
   }));
-}
-
-function applyMatrixTransform(input: CamShape, matrix: Matrix3): CamShape {
-  const apply = (p: CamPoint) => {
-    const result = new Vector2(p.x, p.y).applyMatrix3(matrix);
-    return { x: result.x, y: result.y };
-  };
-  const shape: CamShape = {
-    sourceShapeId: input.sourceShapeId,
-    polygons: input.polygons.map((poly) => ({
-      close: poly.close,
-      points: poly.points.map(apply),
-    })),
-  };
-  if (input.tabs) {
-    shape.tabs = input.tabs.map((tab) => ({
-      ...tab,
-      points: tab.points.map(apply),
-    }));
-  }
-  return shape;
 }

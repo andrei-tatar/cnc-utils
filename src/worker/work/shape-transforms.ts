@@ -74,12 +74,12 @@ export function transformShapes(input: CamShape[], m: Affine): CamShape[] {
   });
 }
 
-function translation(x: number, y: number): Affine {
+export function translation(x: number, y: number): Affine {
   return [1, 0, 0, 1, x, y];
 }
 
 /** Rotation by `degrees` (counter-clockwise) around `center`. */
-function rotationAround(center: CamPoint, degrees: number): Affine {
+export function rotationAround(center: CamPoint, degrees: number): Affine {
   const a = (degrees * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);
@@ -94,7 +94,11 @@ function rotationAround(center: CamPoint, degrees: number): Affine {
 }
 
 /** Scaling by `sx`, `sy`, keeping `anchor` in place. */
-function scalingAround(anchor: CamPoint, sx: number, sy: number): Affine {
+export function scalingAround(
+  anchor: CamPoint,
+  sx: number,
+  sy: number,
+): Affine {
   return [sx, 0, 0, sy, anchor.x * (1 - sx), anchor.y * (1 - sy)];
 }
 
