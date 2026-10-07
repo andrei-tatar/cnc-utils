@@ -1,5 +1,6 @@
 import { ModelType, OperationParameters } from '../model-editor/model';
 import type { InlayPlug } from '../../worker/work/inlay-plug';
+import { depthPerStep } from '../model-editor/operations/depth-steps';
 
 /**
  * What a v-carve clearing borrows from the v-carve (or inlay plug) it
@@ -95,7 +96,7 @@ export function restSource(
   return {
     shapeId: pocket.shapeId,
     startDepth: pocket.startDepth,
-    depthPerStep: pocket.depth,
+    depthPerStep: depthPerStep(pocket),
     steps: pocket.steps,
     leaveStock: pocket.leaveStock,
     previousToolSize: tool.diameter,

@@ -1,6 +1,7 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { rootModel, shapeLabel } from '../shapes/describe';
 import { toolLabel, ToolType } from '../tools';
+import { totalDepth } from './depth-steps';
 
 /** All operations in the model, from any field in the form. */
 export function allOperations(field: FormlyFieldConfig | undefined): any[] {
@@ -15,19 +16,29 @@ export function describeOperation(
   operations: any[] = [],
 ): string {
   const mm = (value: number) => `${Math.round(value * 100) / 100} mm`;
-  const total = (start: number, perStep: number, steps: number) =>
-    mm((+start || 0) + (+perStep || 0) * (+steps || 0));
+  const total = (start: number, depth: number) =>
+    mm((+start || 0) + (+depth || 0));
+  // Operations that cut in steps (see depth-steps.ts).
+  const stepped = (op: any) =>
+    total(
+      op.startDepth,
+      totalDepth({
+        depthMode: op.depthMode,
+        depth: +op.depth || 0,
+        steps: +op.steps || 0,
+      }),
+    );
 
   let what: string;
   switch (operation?.type) {
     case 'pocket':
-      what = `pocket${operation.strategy === 'raster' ? ' raster' : ''} ${total(operation.startDepth, operation.depth, operation.steps)}`;
+      what = `pocket${operation.strategy === 'raster' ? ' raster' : ''} ${stepped(operation)}`;
       break;
     case 'profile':
-      what = `profile${partLabel(operation.mode)} ${operation.side ?? ''} ${total(operation.startDepth, operation.depth, operation.steps)}`;
+      what = `profile${partLabel(operation.mode)} ${operation.side ?? ''} ${stepped(operation)}`;
       break;
     case 'flat':
-      what = `flat ${total(0, operation.depthPerStep, operation.steps)}`;
+      what = `flat ${stepped(operation)}`;
       break;
     case 'v-carve':
       what = `v-carve${partLabel(operation.mode)} ${
@@ -38,12 +49,12 @@ export function describeOperation(
       what = 'v-carve clearing';
       break;
     case 'drill':
-      what = `drill ${total(operation.startDepth, operation.depth, 1)}${
+      what = `drill ${total(operation.startDepth, operation.depth)}${
         operation.peck > 0 ? ` peck ${mm(operation.peck)}` : ''
       }`;
       break;
     case 'helix':
-      what = `helical bore ${total(operation.startDepth, operation.depth, 1)}`;
+      what = `helical bore ${total(operation.startDepth, operation.depth)}`;
       break;
     case 'chamfer':
       what = `chamfer ${mm(operation.chamferWidth ?? 0)}`;

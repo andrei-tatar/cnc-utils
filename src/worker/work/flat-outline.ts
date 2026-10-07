@@ -9,6 +9,9 @@ export async function flatOutline(
   options: {
     toolSize: number;
     toolEngagement: number;
+    /** Where the first step starts, below the top (mm). */
+    startDepth?: number;
+    /** Depth of each step. */
     depth: number;
     steps: number;
     interpolateStepSize: boolean;
@@ -131,7 +134,7 @@ export async function flatOutline(
 
     for (let i = 0; i < options.steps; i++) {
       const builder = builders[i];
-      const depth = options.depth * (i + 1);
+      const depth = (options.startDepth ?? 0) + options.depth * (i + 1);
 
       if (i === options.steps - 1 && options.allPassesInSameDirection) {
         builder.travelTo(...getCoords(normal, minAlongAxis));

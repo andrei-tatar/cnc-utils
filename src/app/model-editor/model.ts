@@ -84,12 +84,24 @@ export function migrateModel(stored: any): ModelType {
     operations: [
       ...(Array.isArray(stored?.operations) ? stored.operations : []),
       ...nested,
-    ],
+    ].map(migrateOperation),
     // Projects from before G-code options existed get the defaults.
     gcode: resolveGcodeOptions(stored?.gcode),
     // Projects from before stock settings have none set.
     stock: resolveStock(stored?.stock),
   };
+}
+
+/**
+ * Flat surfacing kept its depth per step as `depthPerStep`; it now has the
+ * same depth settings as pockets and profiles (`depth`, read per step).
+ */
+function migrateOperation(operation: any) {
+  if (operation?.type !== 'flat' || !('depthPerStep' in operation)) {
+    return operation;
+  }
+  const { depthPerStep, ...rest } = operation;
+  return { ...rest, depth: depthPerStep };
 }
 
 function migrateShape(shape: any) {
