@@ -6,6 +6,7 @@ import worker from '../../worker';
 import { OperationParameters, ToolParameters } from '../model-editor/model';
 import { PlugSource, RestSource, VCarveSource } from './vcarve-source';
 import { pointLength } from '../model-editor/operations/operation-drill';
+import { depthPerStep } from '../model-editor/operations/depth-steps';
 
 /** Everything that decides an operation's toolpath. */
 export type RoutingInputs = {
@@ -69,7 +70,7 @@ function route({
         toolSize: diameter,
         toolEngagement: op.toolEngagement,
         leaveStock: op.leaveStock,
-        depthPerStep: op.depth,
+        depthPerStep: depthPerStep(op),
         steps: op.steps,
         startDepth: op.startDepth,
         strategy: op.strategy ?? 'offset',
@@ -83,7 +84,8 @@ function route({
         geometry,
         toolSize: diameter,
         toolEngagement: op.toolEngagement,
-        depth: op.depthPerStep,
+        startDepth: op.startDepth ?? 0,
+        depth: depthPerStep(op),
         steps: op.steps,
         interpolateStepSize: op.interpolateStepSize,
         allPassesInSameDirection: op.allPassesInSameDirection,
@@ -102,7 +104,7 @@ function route({
         direction: op.direction,
         leaveStock: op.leaveStock ?? 0,
         startDepth: op.startDepth,
-        depthPerStep: op.depth,
+        depthPerStep: depthPerStep(op),
         steps: op.steps,
         tabsEnabled: op.tabsEnabled,
         tabCount: op.tabCount,

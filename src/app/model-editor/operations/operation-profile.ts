@@ -1,12 +1,10 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { DepthSteps, depthStepsFields } from './depth-steps';
 
-export interface ModelType {
+export interface ModelType extends DepthSteps {
   type?: 'profile';
   /** Which part of the shape to profile (see ShapePart). */
   mode?: 'both' | 'holes' | 'contours';
-  startDepth: number;
-  depth: number;
-  steps: number;
   side: 'outside' | 'inside' | 'on-line';
   direction: 'climb' | 'conventional';
   /** Material left on the wall for a finishing pass (mm); not on line. */
@@ -82,35 +80,7 @@ const field: FormlyFieldConfig = {
         ],
       },
     },
-    {
-      key: 'startDepth',
-      type: 'number',
-      defaultValue: 0,
-      props: {
-        label: 'start depth',
-        required: true,
-      },
-    },
-    {
-      key: 'depth',
-      type: 'number',
-      defaultValue: 5,
-      props: {
-        min: 0,
-        label: 'depth/step',
-        required: true,
-      },
-    },
-    {
-      key: 'steps',
-      type: 'number',
-      defaultValue: 1,
-      props: {
-        min: 1,
-        label: 'steps',
-        required: true,
-      },
-    },
+    ...depthStepsFields(),
     {
       key: 'tabsEnabled',
       type: 'boolean',

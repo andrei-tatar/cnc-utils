@@ -1,9 +1,8 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { DepthSteps, depthStepsFields } from './depth-steps';
 
-export interface ModelType {
+export interface ModelType extends DepthSteps {
   type?: 'flat';
-  depthPerStep: number;
-  steps: number;
   toolEngagement: number;
   interpolateStepSize: boolean;
   allPassesInSameDirection: boolean;
@@ -15,26 +14,7 @@ export interface ModelType {
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
-    {
-      key: 'depthPerStep',
-      type: 'number',
-      defaultValue: 0,
-      props: {
-        min: 0,
-        label: 'depth/step',
-        required: true,
-      },
-    },
-    {
-      key: 'steps',
-      type: 'number',
-      defaultValue: 1,
-      props: {
-        min: 1,
-        label: 'steps',
-        required: true,
-      },
-    },
+    ...depthStepsFields({ depth: 0 }),
     {
       key: 'toolEngagement',
       type: 'number',
