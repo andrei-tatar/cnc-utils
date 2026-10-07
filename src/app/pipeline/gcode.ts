@@ -5,6 +5,7 @@ import {
   map,
   Observable,
   of,
+  race,
   scan,
   switchMap,
 } from 'rxjs';
@@ -12,7 +13,9 @@ import { GCodeBuilder, JobTime } from '../../cam/gcode-builder';
 import { programOffset, resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
-import { CamPath } from '../../cam/types';
+import { CamPath, CamShape, CamTab } from '../../cam/types';
+import { tabsNear, tabsOf } from '../../cam/tabs';
+import worker from '../../worker';
 import { ModelType } from '../model-editor/model';
 import { geometrySettings } from './geometry-settings';
 import { ShapeResults } from './shapes';
@@ -24,6 +27,8 @@ import { routeOperation } from './route-operation';
 type OperationEntry = {
   id: string;
   inputs$: BehaviorSubject<OperationInputs>;
+  /** The shape it cuts. */
+  shape$: Observable<CamShape[]>;
   result$: Observable<GCodeBuilder>;
 };
 
@@ -51,7 +56,7 @@ export function generateGcodeFromOperations(
     distinctUntilChanged(),
     shareLatest(),
   );
-  return model$.pipe(
+  const entries$: Observable<OperationEntry[]> = model$.pipe(
     scan(
       (ctx, model) =>
         (model.operations ?? []).map((operation) => {
@@ -65,6 +70,7 @@ export function generateGcodeFromOperations(
             operation.id,
             inputs,
             shapes,
+            tabs$,
             geometry$,
             optimizeTravel$,
             working$,
@@ -72,6 +78,19 @@ export function generateGcodeFromOperations(
         }),
       [] as OperationEntry[],
     ),
+    shareLatest(),
+  );
+  // The tabs on the shapes the operations cut: every operation keeps out
+  // of all of them.
+  const tabs$: Observable<CamTab[]> = entries$.pipe(
+    switchMap((s) =>
+      s.length ? combineLatest(s.map((i) => i.shape$)) : of([]),
+    ),
+    map((s) => tabsOf(s.flat())),
+    distinctJson(),
+    shareLatest(),
+  );
+  return entries$.pipe(
     // Incomplete operations (no tool, shape or type yet) emit an empty
     // builder rather than nothing, so they don't stall the whole G-code.
     switchMap((s) =>
@@ -110,6 +129,7 @@ function createOperationEntry(
   id: string,
   inputs: OperationInputs,
   shapes: ShapeResults,
+  tabs$: Observable<CamTab[]>,
   geometry$: Observable<GeometrySettings>,
   optimizeTravel$: Observable<boolean>,
   working$: Observable<never>,
@@ -123,6 +143,7 @@ function createOperationEntry(
     distinctUntilChanged(),
     switchMap((shapeId) => shapes.byId(shapeId)),
     distinctItems(),
+    shareLatest(),
   );
 
   const routed$ = combineLatest({
@@ -137,10 +158,35 @@ function createOperationEntry(
     optimizeTravel: optimizeTravel$,
   }).pipe(switchMap((routing) => routeOperation(id, routing, working$)));
 
+  // Then over the tabs the tool would cut into: changing tabs doesn't
+  // re-route.
+  const radius$ = input('toolParameters').pipe(
+    map((tool) => (tool?.diameter ?? 0) / 2),
+    distinctUntilChanged(),
+  );
+  const kept$ = combineLatest([routed$, tabs$, radius$]).pipe(
+    map(([builder, tabs, radius]) => ({
+      builder,
+      radius,
+      tabs: tabsNear(tabs, builder.cutBounds(), radius),
+    })),
+    distinctUntilChanged(
+      (a, b) =>
+        a.builder === b.builder &&
+        a.radius === b.radius &&
+        JSON.stringify(a.tabs) === JSON.stringify(b.tabs),
+    ),
+    switchMap(({ builder, tabs, radius }) =>
+      tabs.length
+        ? race(worker.keepTabs(builder, tabs, radius), working$)
+        : of(builder),
+    ),
+  );
+
   // Tag the routed G-code with its tool afterwards, so renumbering tools
   // (reordering the list) doesn't re-run the routing.
   const tagged$ = combineLatest([
-    routed$,
+    kept$,
     input('toolInfo').pipe(distinctJson()),
   ]).pipe(
     map(([builder, info]) =>
@@ -163,7 +209,7 @@ function createOperationEntry(
     shareLatest(),
   );
 
-  return { id, inputs$, result$ };
+  return { id, inputs$, shape$, result$ };
 }
 
 /**

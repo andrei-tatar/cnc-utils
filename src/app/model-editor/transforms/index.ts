@@ -64,6 +64,10 @@ import {
   Definition as CentersDefinition,
   ModelType as CentersModelType,
 } from './transform-centers';
+import {
+  Definition as TabsDefinition,
+  ModelType as TabsModelType,
+} from './transform-tabs';
 
 export type ModelType = {
   transforms: Array<
@@ -84,6 +88,7 @@ export type ModelType = {
       | SimplifyModelType
       | MirrorModelType
       | CentersModelType
+      | TabsModelType
     ) & {
       id: string;
       expanded: boolean;
@@ -110,6 +115,7 @@ const transforms = [
   ConvexHullDefinition,
   BoundsDefinition,
   CentersDefinition,
+  TabsDefinition,
 ];
 
 export const field: FormlyFieldConfig = {

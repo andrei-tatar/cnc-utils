@@ -9,12 +9,6 @@ export interface ModelType extends DepthSteps {
   direction: 'climb' | 'conventional';
   /** Material left on the wall for a finishing pass (mm); not on line. */
   leaveStock?: number;
-  tabsEnabled: boolean;
-  tabCount: number;
-  tabWidth: number;
-  tabHeight: number;
-  /** Moves all tabs this far along the toolpath (mm). */
-  tabOffset?: number;
 }
 
 const hideUnlessProfile = (field: FormlyFieldConfig) =>
@@ -22,9 +16,6 @@ const hideUnlessProfile = (field: FormlyFieldConfig) =>
 
 const hideUnlessOffset = (field: FormlyFieldConfig) =>
   field.model?.type !== Definition.type || field.model?.side === 'on-line';
-
-const hideUnlessTabs = (field: FormlyFieldConfig) =>
-  field.model?.type !== Definition.type || !field.model?.tabsEnabled;
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
@@ -81,58 +72,6 @@ const field: FormlyFieldConfig = {
       },
     },
     ...depthStepsFields(),
-    {
-      key: 'tabsEnabled',
-      type: 'boolean',
-      defaultValue: false,
-      props: {
-        label: 'tabs',
-      },
-    },
-    {
-      key: 'tabCount',
-      type: 'number',
-      defaultValue: 4,
-      props: {
-        min: 0,
-        label: 'tab count',
-        required: true,
-      },
-      expressions: { hide: hideUnlessTabs },
-    },
-    {
-      key: 'tabWidth',
-      type: 'number',
-      defaultValue: 5,
-      props: {
-        min: 0,
-        label: 'tab width',
-        required: true,
-      },
-      expressions: { hide: hideUnlessTabs },
-    },
-    {
-      key: 'tabHeight',
-      type: 'number',
-      defaultValue: 1.5,
-      props: {
-        min: 0,
-        label: 'tab height',
-        required: true,
-      },
-      expressions: { hide: hideUnlessTabs },
-    },
-    {
-      key: 'tabOffset',
-      type: 'number',
-      defaultValue: 0,
-      props: {
-        label: 'tab offset',
-        description: 'mm along the toolpath; moves all the tabs',
-        required: true,
-      },
-      expressions: { hide: hideUnlessTabs },
-    },
   ],
   expressions: {
     hide: hideUnlessProfile,

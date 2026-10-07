@@ -40,6 +40,25 @@ describe('codec', () => {
     expect(pack(oddPoints)).toEqual(oddPoints);
   });
 
+  it('packs shapes with tabs, keeping them', () => {
+    const tabbed: CamShape = {
+      ...shape,
+      tabs: [
+        {
+          top: -3,
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        },
+      ],
+    };
+    const packed = pack(tabbed) as any;
+    expect(packed.coords instanceof Float64Array).toBeTrue();
+    expect(unpack(structuredClone(packed))).toEqual(tabbed);
+  });
+
   it('round-trips builders', () => {
     const b = new GCodeBuilder().travelTo(1, 2).plunge(-1).carveTo(3, 4);
     const back = unpack(structuredClone(pack(b))) as GCodeBuilder;

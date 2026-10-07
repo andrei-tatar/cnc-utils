@@ -11,6 +11,19 @@ export type CamPolygon = {
 export type CamShape = {
   sourceShapeId: string;
   polygons: CamPolygon[];
+  /** Material every operation leaves standing (see `src/cam/tabs.ts`). */
+  tabs?: CamTab[];
+};
+
+/**
+ * A tab: a bridge of material holding a part to the stock. Nothing cuts
+ * below `top` within its footprint.
+ */
+export type CamTab = {
+  /** Its footprint: a convex polygon. */
+  points: CamPoint[];
+  /** Z of its top (≤ 0). */
+  top: number;
 };
 
 /**

@@ -42,6 +42,7 @@ import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
 import { pointsEqual, watchElementResize } from '../../util';
 import {
   BehaviorSubject,
+  combineLatest,
   debounceTime,
   distinctUntilChanged,
   fromEvent,
@@ -69,7 +70,7 @@ import {
 } from './helpers/grid-labels';
 import { DirectionArrows } from './helpers/direction-arrows';
 import { nestContours } from '../../cam/polygon-nesting';
-import { CamPath, CamShape, Highlight } from '../../cam/types';
+import { CamPath, CamShape, CamTab, Highlight } from '../../cam/types';
 import { StockView, TimeSummary } from '../services/cam.service';
 
 /** Half the size of the cross marking a single point, in mm. */
@@ -538,6 +539,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
       opacity: 0,
       transparent: true,
     });
+    const tabEdges = new LineBasicMaterial({ color: '#4dd0e1' });
+    const tabFaces = new MeshBasicMaterial({
+      color: '#4dd0e1',
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false,
+    });
 
     const pathCarveMaterial = new LineBasicMaterial({
       transparent: true,
@@ -594,6 +602,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
                     material,
                     materialHighlight,
                     nullMaterial,
+                    tabEdges,
+                    tabFaces,
                     highlight$: isHighlighted$,
                     hidden$: this.hiddenShapes$.pipe(
                       map((hidden) => hidden.includes(shape.sourceShapeId)),
@@ -1058,6 +1068,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
     material: Material;
     materialHighlight: Material;
     nullMaterial: Material;
+    tabEdges: Material;
+    tabFaces: Material;
     highlight$: Observable<boolean>;
     hidden$: Observable<boolean>;
   }) {
@@ -1136,6 +1148,36 @@ export class ViewerComponent implements OnInit, OnDestroy {
             this.requestRender();
             clean.add(() => this.requestRender());
 
+            // The tabs, as blocks from their top down to the bottom of the
+            // stock (or of the deepest cut, without stock).
+            const tabs = new Group();
+            if (o.shape.tabs?.length) {
+              o.scene.add(tabs);
+              clean.add(() => o.scene.remove(tabs));
+              const bottom$ = combineLatest([this.stock$, this.deepest$]).pipe(
+                map(([view, deepest]) =>
+                  view?.stock.enabled ? -view.stock.thickness : deepest,
+                ),
+                distinctUntilChanged(),
+              );
+              const clear = () => {
+                tabs.children.forEach((child) =>
+                  (child as Mesh).geometry.dispose(),
+                );
+                tabs.clear();
+              };
+              clean.add(
+                bottom$.subscribe((bottom) => {
+                  clear();
+                  for (const tab of o.shape.tabs!) {
+                    tabs.add(...tabBlock(tab, bottom, o.tabEdges, o.tabFaces));
+                  }
+                  this.requestRender();
+                }),
+              );
+              clean.add(clear);
+            }
+
             clean.add(
               o.highlight$.subscribe((highlight) => {
                 sceneItems.forEach((item) => {
@@ -1155,6 +1197,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             clean.add(
               o.hidden$.subscribe((hidden) => {
                 sceneItems.forEach((item) => (item.visible = !hidden));
+                tabs.visible = !hidden;
                 this.requestRender();
               }),
             );
@@ -1164,6 +1207,39 @@ export class ViewerComponent implements OnInit, OnDestroy {
       ),
     );
   }
+}
+
+/**
+ * A tab drawn as a block: its footprint at its top, down to `bottom` (a
+ * flat outline when that isn't below it).
+ */
+function tabBlock(
+  tab: CamTab,
+  bottom: number,
+  edges: Material,
+  faces: Material,
+): (LineSegments | Mesh)[] {
+  const { points, top } = tab;
+  const low = Math.min(top, bottom);
+  const segments: number[] = [];
+  points.forEach((a, i) => {
+    const b = points[(i + 1) % points.length];
+    segments.push(a.x, a.y, top, b.x, b.y, top);
+    if (low < top) {
+      segments.push(a.x, a.y, low, b.x, b.y, low);
+      segments.push(a.x, a.y, top, a.x, a.y, low);
+    }
+  });
+  const lines = new BufferGeometry();
+  lines.setAttribute(
+    'position',
+    new BufferAttribute(new Float32Array(segments), 3),
+  );
+  const face = new ShapeGeometry(
+    new Shape(points.map(({ x, y }) => new Vector2(x, y))),
+  );
+  face.translate(0, 0, top);
+  return [new LineSegments(lines, edges), new Mesh(face, faces)];
 }
 
 /** Paths grouped by what's drawn together: operation, move type, shape. */
