@@ -27,11 +27,13 @@ import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 
 /**
  * A button in a list's header (`props.headerActions`), e.g. the tool
- * library. `run` gets the list's items and a way to add one.
+ * library. `run` gets the list's items and ways to add one or replace them
+ * all. `icon` is SVG path data on a 16 × 16 grid (books when there's none).
  */
 export type HeaderAction = {
   label: string;
   title: string;
+  icon?: string;
   run(context: {
     injector: Injector;
     /** The list's field. */
@@ -39,6 +41,8 @@ export type HeaderAction = {
     items: any[];
     /** Add an item (a new id is given to it). */
     add(item: object): Promise<void>;
+    /** Put these items in place of the list's (new ids are given to them). */
+    replace(items: object[]): Promise<void>;
   }): void;
 };
 
@@ -508,7 +512,10 @@ export type ItemAction = {
           >
             <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
               <path
-                d="M3 2.5h3v11H3zM7 2.5h3v11H7zM11 3.2l2.6-.7 2.4 10.6-2.6.7z"
+                [attr.d]="
+                  action.icon ??
+                  'M3 2.5h3v11H3zM7 2.5h3v11H7zM11 3.2l2.6-.7 2.4 10.6-2.6.7z'
+                "
               />
             </svg>
             <span class="button-label">{{ action.label }}</span>
@@ -765,6 +772,22 @@ export class ArrayTypeComponent
         this.collapsed = this.collapsible ? false : this.collapsed;
         const id = await generateId();
         this.add(undefined, { ...item, id, expanded: false });
+      },
+      replace: async (items) => {
+        const ids = await Promise.all(items.map(() => generateId()));
+        for (let i = (this.model?.length ?? 0) - 1; i >= 0; i--) {
+          this.remove(i, { markAsDirty: false });
+        }
+        items.forEach((item, i) =>
+          this.add(
+            undefined,
+            this.inline
+              ? { ...item, id: ids[i] }
+              : { ...item, id: ids[i], expanded: false },
+            { markAsDirty: false },
+          ),
+        );
+        this.formControl.markAsDirty();
       },
     });
   }

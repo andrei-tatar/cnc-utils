@@ -13,6 +13,7 @@ import {
 } from './variables';
 import { resolveStock } from '../../cam/stock';
 import { parsePointList } from '../../cam/point-patterns';
+import { parsePathData } from '../../cam/path-commands';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { OmitUnion } from '../../util';
 import { ToolOverrides } from './tools/feeds-and-speeds';
@@ -223,7 +224,7 @@ function withTabs(shape: any, profileTabs: Map<string, any>) {
 }
 
 function migrateShape(shape: any) {
-  shape = migrateShapePoints(migrateBoolean(shape));
+  shape = migratePathData(migrateShapePoints(migrateBoolean(shape)));
   if (!Array.isArray(shape?.transforms)) {
     return shape;
   }
@@ -287,6 +288,25 @@ function migrateShapePoints(shape: any) {
     return shape;
   }
   return { ...shape, [key]: pointItems(shape[key], shape.id) };
+}
+
+/**
+ * A path data shape's path was text (`data`); now it's a list of commands,
+ * each number its own field. Text that doesn't parse keeps what's read
+ * before the error, which is what was drawn. Ids come from the shape's.
+ */
+function migratePathData(shape: any) {
+  if (shape?.type !== 'path-data' || typeof shape.data !== 'string') {
+    return shape;
+  }
+  const { data, ...rest } = shape;
+  return {
+    ...rest,
+    pathCommands: parsePathData(data).commands.map((command, i) => ({
+      id: `${shape.id}-${i}`,
+      ...command,
+    })),
+  };
 }
 
 /**

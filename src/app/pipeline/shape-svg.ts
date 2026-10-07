@@ -1,4 +1,5 @@
 import { boxPanelOutline } from '../../cam/box-joints';
+import { pathCommandsData } from '../../cam/path-commands';
 import { finitePoints, pathData } from '../../cam/point-patterns';
 import { ShapeParameters } from '../model-editor/model';
 
@@ -23,7 +24,7 @@ export function createSvgFromShape(t: SvgShapeParameters) {
     case 'line':
       return `<svg><line x1="0" y1="0" x2="${t.width}" y2="0" /></svg>`;
     case 'path-data':
-      return `<svg><path d="${t.data}" /></svg>`;
+      return `<svg><path d="${pathCommandsData(t.pathCommands)}" /></svg>`;
     case 'slot': {
       const width = Math.max(0, t.slotWidth);
       const length = Math.max(width, t.slotLength);

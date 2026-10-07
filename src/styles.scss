@@ -138,11 +138,77 @@ app-model-editor .code-input .form-control {
   font-variant-ligatures: none;
 }
 
+// A path command: its letter, then its numbers (each after its name),
+// wrapping onto more lines for the curves and arcs.
+app-model-editor .path-command-row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+
+  > .path-command {
+    flex: 0 0 9.5rem;
+    min-width: 0;
+  }
+
+  > .path-parameter {
+    flex: 1 1 6.5rem;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+
+    &::before {
+      line-height: 30px;
+      font-family: var(--code-font);
+      font-size: 0.8rem;
+      color: var(--bs-secondary-color);
+    }
+
+    > * {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  @each $name,
+    $label
+      in (
+        x1: "x1",
+        y1: "y1",
+        x2: "x2",
+        y2: "y2",
+        x: "x",
+        y: "y",
+        rx: "rx",
+        ry: "ry",
+        rotation: "rot"
+      )
+  {
+    > .path-parameter--#{$name}::before {
+      content: $label;
+    }
+  }
+
+  > .path-flag {
+    flex: 0 0 auto;
+    line-height: 30px;
+    font-size: 0.8rem;
+
+    .form-check {
+      margin: 0;
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  }
+}
+
 // A variable: "name  value" on one row, without labels; a boolean's shape:
 // "operation  shape" (the first shape has no operation); a point: "x  y".
 app-model-editor .variable-row,
 app-model-editor .operand-row,
-app-model-editor .point-row {
+app-model-editor .point-row,
+app-model-editor .path-command-row {
   display: flex;
   align-items: flex-start;
   gap: 6px;
