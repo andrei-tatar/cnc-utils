@@ -302,6 +302,10 @@ impl Graph {
     }
 }
 
+/// How far apart (mm) the ends of pieces may be and still be joined, where
+/// they don't meet exactly (see stitch).
+const HEAL: f64 = 1e-2;
+
 /// Joins directed pieces end to end into closed loops.
 fn stitch(kept: &[Seg]) -> Vec<Pline> {
     // Ends meet exactly (they come from the graph's nodes), but match them
@@ -342,7 +346,29 @@ fn stitch(kept: &[Seg]) -> Vec<Pline> {
                     used[e] = true;
                     chain.push(kept[e]);
                 }
-                None => break,
+                None => {
+                    // Pieces crossing at a glancing angle meet where their
+                    // crossing was worked out, which can be off along them
+                    // by more than EPS: carry on from the nearest end that
+                    // close (or close the loop), rather than lose it.
+                    let end = last.end();
+                    if (end - kept[first].start()).length() <= HEAL {
+                        closed = true;
+                        break;
+                    }
+                    let nearest = (0..kept.len())
+                        .filter(|&e| !used[e])
+                        .map(|e| (e, (kept[e].start() - end).length()))
+                        .filter(|&(_, d)| d <= HEAL)
+                        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+                    match nearest {
+                        Some((e, _)) => {
+                            used[e] = true;
+                            chain.push(kept[e]);
+                        }
+                        None => break,
+                    }
+                }
             }
         }
         if !closed {
@@ -350,11 +376,97 @@ fn stitch(kept: &[Seg]) -> Vec<Pline> {
         }
         let pline = closed_from(&chain);
         let cleaned = pline.remove_redundant(EPS).unwrap_or(pline);
-        if cleaned.vertex_count() >= 2 && area(&cleaned).abs() > EPS * EPS {
-            loops.push(cleaned);
+        loops.push(cleaned);
+    }
+    clean_loops(loops)
+}
+
+/// Sub-loops narrower than this (area over length, mm) are slivers of no
+/// width: a loop's way out and back along itself.
+const NO_WIDTH: f64 = 1e-5;
+
+/**
+ * Loops split where they pass a point twice (a loop pinched into two, or
+ * with a spike out and back along itself), the parts of no width dropped.
+ * A pinch makes CavalierContours' offsets fall back to slower ones, and a
+ * spike leaves pieces too thin to classify by a hair either side of them.
+ */
+pub fn clean_loops(loops: Vec<Pline>) -> Vec<Pline> {
+    let mut out = Vec::with_capacity(loops.len());
+    for pline in loops {
+        if !pline.is_closed() || pline.vertex_count() < 2 {
+            continue;
+        }
+        for part in split_pinches(&pline) {
+            let a = area(&part).abs();
+            let length = segments(&part).iter().map(|s| s.length()).sum::<f64>();
+            if part.vertex_count() >= 2 && a > EPS * EPS && a > NO_WIDTH * length {
+                out.push(part);
+            }
         }
     }
-    loops
+    out
+}
+
+/// A closed loop cut into loops that each pass every point once.
+fn split_pinches(pline: &Pline) -> Vec<Pline> {
+    let vertices: Vec<Vertex> = pline.iter_vertexes().collect();
+    let cell = 4.0 * EPS;
+    let key = |p: V2| ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
+    let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    let mut stack: Vec<Vertex> = Vec::with_capacity(vertices.len());
+    let mut parts = Vec::new();
+    let find = |grid: &HashMap<(i64, i64), Vec<usize>>, stack: &[Vertex], p: V2| {
+        let (gx, gy) = key(p);
+        let mut best: Option<usize> = None;
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for &i in grid.get(&(gx + dx, gy + dy)).into_iter().flatten() {
+                    if i < stack.len() && (stack[i].pos() - p).length() <= EPS {
+                        best = Some(best.map_or(i, |b: usize| b.min(i)));
+                    }
+                }
+            }
+        }
+        best
+    };
+    // Each vertex in turn, and the first again to close the loop.
+    for (k, v) in vertices.iter().chain(vertices.first()).enumerate() {
+        let closing = k == vertices.len();
+        match find(&grid, &stack, v.pos()) {
+            Some(i) => {
+                // Back at a point already passed: what lies between is a
+                // loop of its own.
+                let part: Vec<Vertex> = stack.drain(i..).collect();
+                if part.len() >= 2 {
+                    let mut p = Pline::with_capacity(part.len(), true);
+                    for w in part {
+                        p.add(w.x, w.y, w.bulge);
+                    }
+                    parts.push(p);
+                }
+                if !closing {
+                    stack.push(*v);
+                    let n = stack.len() - 1;
+                    grid.entry(key(v.pos())).or_default().push(n);
+                }
+            }
+            None if !closing => {
+                stack.push(*v);
+                let n = stack.len() - 1;
+                grid.entry(key(v.pos())).or_default().push(n);
+            }
+            None => {}
+        }
+    }
+    if stack.len() >= 2 {
+        let mut p = Pline::with_capacity(stack.len(), true);
+        for w in stack {
+            p.add(w.x, w.y, w.bulge);
+        }
+        parts.push(p);
+    }
+    parts
 }
 
 /// The parts of open polylines inside (or outside) a region.
@@ -444,6 +556,59 @@ pub(crate) mod tests {
         p.add(cx - r, cy, 1.0);
         p.add(cx + r, cy, 1.0);
         p
+    }
+
+    fn pline(points: &[(f64, f64)]) -> Pline {
+        let mut p = Pline::with_capacity(points.len(), true);
+        for &(x, y) in points {
+            p.add(x, y, 0.0);
+        }
+        p
+    }
+
+    #[test]
+    fn spikes_of_no_width_go() {
+        // A square with a spike out of its top edge and back.
+        let spiked = pline(&[
+            (0.0, 0.0),
+            (10.0, 0.0),
+            (10.0, 10.0),
+            (5.0, 10.0),
+            (5.0, 13.0),
+            (5.0, 10.0 + 1e-7),
+            (5.0, 10.0),
+            (0.0, 10.0),
+        ]);
+        let clean = clean_loops(vec![spiked]);
+        assert_eq!(clean.len(), 1);
+        assert!((area(&clean[0]) - 100.0).abs() < 1e-9);
+        assert!(clean[0].iter_vertexes().all(|v| v.y <= 10.0 + EPS));
+    }
+
+    #[test]
+    fn pinched_loops_come_apart() {
+        // Two squares meeting at a corner, as one loop through it twice.
+        let eight = pline(&[
+            (0.0, 0.0),
+            (5.0, 0.0),
+            (5.0, 5.0),
+            (10.0, 5.0),
+            (10.0, 10.0),
+            (5.0, 10.0),
+            (5.0, 5.0),
+            (0.0, 5.0),
+        ]);
+        let parts = clean_loops(vec![eight]);
+        assert_eq!(parts.len(), 2);
+        for p in &parts {
+            assert!((area(p) - 25.0).abs() < 1e-9);
+        }
+        // Booleans come out clean the same way.
+        let touching = normalize(
+            &[rect(0.0, 0.0, 5.0, 5.0), rect(5.0, 5.0, 10.0, 10.0)],
+            FillRule::NonZero,
+        );
+        assert_eq!(touching.len(), 2);
     }
 
     pub fn total_area(loops: &[Pline]) -> f64 {
