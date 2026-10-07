@@ -1,0 +1,19 @@
+[package]
+name = "cnc-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "Geometry for cnc-utils: CavalierContours offsets and region booleans over line and arc polylines, as WebAssembly."
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cavalier_contours = "0.6"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
