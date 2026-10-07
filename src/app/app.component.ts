@@ -45,7 +45,8 @@ export class AppComponent {
   private readonly viewer = viewChild.required(ViewerComponent);
 
   constructor() {
-    // Frame a project that was just opened (its shapes are still coming).
+    // Show a project that was just opened from the top, framed (its shapes
+    // are still coming).
     this.store.replaced$
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.viewer().refit());

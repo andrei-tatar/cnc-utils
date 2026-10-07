@@ -869,11 +869,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Frame the content again, and keep framing it as it arrives or changes
-   * until the user moves the camera (as on a first visit): for a project
-   * that was just opened, whose shapes and toolpaths are still coming.
+   * Look from the top and frame the content again, and keep framing it as
+   * it arrives or changes until the user moves the camera (as on a first
+   * visit): for a project that was just opened, whose shapes and toolpaths
+   * are still coming.
    */
   refit() {
+    this.viewFromTop();
     this.autoFit = true;
     this.fittedBox = '';
     this.requestRender();
