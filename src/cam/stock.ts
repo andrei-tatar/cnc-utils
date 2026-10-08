@@ -1,5 +1,7 @@
+import { polygonsBounds } from './arcs';
 import { DEFAULT_WOOD } from './feeds-speeds';
 import { anchorPoint, Box, BoxAnchor, GcodeOptions } from './gcode-options';
+import { CamPolygon } from './types';
 
 /** The material being cut, and where the G-code's zero is on it. */
 export type StockOptions = {
@@ -34,6 +36,41 @@ export const DEFAULT_STOCK: StockOptions = {
   xyZero: 'design',
   material: DEFAULT_WOOD,
 };
+
+/**
+ * The stock's corner and size round everything cut: each entry's polygons
+ * grown by its `margin` (the tool's diameter: an outside profile's tool
+ * reaches that far past the line), out to whole millimetres. Null when
+ * there's nothing to go round.
+ */
+export function stockAround(
+  cuts: { polygons: CamPolygon[]; margin: number }[],
+): Pick<StockOptions, 'x' | 'y' | 'width' | 'height'> | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const { polygons, margin } of cuts) {
+    const box = polygonsBounds(polygons);
+    if (!(box.minX <= box.maxX && box.minY <= box.maxY)) continue;
+    minX = Math.min(minX, box.minX - margin);
+    minY = Math.min(minY, box.minY - margin);
+    maxX = Math.max(maxX, box.maxX + margin);
+    maxY = Math.max(maxY, box.maxY + margin);
+  }
+  if (!(minX <= maxX && minY <= maxY)) {
+    return null;
+  }
+  // Whole millimetres, but not one more for rounding noise (-1e-15).
+  const x = Math.floor(minX + 1e-6);
+  const y = Math.floor(minY + 1e-6);
+  return {
+    x,
+    y,
+    width: Math.ceil(maxX - 1e-6) - x,
+    height: Math.ceil(maxY - 1e-6) - y,
+  };
+}
 
 /** Complete stock settings from a (possibly partial) stored value. */
 export function resolveStock(

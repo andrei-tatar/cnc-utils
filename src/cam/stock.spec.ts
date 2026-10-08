@@ -1,5 +1,10 @@
 import { GCodeBuilder } from './gcode-builder';
-import { DEFAULT_STOCK, programOffset, stockOffset } from './stock';
+import {
+  DEFAULT_STOCK,
+  programOffset,
+  stockAround,
+  stockOffset,
+} from './stock';
 
 describe('stockOffset', () => {
   const stock = {
@@ -151,5 +156,52 @@ describe('programOffset', () => {
     expect(at('xmin-ymax')).toEqual({ x: -10, y: -50, z: 12 });
     // The middle (35, 35) to 100, 100.
     expect(at('xcenter-ycenter', 100, 100)).toEqual({ x: 65, y: 65, z: 12 });
+  });
+});
+
+describe('stockAround', () => {
+  const square = (x: number, y: number, size: number) => ({
+    vertices: [
+      { x, y },
+      { x: x + size, y },
+      { x: x + size, y: y + size },
+      { x, y: y + size },
+    ],
+    close: true,
+  });
+
+  it('goes round every cut, grown by its margin, out to whole millimetres', () => {
+    expect(
+      stockAround([
+        { polygons: [square(0, 0, 10)], margin: 6 },
+        { polygons: [square(50.5, 20, 10)], margin: 3.175 },
+      ]),
+    ).toEqual({ x: -6, y: -6, width: 70, height: 40 });
+  });
+
+  it('counts drill points and arcs', () => {
+    expect(
+      stockAround([
+        { polygons: [{ vertices: [{ x: 5, y: 5 }], close: false }], margin: 2 },
+        // A half circle above the line from (0, 0) to (10, 0).
+        {
+          polygons: [
+            {
+              vertices: [
+                { x: 10, y: 0, bulge: 1 },
+                { x: 0, y: 0 },
+              ],
+              close: false,
+            },
+          ],
+          margin: 0,
+        },
+      ]),
+    ).toEqual({ x: 0, y: 0, width: 10, height: 7 });
+  });
+
+  it('is null with nothing cut', () => {
+    expect(stockAround([])).toBeNull();
+    expect(stockAround([{ polygons: [], margin: 3 }])).toBeNull();
   });
 });

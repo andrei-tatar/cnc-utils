@@ -1,6 +1,7 @@
 import {
   Component,
   EventEmitter,
+  inject,
   Input,
   OnDestroy,
   OnInit,
@@ -13,9 +14,16 @@ import {
   FormGroup,
   ReactiveFormsModule,
 } from '@angular/forms';
-import { FormlyFieldConfig, FormlyModule } from '@ngx-formly/core';
-import { debounceTime, Subject, takeUntil } from 'rxjs';
+import {
+  FormlyFieldConfig,
+  FormlyFormOptions,
+  FormlyModule,
+} from '@ngx-formly/core';
+import { debounceTime, filter, firstValueFrom, Subject, takeUntil } from 'rxjs';
 import { emptyModel, ModelType, ModelFieldConfig } from './model';
+import { CamService } from '../services/cam.service';
+import { ModelStore } from '../services/model-store.service';
+import { EditorState } from './editor-state';
 
 @Component({
   selector: 'app-model-editor',
@@ -27,6 +35,7 @@ import { emptyModel, ModelType, ModelFieldConfig } from './model';
         [form]="form"
         [fields]="fields"
         [model]="model"
+        [options]="options"
       ></formly-form>
     </form>
   `,
@@ -36,6 +45,34 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
 
   form = new FormGroup({});
   fields: FormlyFieldConfig[] = ModelFieldConfig;
+  private readonly cam = inject(CamService);
+  private readonly store = inject(ModelStore);
+  readonly options: FormlyFormOptions = {
+    formState: {
+      fitStock: async () => {
+        const fit = await this.cam.stockToFit();
+        if (!fit) return;
+        // Through the store: the form hands it the stock turned on a moment
+        // later, and the form then follows the store. Wait for that (unless
+        // it's turned off again first), or it'd put the old size back.
+        await firstValueFrom(
+          this.store.model$.pipe(
+            filter(
+              (m) =>
+                !!m.stock?.enabled ||
+                !(this.form.value as Partial<ModelType>).stock?.enabled,
+            ),
+          ),
+        );
+        // Not from inside the store's own emission.
+        await new Promise((resolve) => setTimeout(resolve));
+        const model = this.store.value;
+        if (model.stock?.enabled) {
+          this.store.set({ ...model, stock: { ...model.stock, ...fit } });
+        }
+      },
+    } satisfies EditorState,
+  };
 
   @Input()
   model: ModelType = emptyModel();

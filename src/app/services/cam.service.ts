@@ -28,7 +28,12 @@ import {
   programPaths,
   programTime,
 } from '../pipeline/gcode';
-import { resolveStock, StockOptions, stockOffset } from '../../cam/stock';
+import {
+  resolveStock,
+  StockOptions,
+  stockAround,
+  stockOffset,
+} from '../../cam/stock';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { shapesToSvg } from '../../cam/svg-export';
 import { distinctJson } from '../pipeline/operators';
@@ -217,6 +222,30 @@ export class CamService implements ShapeExporter {
     }),
     distinctJson(),
   );
+
+  /**
+   * A stock corner and size that go round every operation's cuts, enabled
+   * or not (the shape each cuts, grown by its tool's diameter); null without
+   * any.
+   */
+  async stockToFit(): Promise<ReturnType<typeof stockAround>> {
+    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+    const model = await firstValueFrom(this.model$);
+    const operations = model.operations ?? [];
+    const cuts = await Promise.all(
+      operations.map(async (operation) => {
+        const shapeId = borrowedShapeId(operation, operations);
+        if (!shapeId) return null;
+        const shapes = await firstValueFrom(this.shapes.byId(shapeId));
+        const tool = model.tools.find((t) => t.id === operation.toolId);
+        return {
+          polygons: shapes.flatMap((s) => s.polygons),
+          margin: tool?.diameter ?? 0,
+        };
+      }),
+    );
+    return stockAround(cuts.filter((c) => !!c));
+  }
 
   /** Roughly how long the job takes, in all and per operation. */
   readonly time$: Observable<TimeSummary> = combineLatest([
