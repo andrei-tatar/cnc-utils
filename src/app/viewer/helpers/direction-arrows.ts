@@ -52,11 +52,14 @@ export class DirectionArrows {
   /** Candidates of the levels built so far, in level order. */
   private readonly positions: Vector3[] = [];
   private readonly rotations: Quaternion[] = [];
+  /** Index of the point ending the segment each candidate lies on. */
+  private readonly segments: number[] = [];
   /** Subdivision level of each instance (0 = the path's midpoint). */
   private readonly levels: number[] = [];
   /** Number of candidates up to and including each built level. */
   private readonly levelEnds: number[] = [];
-  private colorAt: ((position: Vector3) => Color) | null = null;
+  private colorAt: ((position: Vector3, segment: number) => Color) | null =
+    null;
   private _shown = true;
 
   constructor(
@@ -162,9 +165,10 @@ export class DirectionArrows {
 
   /**
    * Give each arrow its own colour (multiplied with the material's), now
-   * and for the levels built later.
+   * and for the levels built later: `colorAt` gets where it is and the index
+   * of the point ending the segment it's on.
    */
-  colorBy(colorAt: (position: Vector3) => Color) {
+  colorBy(colorAt: (position: Vector3, segment: number) => Color) {
     this.colorAt = colorAt;
     this.colorRange(0, this.positions.length);
   }
@@ -224,7 +228,10 @@ export class DirectionArrows {
       return;
     }
     for (let i = from; i < to; i++) {
-      this.mesh.setColorAt(i, this.colorAt(this.positions[i]));
+      this.mesh.setColorAt(
+        i,
+        this.colorAt(this.positions[i], this.segments[i]),
+      );
     }
     this.mesh.instanceColor!.needsUpdate = true;
   }
@@ -247,6 +254,7 @@ export class DirectionArrows {
     }
 
     this.levels.push(level);
+    this.segments.push(hi);
     this.positions.push(a.clone().lerp(b, (s - cumulative[lo]) / segment));
     this.rotations.push(
       new Quaternion().setFromUnitVectors(UP, b.clone().sub(a).normalize()),

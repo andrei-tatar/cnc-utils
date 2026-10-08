@@ -92,7 +92,7 @@ The editor UI is **entirely generated from ngx-formly field configs** — there 
 
 ### Viewer (`src/app/viewer/viewer.component.ts`)
 
-Three.js renderer that draws `CamShape[]` (shape outlines, one line object per shape; tabs as cyan blocks from their top down to the stock's bottom, or the deepest cut) and `CamPath[]` (toolpaths, travel vs. carve colored differently; paths of the same operation, move type and shape are drawn as one `LineSegments`, with direction arrows per path), the stock box and the G-code's zero, with a grid helper. It also lists the job checks, draws clamps red, measures between two clicks (snapping to shape vertices; M, Esc) and shows the simulated material as a lit solid in place of the toolpaths and shapes (S). Pure presentation — it consumes the observables from `CamService`.
+Three.js renderer that draws `CamShape[]` (shape outlines, one line object per shape; tabs as cyan blocks from their top down to the stock's bottom, or the deepest cut) and `CamPath[]` (toolpaths, travel vs. carve colored differently, cuts coloured by depth or by feed rate — `CamPath.feeds`, each move's feed from `toPaths` — toggled by clicking the HUD's legend or C, kept in localStorage, `helpers/path-colors.ts`; paths of the same operation, move type and shape are drawn as one `LineSegments`, with direction arrows per path), the stock box and the G-code's zero, with a grid helper. It also lists the job checks, draws clamps red, measures between two clicks (snapping to shape vertices; M, Esc) and shows the simulated material as a lit solid in place of the toolpaths and shapes (S). Pure presentation — it consumes the observables from `CamService`.
 
 ## Conventions & gotchas
 

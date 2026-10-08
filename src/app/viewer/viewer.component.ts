@@ -68,7 +68,15 @@ import {
 
 import { AdaptiveGrid } from './helpers/adaptive-grid';
 import { loadView, saveView } from './helpers/saved-view';
-import { DEPTH_GRADIENT_CSS, depthColor } from './helpers/depth-colors';
+import {
+  DEPTH_GRADIENT_CSS,
+  depthColor,
+  FEED_GRADIENT_CSS,
+  feedColor,
+  loadPathColoring,
+  PathColoring,
+  savePathColoring,
+} from './helpers/path-colors';
 import {
   formatMm,
   GridLabels,
@@ -221,17 +229,30 @@ const EMPTY_VIEW_SIZE = 400;
       </div>
     }
     <div class="hud">
+      <!-- First: the readouts after it change width as the pointer moves,
+           which mustn't move the legend from under it. -->
+      <button
+        #pathLegend
+        type="button"
+        class="hud_legend"
+        hidden
+        [title]="
+          coloring === 'depth'
+            ? 'Toolpaths coloured by depth: click for feed rate (C)'
+            : 'Toolpaths coloured by feed rate: click for depth (C)'
+        "
+        (click)="toggleColoring()"
+      >
+        <span #legendFrom></span>
+        <span #legendBar class="hud_legend_bar"></span>
+        <span #legendTo></span>
+      </button>
       <span #cursorReadout class="hud_cursor"></span>
       <span #measureReadout class="hud_measure"></span>
       @if (timeText) {
         <span class="hud_time" [title]="timeDetails">≈ {{ timeText }}</span>
       }
       <span #gridReadout class="hud_grid"></span>
-      <span #depthLegend class="hud_depth" hidden>
-        <span>depth 0</span>
-        <span class="hud_depth_bar" [style.background]="DEPTH_GRADIENT"></span>
-        <span #deepestReadout></span>
-      </span>
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -398,17 +419,28 @@ const EMPTY_VIEW_SIZE = 400;
       color: #ffd54f;
     }
 
-    .hud_depth {
+    .hud_legend {
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      pointer-events: auto;
+
+      &:hover {
+        color: #fff;
+      }
 
       &[hidden] {
         display: none;
       }
     }
 
-    .hud_depth_bar {
+    .hud_legend_bar {
       display: inline-block;
       width: 64px;
       height: 8px;
@@ -455,15 +487,27 @@ export class ViewerComponent implements OnInit, OnDestroy {
   @ViewChild('gridReadout', { static: true })
   private gridReadout!: ElementRef<HTMLElement>;
 
-  @ViewChild('depthLegend', { static: true })
-  private depthLegend!: ElementRef<HTMLElement>;
+  @ViewChild('pathLegend', { static: true })
+  private pathLegend!: ElementRef<HTMLElement>;
 
-  @ViewChild('deepestReadout', { static: true })
-  private deepestReadout!: ElementRef<HTMLElement>;
+  @ViewChild('legendFrom', { static: true })
+  private legendFrom!: ElementRef<HTMLElement>;
 
-  readonly DEPTH_GRADIENT = DEPTH_GRADIENT_CSS;
-  /** Z of the deepest cut in the job (≤ 0); cut colours scale to it. */
+  @ViewChild('legendBar', { static: true })
+  private legendBar!: ElementRef<HTMLElement>;
+
+  @ViewChild('legendTo', { static: true })
+  private legendTo!: ElementRef<HTMLElement>;
+
+  /** What the cuts' colours show: their depth or their feed rate. */
+  coloring: PathColoring = loadPathColoring();
+  private coloring$ = new BehaviorSubject(this.coloring);
+  /** Z of the deepest cut in the job (≤ 0); depth colours scale to it. */
   private deepest$ = new BehaviorSubject(0);
+  /** The job's slowest and fastest cuts (mm/min); feed colours scale to them. */
+  private feeds$ = new BehaviorSubject({ min: 0, max: 0 });
+  /** Whether the job cuts at all (the legend shows only then). */
+  private hasCuts = false;
 
   /** Shapes and toolpaths; its bounding box is what "fit to view" frames. */
   private content = new Group();
@@ -923,7 +967,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.paths$
       .pipe(
         switchMap((paths$) => paths$),
-        tap((paths) => this.updateDeepest(paths)),
+        tap((paths) => this.updateColorScales(paths)),
         map(groupPaths),
         scan(
           (ctx, groups) =>
@@ -961,7 +1005,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                       arrowMaterial: travel
                         ? arrowTravelMaterial
                         : arrowCarveMaterial,
-                      colorByDepth: !travel,
+                      colored: !travel,
                       highlight$: isHighlighted$,
                     }).pipe(
                       share({
@@ -1106,20 +1150,65 @@ export class ViewerComponent implements OnInit, OnDestroy {
     }, 50);
   }
 
-  /** Find the deepest cut and update the colour scale and legend. */
-  private updateDeepest(paths: CamPath[]) {
+  /**
+   * Find the deepest cut and the range of feeds, and update the colour
+   * scales and legend.
+   */
+  private updateColorScales(paths: CamPath[]) {
     let deepest = 0;
+    let min = Infinity;
+    let max = -Infinity;
     for (const path of paths) {
       if (path.type !== 'carve') continue;
       for (const point of path.points) {
         if (point.z < deepest) deepest = point.z;
       }
+      // The first point's feed is the move's before the path.
+      const feeds = path.feeds ?? [];
+      for (let i = 1; i < feeds.length; i++) {
+        if (feeds[i] < min) min = feeds[i];
+        if (feeds[i] > max) max = feeds[i];
+      }
     }
     if (deepest !== this.deepest$.value) {
       this.deepest$.next(deepest);
     }
-    this.depthLegend.nativeElement.hidden = deepest >= 0;
-    this.deepestReadout.nativeElement.textContent = `${formatMm(deepest)} mm`;
+    if (min > max) min = max = 0;
+    const feeds = this.feeds$.value;
+    if (min !== feeds.min || max !== feeds.max) {
+      this.feeds$.next({ min, max });
+    }
+    this.hasCuts = paths.some((p) => p.type === 'carve');
+    this.updateLegend();
+  }
+
+  /** The legend of the cuts' colours, for the coloring shown. */
+  private updateLegend() {
+    this.pathLegend.nativeElement.hidden = !this.hasCuts;
+    const from = this.legendFrom.nativeElement;
+    const bar = this.legendBar.nativeElement;
+    const to = this.legendTo.nativeElement;
+    if (this.coloring === 'depth') {
+      from.textContent = 'depth 0';
+      bar.style.background = DEPTH_GRADIENT_CSS;
+      to.textContent = `${formatMm(this.deepest$.value)} mm`;
+    } else {
+      const { min, max } = this.feeds$.value;
+      const single = min === max;
+      from.textContent = single ? 'feed' : `feed ${Math.round(min)}`;
+      bar.style.background = single
+        ? feedColor(max, min, max).getStyle()
+        : FEED_GRADIENT_CSS;
+      to.textContent = `${Math.round(max)} mm/min`;
+    }
+  }
+
+  /** Colours the cuts by feed rate instead of depth, or back. */
+  toggleColoring() {
+    this.coloring = this.coloring === 'depth' ? 'feed' : 'depth';
+    savePathColoring(this.coloring);
+    this.coloring$.next(this.coloring);
+    this.updateLegend();
   }
 
   /**
@@ -1218,6 +1307,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
       this.toggleMeasure();
     } else if (event.key === 's' || event.key === 'S') {
       this.toggleSimulate();
+    } else if (event.key === 'c' || event.key === 'C') {
+      this.toggleColoring();
     } else if (event.key === 'Escape' && this.measuring) {
       this.toggleMeasure();
     }
@@ -1427,7 +1518,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
     material: Material;
     materialHighlight: Material;
     arrowMaterial: Material;
-    colorByDepth: boolean;
+    /** Coloured by depth or feed rate (see `coloring`). */
+    colored: boolean;
     highlight$: Observable<boolean>;
   }) {
     return timer(0).pipe(
@@ -1443,12 +1535,16 @@ export class ViewerComponent implements OnInit, OnDestroy {
               0,
             );
             const positions = new Float32Array(segments * 6);
+            // Each segment's feed rate (NaN where it isn't known).
+            const feeds = new Float32Array(segments);
             let at = 0;
+            let segment = 0;
             for (const path of o.paths) {
               const points = path.points;
               for (let i = 1; i < points.length; i++) {
                 const a = points[i - 1];
                 const b = points[i];
+                feeds[segment++] = path.feeds?.[i] ?? NaN;
                 positions[at++] = a.x;
                 positions[at++] = a.y;
                 positions[at++] = a.z;
@@ -1481,23 +1577,43 @@ export class ViewerComponent implements OnInit, OnDestroy {
             }
             this.layoutArrowsSoon();
 
-            if (o.colorByDepth) {
-              // Recolour whenever the job's deepest cut changes.
+            if (o.colored) {
+              // Recolour whenever the coloring or the job's scale for it
+              // (the deepest cut, the range of feeds) changes.
               const colors = new Float32Array(positions.length);
               geometry.setAttribute('color', new BufferAttribute(colors, 3));
               const color = new Color();
+              const scale$ = this.coloring$.pipe(
+                switchMap((coloring) =>
+                  coloring === 'depth'
+                    ? this.deepest$.pipe(
+                        map(
+                          (deepest) => (_feed: number, z: number) =>
+                            depthColor(z, deepest, color),
+                        ),
+                      )
+                    : this.feeds$.pipe(
+                        map(
+                          ({ min, max }) =>
+                            (feed: number, _z: number) =>
+                              feedColor(feed || max, min, max, color),
+                        ),
+                      ),
+                ),
+              );
               clean.add(
-                this.deepest$.subscribe((deepest) => {
+                scale$.subscribe((colorOf) => {
                   for (let i = 0; i < positions.length; i += 3) {
-                    depthColor(positions[i + 2], deepest, color).toArray(
-                      colors,
-                      i,
-                    );
+                    // Both ends of a segment share its feed.
+                    const feed = feeds[Math.floor(i / 6)];
+                    colorOf(feed, positions[i + 2]).toArray(colors, i);
                   }
                   geometry.attributes['color'].needsUpdate = true;
-                  for (const a of arrows) {
-                    a.colorBy((p) => depthColor(p.z, deepest, color));
-                  }
+                  o.paths.forEach((path, k) =>
+                    arrows[k].colorBy((p, segment) =>
+                      colorOf(path.feeds?.[segment] ?? NaN, p.z),
+                    ),
+                  );
                   this.requestRender();
                 }),
               );

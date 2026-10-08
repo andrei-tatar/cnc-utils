@@ -76,7 +76,11 @@ export function reuseUnchangedPaths(): MonoTypeOperatorFunction<CamPath[]> {
             const key = `${group}|${n}`;
             const old = previous.get(key);
             const kept =
-              old && samePoints(old.points, path.points) ? old : path;
+              old &&
+              samePoints(old.points, path.points) &&
+              sameFeeds(old.feeds, path.feeds)
+                ? old
+                : path;
             byKey.set(key, kept);
             return kept;
           });
@@ -97,4 +101,9 @@ function samePoints(a: CamPoint3[], b: CamPoint3[]) {
     }
   }
   return true;
+}
+
+function sameFeeds(a: number[] | undefined, b: number[] | undefined) {
+  if (!a || !b) return a === b;
+  return a.length === b.length && a.every((feed, i) => feed === b[i]);
 }

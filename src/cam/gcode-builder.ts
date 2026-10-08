@@ -335,7 +335,8 @@ export class GCodeBuilder {
   /**
    * The moves the G-code makes, as paths for the preview: what parsing
    * `build(options)` back would give, without writing the text. A new path
-   * starts whenever the move type or the source shape/operation changes.
+   * starts whenever the move type or the source shape/operation changes;
+   * cuts carry each move's feed rate.
    */
   toPaths(options: Partial<GcodeOptions> = {}): CamPath[] {
     const paths: CamPath[] = [];
@@ -343,6 +344,7 @@ export class GCodeBuilder {
     let sourceShapeId = 'unknown';
     let sourceOperationId: string | undefined = undefined;
     let last: CamPoint3 = { x: 0, y: 0, z: 0 };
+    let feed = resolveGcodeOptions(options).carveFeedRate;
 
     this.walk(options, {
       line: () => {},
@@ -350,7 +352,8 @@ export class GCodeBuilder {
         if (kind === 'shape') sourceShapeId = id;
         else sourceOperationId = id || undefined;
       },
-      move: (code, _, at) => {
+      move: (code, changed, at) => {
+        if (changed.feed !== undefined) feed = changed.feed;
         const type = code === 'G0' ? 'travel' : 'carve';
         if (
           !path ||
@@ -360,9 +363,11 @@ export class GCodeBuilder {
         ) {
           if (path) paths.push(path);
           path = { points: [last], sourceShapeId, sourceOperationId, type };
+          if (type === 'carve') path.feeds = [feed];
         }
         last = at;
         path.points.push(at);
+        path.feeds?.push(feed);
       },
     });
 
