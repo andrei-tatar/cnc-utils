@@ -81,9 +81,19 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
   modelChange = new EventEmitter<ModelType>(true);
 
   ngOnInit() {
-    this.form.valueChanges
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(() => revalidate(this.form));
+    // Once per task, not per event: building the form emits a value for
+    // every control added or removed, and revalidating the whole form each
+    // time made loading a big project take seconds. A microtask still runs
+    // before change detection shows the errors.
+    let queued = false;
+    this.form.valueChanges.pipe(takeUntil(this.destroy$)).subscribe(() => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        revalidate(this.form);
+      });
+    });
 
     this.form.valueChanges
       .pipe(debounceTime(100), takeUntil(this.destroy$))

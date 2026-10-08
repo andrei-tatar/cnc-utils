@@ -21,8 +21,57 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap"
     />
+    <!-- The splash shown until the app renders (Angular replaces what's in
+         <app-root>). Inline, so it's up as soon as the page arrives. The
+         spinner turns by transform, which keeps going while the app's
+         first render keeps the main thread busy. -->
+    <style>
+      .app-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #eef1f5;
+        color: #5b6475;
+        font:
+          14px Roboto,
+          "Helvetica Neue",
+          sans-serif;
+      }
+      .app-splash_logo {
+        width: 64px;
+        height: 64px;
+      }
+      .app-splash_spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid #dde2ea;
+        border-top-color: #2f80ed;
+        border-radius: 50%;
+        animation: app-splash-spin 0.8s linear infinite;
+      }
+      @keyframes app-splash-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .app-splash_spinner {
+          animation-duration: 2.4s;
+        }
+      }
+    </style>
   </head>
   <body class="mat-typography">
-    <app-root></app-root>
+    <app-root>
+      <div class="app-splash" role="status">
+        <img class="app-splash_logo" src="favicon.svg" alt="" />
+        <div class="app-splash_spinner" aria-hidden="true"></div>
+        <div>Loading CNC Utils…</div>
+      </div>
+    </app-root>
   </body>
 </html>
