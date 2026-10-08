@@ -12,7 +12,7 @@ import {
 import { resolvedItem } from '../variables/field';
 import { rootModel } from '../shapes/describe';
 import type { ToolType } from '../tools';
-import { depthPerStep } from './depth-steps';
+import { depthPerStep, totalDepth } from './depth-steps';
 
 /** Flutes a tool has when it doesn't say. */
 export const DEFAULT_FLUTES = 2;
@@ -51,25 +51,32 @@ export function operationCut(
     return { kind: 'mill', diameter, flutes, depth, width: diameter };
   }
 
-  // How deep each pass goes and how much of the bit's width it takes.
+  // How deep each pass goes, how much of the bit's width it takes and how
+  // deep the bit goes in all (a V-bit or ball nose cuts its widest there).
   let depth: number;
+  let reach = 0;
   let engagement = 1;
   switch (op.type) {
     case 'pocket':
     case 'flat':
       depth = depthPerStep(op);
+      reach = totalDepth(op);
       engagement = op.toolEngagement ?? 1;
       break;
-    case 'rest':
-      depth = depthPerStep(borrowed(op.pocketOperationId) ?? {});
+    case 'rest': {
+      const pocket = borrowed(op.pocketOperationId) ?? {};
+      depth = depthPerStep(pocket);
+      reach = totalDepth(pocket);
       engagement = op.toolEngagement ?? 1;
       break;
+    }
     case 'v-carve-clear':
       depth = op.depthPerStep ?? 0;
       engagement = op.toolEngagement ?? 1;
       break;
     case 'helix':
       depth = op.pitch ?? 0;
+      reach = op.depth ?? 0;
       break;
     case 'v-carve':
       depth = vCarveDepth(op, tool);
@@ -90,17 +97,19 @@ export function operationCut(
         flutes,
         depth,
         width: Math.min(cutting, width + (tool?.tipDiameter ?? 0) / 2),
+        ...edgeOf(tool, cutting),
       };
     }
     default:
       // Profiles and flat plugs cut a slot each step.
       depth = depthPerStep(op);
+      reach = totalDepth(op);
   }
   if (op.type === 'flat' && !(depth > 0)) {
     // Surfacing a skim: a light pass.
     depth = 0.5;
   }
-  const cutting = widthAt(tool, depth);
+  const cutting = widthAt(tool, Math.max(depth, reach));
   return {
     kind: 'mill',
     diameter: cutting,
@@ -109,7 +118,33 @@ export function operationCut(
     width: Math.min(1, Math.max(0, engagement)) * cutting,
     // A pocket's first pass and corners take the whole width.
     loadWidth: cutting,
+    ...edgeOf(tool, cutting),
   };
+}
+
+/**
+ * For a bit whose edge slopes in the cut, cutting `cutting` mm wide: its
+ * diameter (the chip load goes with it) and how much the slope thins the
+ * chip (`Cut.edge`). Nothing for an end mill's straight side.
+ */
+function edgeOf(
+  tool: Partial<ToolType> | undefined,
+  cutting: number,
+): { toolDiameter: number; edge: number } | {} {
+  const diameter = tool?.diameter ?? 0;
+  switch (tool?.bitType) {
+    case 'v-bit':
+      // The flank, V/2 off the axis, all the way up.
+      return {
+        toolDiameter: diameter,
+        edge: Math.cos(((tool.vAngle ?? 90) * Math.PI) / 360),
+      };
+    case 'ball-nose':
+      // Thickest at the top of the cut, where the ball is widest.
+      return { toolDiameter: diameter, edge: cutting / diameter };
+    default:
+      return {};
+  }
 }
 
 /** How wide the bit cuts `depth` deep. */

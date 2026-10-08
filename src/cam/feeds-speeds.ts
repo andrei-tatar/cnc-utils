@@ -162,7 +162,7 @@ export function woodMaterial(wood: Wood): Material {
 
 /**
  * A cut, as feeds and speeds see it. `diameter` is how wide the bit cuts
- * at `depth` (a V-bit's or ball nose's width there).
+ * (a V-bit's or ball nose's width at the depth it goes to).
  */
 export type Cut =
   | {
@@ -178,6 +178,19 @@ export type Cut =
        * pocket's corners and first pass take more than its stepover).
        */
       loadWidth?: number;
+      /**
+       * The bit's own diameter, when more than `diameter` (a V-bit or ball
+       * nose cutting with less than its full width): the chip load goes
+       * with it.
+       */
+      toolDiameter?: number;
+      /**
+       * How thick a chip the edge cuts for each mm fed per tooth, where it's
+       * thickest: 1 for a straight side, less where the edge slopes in the
+       * cut (a V-bit's flank, cos(V/2); a ball nose below its middle, its
+       * width there ÷ its diameter). Fed faster to make up, up to twice.
+       */
+      edge?: number;
     }
   | {
       kind: 'drill';
@@ -222,25 +235,38 @@ function milling(
   const flutes = Math.max(1, Math.round(cut.flutes) || 1);
   const depth = Math.max(cut.depth, 0);
   const width = clamp(cut.width, 0, d);
-  const base = material.chipLoad(d);
+  // The bit's own diameter: the chip load and its stiffness go with it.
+  const size = Math.max(cut.toolDiameter ?? 0, d);
+  const base = material.chipLoad(size);
 
-  // A light stepover makes a thinner chip than the feed per tooth: feed
-  // faster so it's as thick as it should be (to half again as fast).
-  let chip = base;
+  // A light stepover makes a thinner chip than the feed per tooth, and so
+  // does a sloping edge: feed faster so it's as thick as it should be (to
+  // half again as fast for the stepover, twice for both). `chip` is the
+  // feed per tooth, `edge` × `chip` the chip the edge cuts.
+  const edge = clamp(cut.edge ?? 1, 0.5, 1);
+  let stepover = 1;
   if (width > 0 && width < d / 2) {
-    chip = base * Math.min(1.5, 1 / Math.sqrt(1 - (1 - (2 * width) / d) ** 2));
+    stepover = Math.min(1.5, 1 / Math.sqrt(1 - (1 - (2 * width) / d) ** 2));
+  }
+  let chip = base * Math.min(2, stepover / edge);
+  if (edge < 0.95) {
+    notes.push(
+      `${times(Math.min(2, 1 / edge))} the feed per tooth: the sloping edge cuts a thinner chip`,
+    );
   }
 
-  // A cut heavier than the machine's slot at full chip load takes a
-  // thinner chip, down to where it would burn. The load goes with the
-  // chip's cross-section, chip × width × depth, and with the wood.
+  // A cut heavier than the machine's slot at full chip load (for a bit
+  // this size) takes a thinner chip, down to where it would burn. The load
+  // goes with the chip's cross-section, chip × width × depth, and with the
+  // wood.
   const loadWidth = Math.max(width, Math.min(cut.loadWidth ?? 0, d));
-  const slotDepth = Math.min(machine.slotDepth * d, machine.maxSlotDepth);
+  const slotDepth = Math.min(machine.slotDepth * size, machine.maxSlotDepth);
   const load =
-    ((chip / base) * loadWidth * depth * material.load) / (d * slotDepth);
+    ((chip * edge) / base) *
+    ((loadWidth * depth * material.load) / (size * slotDepth));
   if (load > 1) {
     const eased = chip / load;
-    const least = base * material.minChipShare;
+    const least = (base * material.minChipShare) / edge;
     if (eased < least) {
       // The depth that takes the full chip.
       const fits = depth / load;
@@ -345,6 +371,10 @@ function round(value: number, step: number) {
 
 function mm(value: number) {
   return `${Math.round(value * 1000) / 1000} mm`;
+}
+
+function times(value: number) {
+  return `${Math.round(value * 10) / 10}×`;
 }
 
 function percent(value: number) {

@@ -1,3 +1,4 @@
+import { Cut } from '../../../cam/feeds-speeds';
 import { operationCut } from './feeds-calculator';
 
 describe('operationCut', () => {
@@ -80,6 +81,38 @@ describe('operationCut', () => {
       [],
     );
     expect((unlimited as any).depth).toBeCloseTo(6, 6);
+  });
+
+  it('cuts a ball nose as wide as it goes in all, its edge sloping above', () => {
+    const ball = { diameter: 6, bitType: 'ball-nose' as const, flutes: 3 };
+    // A juice groove deeper than the radius: the ball's widest part cuts,
+    // the same as an end mill.
+    const groove = { type: 'profile', depthMode: 'total', depth: 4, steps: 2 };
+    expect(operationCut(groove, ball, [])).toEqual({
+      ...(operationCut(groove, endMill, []) as Cut & { kind: 'mill' }),
+      toolDiameter: 6,
+      edge: 1,
+    });
+    // Shallower: narrower, and its edge slopes where it's widest.
+    const cut = operationCut(
+      { type: 'profile', depthMode: 'total', depth: 1, steps: 2 },
+      ball,
+      [],
+    ) as any;
+    expect(cut.depth).toBe(0.5);
+    expect(cut.diameter).toBeCloseTo(2 * Math.sqrt(5), 6);
+    expect(cut.toolDiameter).toBe(6);
+    expect(cut.edge).toBeCloseTo(Math.sqrt(5) / 3, 6);
+  });
+
+  it('reads a V-bit’s edge as sloping V/2 off its axis', () => {
+    const cut = operationCut(
+      { type: 'v-carve', maxDepth: 2 },
+      { diameter: 12, bitType: 'v-bit', vAngle: 60, tipDiameter: 0 },
+      [],
+    ) as any;
+    expect(cut.toolDiameter).toBe(12);
+    expect(cut.edge).toBeCloseTo(Math.cos(Math.PI / 6), 6);
   });
 
   it('drills a peck at a time', () => {
