@@ -15,4 +15,6 @@ export * from './route-rest';
 export * from './keep-tabs';
 export * from './route-keyhole';
 export * from './route-flat-plug';
+export * from './route-image-engrave';
+export * from './route-image-engrave-clearing';
 export * from './simulate-stock';

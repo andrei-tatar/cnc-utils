@@ -36,7 +36,7 @@ const SVG_VIEWBOX = `<svg xmlns="http://www.w3.org/2000/svg" width="50mm" height
 </svg>`;
 
 /** A 24 × 24 px greyscale PNG: a black ring (radius 4–10 px) on white. */
-const RING_PNG =
+export const RING_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAAAAADFHGIkAAAASklEQVR4nLWSORIAIAgD9/+f1hkKJWo8ClMBW0AAihFnQGgCNAlA1AHMZAvGepAEioRIPSWMBn6CRXM7rjf4viu/dn+ozWnvv6QCSgw22Fy0m7oAAAAASUVORK5CYII=';
 
 const text = (

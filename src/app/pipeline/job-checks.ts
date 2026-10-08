@@ -40,6 +40,7 @@ export function jobChecks(
       op.type === 'pocket' ||
       op.type === 'rest' ||
       op.type === 'v-carve-clear' ||
+      op.type === 'image-engrave-clear' ||
       op.type === 'helix'
         ? (op.toolEngagement ?? null)
         : null;

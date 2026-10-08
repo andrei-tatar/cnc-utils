@@ -71,6 +71,7 @@ export function operationCut(
       break;
     }
     case 'v-carve-clear':
+    case 'image-engrave-clear':
       depth = op.depthPerStep ?? 0;
       engagement = op.toolEngagement ?? 1;
       break;
@@ -83,6 +84,13 @@ export function operationCut(
       break;
     case 'inlay-plug':
       depth = vCarveDepth(borrowed(op.vcarveOperationId), tool);
+      break;
+    case 'image-engrave':
+      // Its deepest, where the image is black (or white, inverted).
+      depth = vCarveDepth(
+        { maxDepth: Math.max(op.darkDepth ?? 0, op.lightDepth ?? 0) },
+        tool,
+      );
       break;
     case 'chamfer': {
       // One flank of the V cuts the bevel.

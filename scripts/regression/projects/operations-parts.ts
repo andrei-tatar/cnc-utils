@@ -489,6 +489,52 @@ export function vCarve(
 }
 
 /** Clearing for v-carve (or inlay plug) `vcarveOperationId` on `shapeId`. */
+export function imageEngrave(
+  id: string,
+  toolId: string,
+  shapeId: string,
+  image: string,
+  f: Fields<'image-engrave'> = {},
+): Operation {
+  return {
+    ...base(id, toolId, shapeId),
+    type: 'image-engrave',
+    image,
+    imageFit: 'contain',
+    imageScale: 100,
+    imageAlignX: 'center',
+    imageAlignY: 'middle',
+    imageOffsetX: 0,
+    imageOffsetY: 0,
+    invertImage: false,
+    lightDepth: 0,
+    darkDepth: 0.4,
+    gamma: 1,
+    lineSpacing: 0.5,
+    rasterAngle: 0,
+    sampleStep: 0.1,
+    allPassesInSameDirection: false,
+    ...f,
+  };
+}
+
+export function imageEngraveClear(
+  id: string,
+  toolId: string,
+  engraveOperationId: string,
+  f: Fields<'image-engrave-clear'> = {},
+): Operation {
+  return {
+    ...base(id, toolId, ''),
+    type: 'image-engrave-clear',
+    engraveOperationId,
+    toolEngagement: 0.4,
+    depthPerStep: 1,
+    leaveStock: 0.2,
+    ...f,
+  };
+}
+
 export function vCarveClear(
   id: string,
   toolId: string,

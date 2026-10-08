@@ -155,6 +155,7 @@ function createOperationEntry(
     plug: input('plug').pipe(distinctJson()),
     rest: input('rest').pipe(distinctJson()),
     flatPlug: input('flatPlug').pipe(distinctJson()),
+    imageEngrave: input('imageEngrave').pipe(distinctJson()),
     clearings: input('clearings').pipe(distinctJson()),
     geometry: geometry$,
     optimizeTravel: optimizeTravel$,

@@ -68,6 +68,12 @@ export function describeOperation(
     case 'rest':
       what = 'rest machining';
       break;
+    case 'image-engrave':
+      what = `image engraving ≤${mm(+operation.darkDepth || 0)}`;
+      break;
+    case 'image-engrave-clear':
+      what = 'image engraving clearing';
+      break;
     case 'flat-plug':
       what = `flat inlay plug ${stepped(operation)}`;
       break;
@@ -106,7 +112,9 @@ export function borrowedShapeId(
       ? operation.vcarveOperationId
       : operation?.type === 'rest' || operation?.type === 'flat-plug'
         ? operation.pocketOperationId
-        : null;
+        : operation?.type === 'image-engrave-clear'
+          ? operation.engraveOperationId
+          : null;
   if (!from) {
     return operation?.shapeId;
   }
