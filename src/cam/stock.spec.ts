@@ -58,6 +58,24 @@ describe('stockOffset', () => {
   });
 });
 
+describe('toPaths', () => {
+  it('gives each cut its feed rate', () => {
+    const [travel, cut] = new GCodeBuilder()
+      .travelTo(0, 0)
+      .plungeFeedRate(300)
+      .carveFeedrate(1200)
+      .plunge(-1)
+      .carveTo(10, 0)
+      .carveFeedrate(800)
+      .carveTo(10, 10)
+      .toPaths({ header: false });
+    expect(travel.type).toBe('travel');
+    expect(travel.feeds).toBeUndefined();
+    expect(cut.points.length).toBe(4);
+    expect(cut.feeds!.slice(1)).toEqual([300, 1200, 800]);
+  });
+});
+
 describe('estimateTime', () => {
   it('times cuts at their feed and rapids at the rapid rate', () => {
     const b = new GCodeBuilder()

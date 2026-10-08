@@ -55,4 +55,9 @@ export type CamPath = {
   sourceOperationId?: string;
   points: CamPoint3[];
   type: 'travel' | 'carve';
+  /**
+   * Cuts only: the feed rate (mm/min) of the move to each point, one per
+   * point (the first point's is the rate in effect where the path starts).
+   */
+  feeds?: number[];
 };
