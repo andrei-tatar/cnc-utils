@@ -45,6 +45,8 @@
       [clampShapes]="cam.clampShapes$ | async"
       [simulation]="cam.simulation$ | async"
       (simulateChange)="cam.simulate$.next($event)"
+      [simulationQuality]="(cam.simulationQuality$ | async) ?? 'standard'"
+      (simulationQualityChange)="cam.setSimulationQuality($event)"
     />
   </div>
 </div>

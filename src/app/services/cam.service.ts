@@ -49,7 +49,13 @@ import { nestPolygons } from '../../cam/polygon-nesting';
 import { hasArcs, polygonsBounds } from '../../cam/arcs';
 import { JobWarning } from '../../cam/job-checks';
 import type { Heightmap } from '../../cam/simulate';
-import { simulationInput } from '../pipeline/simulation';
+import {
+  loadSimulationQuality,
+  saveSimulationQuality,
+  SIMULATION_CELLS,
+  SimulationQuality,
+  simulationInput,
+} from '../pipeline/simulation';
 import worker from '../../worker';
 import { jobChecks } from '../pipeline/job-checks';
 import { numberedToolLabel } from '../model-editor/tools';
@@ -119,6 +125,16 @@ export class CamService implements ShapeExporter {
   /** Whether to simulate the material left (see `simulation$`). */
   readonly simulate$ = new BehaviorSubject(false);
 
+  /** How finely to simulate (see `SIMULATION_CELLS`), kept in this browser. */
+  readonly simulationQuality$ = new BehaviorSubject<SimulationQuality>(
+    loadSimulationQuality(),
+  );
+
+  setSimulationQuality(quality: SimulationQuality) {
+    saveSimulationQuality(quality);
+    this.simulationQuality$.next(quality);
+  }
+
   /**
    * While simulating: what's left of the stock (or, without stock, of a
    * block round the cuts) once every toolpath is cut. Null otherwise.
@@ -128,23 +144,34 @@ export class CamService implements ShapeExporter {
     switchMap((on) =>
       !on
         ? of(null)
-        : combineLatest([this.paths$, this.model$]).pipe(
+        : combineLatest([
+            this.paths$,
+            this.model$,
+            this.simulationQuality$,
+          ]).pipe(
             debounceTime(300),
-            map(([paths, model]) => ({
+            map(([paths, model, quality]) => ({
               paths,
               input: simulationInput(paths, model),
+              cells: SIMULATION_CELLS[quality],
             })),
             // Edits that change neither the cuts, their bits nor the stock
             // (renames, feeds) don't simulate again.
             distinctUntilChanged(
               (a, b) =>
                 a.paths === b.paths &&
+                a.cells === b.cells &&
                 JSON.stringify(a.input) === JSON.stringify(b.input),
             ),
-            switchMap(({ paths, input }) =>
+            switchMap(({ paths, input, cells }) =>
               input
                 ? race(
-                    worker.simulateStock(paths, input.tools, input.stock),
+                    worker.simulateStock(
+                      paths,
+                      input.tools,
+                      input.stock,
+                      cells,
+                    ),
                     this.workTracker.working$,
                   )
                 : of(null),
