@@ -25,221 +25,260 @@ export const field: FormlyFieldConfig = {
   },
   fieldGroup: [
     {
-      key: 'safetyHeight',
-      type: 'number',
-      defaultValue: d.safetyHeight,
+      wrappers: ['group'],
       props: {
-        label: 'safe height',
-        description: 'for rapid moves and tool changes, mm above the stock',
-        min: 0.1,
-        required: true,
+        label: 'feeds & speeds',
+        collapsible: true,
+        startOpen: () => true,
       },
+      fieldGroup: [
+        {
+          key: 'carveFeedRate',
+          type: 'number',
+          defaultValue: d.carveFeedRate,
+          props: {
+            label: 'feed rate',
+            description: 'mm/min, for tools without their own',
+            min: 1,
+            required: true,
+          },
+        },
+        {
+          key: 'plungeFeedRate',
+          type: 'number',
+          defaultValue: d.plungeFeedRate,
+          props: {
+            label: 'plunge fr',
+            description: 'mm/min, for tools without their own',
+            min: 1,
+            required: true,
+          },
+        },
+        {
+          key: 'rapidRate',
+          type: 'number',
+          defaultValue: d.rapidRate,
+          props: {
+            label: 'rapid speed',
+            description:
+              'mm/min your machine moves at with G0; only for the time estimate',
+            min: 1,
+            required: true,
+          },
+        },
+        {
+          key: 'spindle',
+          type: 'boolean',
+          defaultValue: d.spindle,
+          props: {
+            label: 'control the spindle (M3 / M5)',
+          },
+        },
+        {
+          key: 'spindleSpeed',
+          type: 'number',
+          defaultValue: d.spindleSpeed,
+          props: {
+            label: 'spindle speed',
+            description: 'RPM',
+            min: 0,
+            required: true,
+          },
+          expressions: { hide: hideUnlessSpindle },
+        },
+        {
+          key: 'spindleDelay',
+          type: 'number',
+          defaultValue: d.spindleDelay,
+          props: {
+            label: 'spin-up wait',
+            description: 'seconds to wait after starting the spindle (G4)',
+            min: 0,
+            required: true,
+          },
+          expressions: { hide: hideUnlessSpindle },
+        },
+      ],
     },
     {
-      key: 'carveFeedRate',
-      type: 'number',
-      defaultValue: d.carveFeedRate,
+      wrappers: ['group'],
       props: {
-        label: 'feed rate',
-        description: 'mm/min, for tools without their own',
-        min: 1,
-        required: true,
+        label: 'moves',
+        collapsible: true,
       },
+      fieldGroup: [
+        {
+          key: 'safetyHeight',
+          type: 'number',
+          defaultValue: d.safetyHeight,
+          props: {
+            label: 'safe height',
+            description: 'for rapid moves and tool changes, mm above the stock',
+            min: 0.1,
+            required: true,
+          },
+        },
+        {
+          key: 'optimizeTravel',
+          type: 'boolean',
+          defaultValue: d.optimizeTravel,
+          props: {
+            label: 'shorten travel between cuts',
+            description:
+              "cut each operation's shapes nearest first (holes before the outline around them) instead of in the order they come",
+          },
+        },
+        {
+          key: 'referencePoint',
+          type: 'enum',
+          defaultValue: d.referencePoint,
+          props: {
+            label: 'move the toolpaths',
+            description:
+              'puts this point of the cuts’ bounding box (tool centre) at the X / Y below; overrides the stock’s X0 Y0',
+            required: true,
+            options: [
+              { value: 'none', label: 'no, keep them where they are' },
+              { value: 'xmin-ymax', label: 'top-left' },
+              { value: 'xcenter-ymax', label: 'top middle' },
+              { value: 'xmax-ymax', label: 'top-right' },
+              { value: 'xmin-ycenter', label: 'left middle' },
+              { value: 'xcenter-ycenter', label: 'centre' },
+              { value: 'xmax-ycenter', label: 'right middle' },
+              { value: 'xmin-ymin', label: 'bottom-left' },
+              { value: 'xcenter-ymin', label: 'bottom middle' },
+              { value: 'xmax-ymin', label: 'bottom-right' },
+            ],
+          },
+        },
+        {
+          key: 'referenceX',
+          type: 'number',
+          defaultValue: d.referenceX,
+          props: { label: 'to X', required: true },
+          expressions: { hide: hideUnlessReference },
+        },
+        {
+          key: 'referenceY',
+          type: 'number',
+          defaultValue: d.referenceY,
+          props: { label: 'to Y', required: true },
+          expressions: { hide: hideUnlessReference },
+        },
+      ],
     },
     {
-      key: 'plungeFeedRate',
-      type: 'number',
-      defaultValue: d.plungeFeedRate,
+      wrappers: ['group'],
       props: {
-        label: 'plunge fr',
-        description: 'mm/min, for tools without their own',
-        min: 1,
-        required: true,
+        label: 'program',
+        description: 'start, tool changes, end',
+        collapsible: true,
       },
+      fieldGroup: [
+        {
+          key: 'header',
+          type: 'boolean',
+          defaultValue: d.header,
+          props: {
+            label: 'start with G90 G21 G17 (absolute, mm, XY plane)',
+          },
+        },
+        {
+          key: 'toolChange',
+          type: 'enum',
+          defaultValue: d.toolChange,
+          props: {
+            label: 'tool changes',
+            required: true,
+            options: [
+              { value: 'm6', label: 'T<n> M6' },
+              { value: 'pause', label: 'pause (M0) to change by hand' },
+              { value: 'none', label: 'none' },
+            ],
+          },
+        },
+        {
+          key: 'skipSingleToolChange',
+          type: 'boolean',
+          defaultValue: d.skipSingleToolChange,
+          props: {
+            label: 'skip tool changes when only one tool is used',
+          },
+          expressions: {
+            hide: (field: FormlyFieldConfig) =>
+              field.model?.toolChange === 'none',
+          },
+        },
+        {
+          key: 'returnHome',
+          type: 'boolean',
+          defaultValue: d.returnHome,
+          props: {
+            label: 'return to X0 Y0 at the end',
+          },
+        },
+      ],
     },
     {
-      key: 'toolChange',
-      type: 'enum',
-      defaultValue: d.toolChange,
+      wrappers: ['group'],
       props: {
-        label: 'tool changes',
-        required: true,
-        options: [
-          { value: 'm6', label: 'T<n> M6' },
-          { value: 'pause', label: 'pause (M0) to change by hand' },
-          { value: 'none', label: 'none' },
-        ],
+        label: 'precision',
+        collapsible: true,
       },
-    },
-    {
-      key: 'skipSingleToolChange',
-      type: 'boolean',
-      defaultValue: d.skipSingleToolChange,
-      props: {
-        label: 'skip tool changes when only one tool is used',
-      },
-      expressions: {
-        hide: (field: FormlyFieldConfig) => field.model?.toolChange === 'none',
-      },
-    },
-    {
-      key: 'spindle',
-      type: 'boolean',
-      defaultValue: d.spindle,
-      props: {
-        label: 'control the spindle (M3 / M5)',
-      },
-    },
-    {
-      key: 'spindleSpeed',
-      type: 'number',
-      defaultValue: d.spindleSpeed,
-      props: {
-        label: 'spindle speed',
-        description: 'RPM',
-        min: 0,
-        required: true,
-      },
-      expressions: { hide: hideUnlessSpindle },
-    },
-    {
-      key: 'spindleDelay',
-      type: 'number',
-      defaultValue: d.spindleDelay,
-      props: {
-        label: 'spin-up wait',
-        description: 'seconds to wait after starting the spindle (G4)',
-        min: 0,
-        required: true,
-      },
-      expressions: { hide: hideUnlessSpindle },
-    },
-    {
-      key: 'header',
-      type: 'boolean',
-      defaultValue: d.header,
-      props: {
-        label: 'start with G90 G21 G17 (absolute, mm, XY plane)',
-      },
-    },
-    {
-      key: 'returnHome',
-      type: 'boolean',
-      defaultValue: d.returnHome,
-      props: {
-        label: 'return to X0 Y0 at the end',
-      },
-    },
-    {
-      key: 'decimals',
-      type: 'number',
-      defaultValue: d.decimals,
-      props: {
-        label: 'decimal places',
-        min: 0,
-        max: 6,
-        required: true,
-      },
-      validators: { validation: ['whole-number'] },
-    },
-    {
-      key: 'rapidRate',
-      type: 'number',
-      defaultValue: d.rapidRate,
-      props: {
-        label: 'rapid speed',
-        description:
-          'mm/min your machine moves at with G0; only for the time estimate',
-        min: 1,
-        required: true,
-      },
-    },
-    {
-      key: 'referencePoint',
-      type: 'enum',
-      defaultValue: d.referencePoint,
-      props: {
-        label: 'move the toolpaths',
-        description:
-          'puts this point of the cuts’ bounding box (tool centre) at the X / Y below; overrides the stock’s X0 Y0',
-        required: true,
-        options: [
-          { value: 'none', label: 'no, keep them where they are' },
-          { value: 'xmin-ymax', label: 'top-left' },
-          { value: 'xcenter-ymax', label: 'top middle' },
-          { value: 'xmax-ymax', label: 'top-right' },
-          { value: 'xmin-ycenter', label: 'left middle' },
-          { value: 'xcenter-ycenter', label: 'centre' },
-          { value: 'xmax-ycenter', label: 'right middle' },
-          { value: 'xmin-ymin', label: 'bottom-left' },
-          { value: 'xcenter-ymin', label: 'bottom middle' },
-          { value: 'xmax-ymin', label: 'bottom-right' },
-        ],
-      },
-    },
-    {
-      key: 'referenceX',
-      type: 'number',
-      defaultValue: d.referenceX,
-      props: { label: 'to X', required: true },
-      expressions: { hide: hideUnlessReference },
-    },
-    {
-      key: 'referenceY',
-      type: 'number',
-      defaultValue: d.referenceY,
-      props: { label: 'to Y', required: true },
-      expressions: { hide: hideUnlessReference },
-    },
-    {
-      key: 'arcs',
-      type: 'boolean',
-      defaultValue: d.arcs,
-      props: {
-        label: 'write curves as arcs (G2 / G3)',
-        description:
-          'much shorter files and smoother motion; turn off for controllers without arc support',
-      },
-    },
-    {
-      key: 'optimizeTravel',
-      type: 'boolean',
-      defaultValue: d.optimizeTravel,
-      props: {
-        label: 'shorten travel between cuts',
-        description:
-          "cut each operation's shapes nearest first (holes before the outline around them) instead of in the order they come",
-      },
-    },
-    {
-      key: 'curveTolerance',
-      type: 'number',
-      defaultValue: d.curveTolerance,
-      props: {
-        label: 'curve precision',
-        description:
-          'mm: how closely SVG and text curves (fitted with arcs) and anything stretched into an ellipse are followed; circles and arcs are exact; smaller is smoother but slower',
-        min: CURVE_TOLERANCE.min,
-        max: CURVE_TOLERANCE.max,
-        required: true,
-      },
-    },
-    {
-      key: 'geometryDecimals',
-      type: 'enum',
-      defaultValue: d.geometryDecimals,
-      props: {
-        label: 'geometry precision',
-        description:
-          'the smallest distance told apart: where cuts are split, edges found and points merged; finer is slower',
-        required: true,
-        options: [
-          { value: 1, label: '0.1 mm' },
-          { value: 2, label: '0.01 mm' },
-          { value: 3, label: '0.001 mm' },
-          { value: 4, label: '0.0001 mm' },
-        ],
-      },
+      fieldGroup: [
+        {
+          key: 'curveTolerance',
+          type: 'number',
+          defaultValue: d.curveTolerance,
+          props: {
+            label: 'curve precision',
+            description:
+              'mm: how closely SVG and text curves (fitted with arcs) and anything stretched into an ellipse are followed; circles and arcs are exact; smaller is smoother but slower',
+            min: CURVE_TOLERANCE.min,
+            max: CURVE_TOLERANCE.max,
+            required: true,
+          },
+        },
+        {
+          key: 'geometryDecimals',
+          type: 'enum',
+          defaultValue: d.geometryDecimals,
+          props: {
+            label: 'geometry precision',
+            description:
+              'the smallest distance told apart: where cuts are split, edges found and points merged; finer is slower',
+            required: true,
+            options: [
+              { value: 1, label: '0.1 mm' },
+              { value: 2, label: '0.01 mm' },
+              { value: 3, label: '0.001 mm' },
+              { value: 4, label: '0.0001 mm' },
+            ],
+          },
+        },
+        {
+          key: 'decimals',
+          type: 'number',
+          defaultValue: d.decimals,
+          props: {
+            label: 'decimal places',
+            min: 0,
+            max: 6,
+            required: true,
+          },
+          validators: { validation: ['whole-number'] },
+        },
+        {
+          key: 'arcs',
+          type: 'boolean',
+          defaultValue: d.arcs,
+          props: {
+            label: 'write curves as arcs (G2 / G3)',
+            description:
+              'much shorter files and smoother motion; turn off for controllers without arc support',
+          },
+        },
+      ],
     },
   ],
 };

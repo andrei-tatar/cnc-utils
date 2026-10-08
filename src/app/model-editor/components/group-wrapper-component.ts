@@ -1,10 +1,11 @@
 import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
-import { FieldWrapper } from '@ngx-formly/core';
+import { FieldWrapper, FormlyFieldConfig } from '@ngx-formly/core';
 
 /**
  * A box around related settings: `props.label`, an optional
  * `props.description`, and with `props.collapsible` a header that opens and
- * closes it (open at first when `props.startOpen(model)` says so).
+ * closes it (open at first when `props.startOpen(model)` says so; flagged
+ * when closed over a setting that needs fixing).
  */
 @Component({
   styles: `
@@ -42,6 +43,12 @@ import { FieldWrapper } from '@ngx-formly/core';
       letter-spacing: normal;
     }
 
+    .issue {
+      color: var(--bs-danger-text-emphasis);
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
     .chevron {
       display: inline-block;
       transition: transform 150ms ease;
@@ -68,6 +75,9 @@ import { FieldWrapper } from '@ngx-formly/core';
         @if (props.description) {
           <span class="group_description">· {{ props.description }}</span>
         }
+        @if (!open && invalid(field)) {
+          <span class="issue" title="Some settings need attention">⚠</span>
+        }
       </div>
       <div [hidden]="!open">
         <ng-container #fieldComponent></ng-container>
@@ -82,6 +92,17 @@ export class GroupWrapperComponent extends FieldWrapper implements OnInit {
     if (this.props['collapsible']) {
       this.open = !!this.props['startOpen']?.(this.field.model);
     }
+  }
+
+  /** Whether a shown field in `field` (keyed or not) needs fixing. */
+  invalid(field: FormlyFieldConfig): boolean {
+    return !!field.fieldGroup?.some(
+      (child) =>
+        !child.hide &&
+        (child.key != null
+          ? !!child.formControl?.invalid
+          : this.invalid(child)),
+    );
   }
 
   toggle() {
