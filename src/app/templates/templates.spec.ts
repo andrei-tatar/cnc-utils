@@ -1,4 +1,5 @@
 import { listTemplates, loadTemplate, Template } from '.';
+import { borrowedShapeId } from '../model-editor/operations/describe';
 
 // Needs templates/index.json: `npm test` writes it first (or `npm run templates`).
 describe('templates', () => {
@@ -56,7 +57,8 @@ describe('templates', () => {
         expect(has(model.tools, op.toolId))
           .withContext(`${where} tool`)
           .toBeTrue();
-        expect(has(model.shapes, op.shapeId))
+        // Its own, or (clearings, plugs) the one it borrows.
+        expect(has(model.shapes, borrowedShapeId(op, model.operations)!))
           .withContext(`${where} shape`)
           .toBeTrue();
         for (const key of ['vcarveOperationId', 'pocketOperationId']) {
