@@ -51,6 +51,11 @@ export type GcodeOptions = {
   spindleDelay: number;
   /** Rapid back to X0 Y0 at the end of the program. */
   returnHome: boolean;
+  /**
+   * A comment before each operation saying what it cuts, with which tool
+   * (the descriptions are given when the program is written out).
+   */
+  operationComments: boolean;
   /** Decimal places for coordinates. */
   decimals: number;
   /** Write cuts that follow a circle as arcs (G2 / G3) instead of many lines. */
@@ -102,6 +107,7 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   spindleSpeed: 12000,
   spindleDelay: 3,
   returnHome: false,
+  operationComments: true,
   decimals: 3,
   arcs: true,
   optimizeTravel: true,

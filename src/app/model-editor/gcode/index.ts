@@ -225,6 +225,16 @@ export const field: FormlyFieldConfig = {
           },
         },
         {
+          key: 'operationComments',
+          type: 'boolean',
+          defaultValue: d.operationComments,
+          props: {
+            label: 'describe each operation in a comment',
+            description:
+              'e.g. ; Operation 2: pocket 5 mm · circle Ø20 · T1 Ø6 mm end mill',
+          },
+        },
+        {
           key: 'returnHome',
           type: 'boolean',
           defaultValue: d.returnHome,
