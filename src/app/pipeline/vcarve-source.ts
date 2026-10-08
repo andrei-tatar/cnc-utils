@@ -3,6 +3,8 @@ import type { InlayPlug } from '../../worker/work/inlay-plug';
 import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
 import type { ClearingTool } from '../../worker/work/route-vcarve-clearing';
+import type { ImageEngraveOptions } from '../../worker/work/route-image-engrave';
+import type { ModelType as ImageEngraveType } from '../model-editor/operations/operation-image-engrave';
 
 /**
  * What a v-carve clearing borrows from the v-carve (or inlay plug) it
@@ -230,4 +232,64 @@ export function flatPlugSource(
     return null;
   }
   return { shapeId: pocket.shapeId, pocketToolSize: tool.diameter };
+}
+
+/** What an image engraving's clearing takes from the engraving. */
+export type ImageEngraveSource = {
+  shapeId: string;
+  engrave: ImageEngraveOptions;
+};
+
+/** How an image engraving cuts with its V-bit `tool`, for routing. */
+export function imageEngraveOptions(
+  op: Omit<ImageEngraveType, 'type'>,
+  tool: { diameter: number; vAngle: number; tipDiameter: number },
+): ImageEngraveOptions {
+  return {
+    image: op.image,
+    layout: {
+      fit: op.imageFit ?? 'contain',
+      scale: op.imageScale ?? 100,
+      alignX: op.imageAlignX ?? 'center',
+      alignY: op.imageAlignY ?? 'middle',
+      offsetX: op.imageOffsetX ?? 0,
+      offsetY: op.imageOffsetY ?? 0,
+    },
+    invert: !!op.invertImage,
+    lightDepth: op.lightDepth ?? 0,
+    darkDepth: op.darkDepth,
+    gamma: op.gamma ?? 1,
+    spacing: op.lineSpacing,
+    angle: op.rasterAngle ?? 0,
+    sampleStep: op.sampleStep,
+    oneWay: !!op.allPassesInSameDirection,
+    toolSize: tool.diameter,
+    vAngle: tool.vAngle,
+    tipDiameter: tool.tipDiameter ?? 0,
+  };
+}
+
+/**
+ * For an image engraving's clearing: the engraving (shape, image, depths
+ * and V-bit). Null while it or its V-bit is missing.
+ */
+export function imageEngraveSource(
+  operation: OperationParameters,
+  operations: Operations,
+  tools: Tools,
+): ImageEngraveSource | null {
+  if (operation.type !== 'image-engrave-clear') {
+    return null;
+  }
+  const engraving = operations.find(
+    (o) => o.id === operation.engraveOperationId,
+  );
+  const tool = tools.find((t) => t.id === engraving?.toolId);
+  if (engraving?.type !== 'image-engrave' || tool?.bitType !== 'v-bit') {
+    return null;
+  }
+  return {
+    shapeId: engraving.shapeId,
+    engrave: imageEngraveOptions(engraving, tool),
+  };
 }

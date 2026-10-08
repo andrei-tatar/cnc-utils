@@ -11,6 +11,8 @@ import {
   clearingsBefore,
   FlatPlugSource,
   flatPlugSource,
+  ImageEngraveSource,
+  imageEngraveSource,
   PlugSource,
   plugSource,
   RestSource,
@@ -44,6 +46,8 @@ export type OperationInputs = {
   plug: PlugSource | null;
   rest: RestSource | null;
   flatPlug: FlatPlugSource | null;
+  /** For an image engraving's clearing: the engraving. */
+  imageEngrave: ImageEngraveSource | null;
   /**
    * For a v-carve or inlay plug: the end mills clearing for it first (see
    * clearingsBefore).
@@ -109,6 +113,11 @@ export function operationInputs(
   );
   const rest = restSource(operationParameters, operations, tools);
   const flatPlug = flatPlugSource(operationParameters, operations, tools);
+  const imageEngrave = imageEngraveSource(
+    operationParameters,
+    operations,
+    tools,
+  );
 
   const toolInfo: ToolInfo | null = tool
     ? {
@@ -122,12 +131,14 @@ export function operationInputs(
 
   return {
     operationParameters,
-    shapeId: (source ?? plug ?? rest ?? flatPlug)?.shapeId ?? shapeId,
+    shapeId:
+      (source ?? plug ?? rest ?? flatPlug ?? imageEngrave)?.shapeId ?? shapeId,
     toolParameters,
     source,
     plug,
     rest,
     flatPlug,
+    imageEngrave,
     clearings:
       operationParameters.type === 'v-carve' ||
       operationParameters.type === 'inlay-plug'

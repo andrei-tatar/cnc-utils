@@ -76,6 +76,16 @@ import {
   ModelType as KeyholeModelType,
 } from './operation-keyhole';
 
+import {
+  Definition as ImageEngraveDefinition,
+  ModelType as ImageEngraveModelType,
+} from './operation-image-engrave';
+
+import {
+  Definition as ImageEngraveClearDefinition,
+  ModelType as ImageEngraveClearModelType,
+} from './operation-image-engrave-clear';
+
 const operations = [
   PocketDefinition,
   ProfileDefinition,
@@ -89,6 +99,8 @@ const operations = [
   VCarveDefinition,
   VCarveClearDefinition,
   InlayDefinition,
+  ImageEngraveDefinition,
+  ImageEngraveClearDefinition,
 ];
 
 // The bits each operation works with (and how to say so when it doesn't).
@@ -113,6 +125,11 @@ const allowedBits: Record<
   [VCarveClearDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
   [FlatPlugDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
   [KeyholeDefinition.type]: { bits: ['keyhole'], needs: 'a keyhole bit' },
+  [ImageEngraveDefinition.type]: { bits: ['v-bit'], needs: 'a V-bit' },
+  [ImageEngraveClearDefinition.type]: {
+    bits: ROUND_CUTTERS,
+    needs: 'an end mill',
+  },
 };
 
 function allowsBit(type: string, bit: BitType) {
@@ -125,6 +142,7 @@ const borrowsShape = new Set<string>([
   InlayDefinition.type,
   RestDefinition.type,
   FlatPlugDefinition.type,
+  ImageEngraveClearDefinition.type,
 ]);
 
 export type ModelType = {
@@ -151,6 +169,8 @@ export type ModelType = {
         | RestModelType
         | KeyholeModelType
         | FlatPlugModelType
+        | ImageEngraveModelType
+        | ImageEngraveClearModelType
       )
   >;
 };
@@ -318,6 +338,7 @@ export const field: FormlyFieldConfig = {
           ChamferDefinition.type,
           InlayDefinition.type,
           FlatPlugDefinition.type,
+          ImageEngraveClearDefinition.type,
         ],
       ),
     ],

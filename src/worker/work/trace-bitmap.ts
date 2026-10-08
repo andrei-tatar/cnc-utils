@@ -8,6 +8,7 @@ import {
 import { traceContours } from '../../cam/marching-squares';
 import { containingContours, signedArea2 } from '../../cam/polygon-nesting';
 import { CamPoint, CamShape } from '../../cam/types';
+import { brightnessAt, imagePixels } from './image-pixels';
 
 export type TraceParameters = {
   /** The image, as a data URL. */
@@ -38,25 +39,19 @@ export async function traceBitmap(
     return [];
   }
 
-  const blob = await (await fetch(params.image)).blob();
-  const bitmap = await createImageBitmap(blob);
-  const scale = Math.min(1, MAX_PIXELS / Math.max(bitmap.width, bitmap.height));
-  const w = Math.max(1, Math.round(bitmap.width * scale));
-  const h = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = new OffscreenCanvas(w, h);
-  const context = canvas.getContext('2d', { willReadFrequently: true })!;
-  // Transparent areas count as white paper.
-  context.fillStyle = '#fff';
-  context.fillRect(0, 0, w, h);
-  context.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close();
-  const { data } = context.getImageData(0, 0, w, h);
+  const {
+    width: w,
+    height: h,
+    data,
+  } = await imagePixels(params.image, (width, height) => {
+    const scale = Math.min(1, MAX_PIXELS / Math.max(width, height));
+    return { width: width * scale, height: height * scale };
+  });
 
   // Positive where traced: below the threshold (or above, inverted).
   const field = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
-    const brightness =
-      0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+    const brightness = brightnessAt(data, i);
     field[i] = params.invert
       ? brightness - params.threshold
       : params.threshold - brightness;

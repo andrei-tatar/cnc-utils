@@ -7,6 +7,8 @@ import { OperationParameters, ToolParameters } from '../model-editor/model';
 import {
   Clearing,
   FlatPlugSource,
+  ImageEngraveSource,
+  imageEngraveOptions,
   PlugSource,
   RestSource,
   VCarveSource,
@@ -23,6 +25,7 @@ export type RoutingInputs = {
   plug: PlugSource | null;
   rest: RestSource | null;
   flatPlug: FlatPlugSource | null;
+  imageEngrave: ImageEngraveSource | null;
   /** End mills clearing for a v-carve (or inlay plug) before it. */
   clearings: Clearing[];
   geometry: GeometrySettings;
@@ -59,6 +62,7 @@ function route({
   plug,
   rest,
   flatPlug,
+  imageEngrave,
   clearings,
   geometry,
   optimizeTravel,
@@ -276,6 +280,30 @@ function route({
         extraDepth: op.extraDepth,
         passes: op.passes,
         direction: op.direction,
+        rampAngle,
+      });
+
+    case 'image-engrave':
+      if (bitType !== 'v-bit') {
+        return null;
+      }
+      return worker.routeImageEngrave(shape, {
+        ...imageEngraveOptions(op, tool),
+        geometry,
+      });
+
+    case 'image-engrave-clear':
+      if (!imageEngrave || bitType === 'v-bit' || bitType === 'drill') {
+        return null;
+      }
+      return worker.routeImageEngraveClearing(shape, {
+        geometry,
+        optimizeTravel,
+        engrave: imageEngrave.engrave,
+        toolSize: diameter,
+        toolEngagement: op.toolEngagement,
+        depthPerStep: op.depthPerStep,
+        leaveStock: op.leaveStock ?? 0,
         rampAngle,
       });
 

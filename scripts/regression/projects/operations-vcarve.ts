@@ -1,8 +1,13 @@
 import { Fixture, project } from './fixture';
+import { RING_PNG } from './shapes-imported';
 import {
+  circle,
   DISC_WITH_HOLES,
+  imageEngrave,
+  imageEngraveClear,
   pathData,
   polyline,
+  rect,
   star,
   text,
   tool,
@@ -405,6 +410,73 @@ export default [
           startDepth: 1,
           maxDepth: 4,
           stepover: 0.4,
+        }),
+      ],
+    }),
+  },
+  {
+    name: 'image-engrave-ring',
+    covers:
+      'image engraving: a 24 px PNG ring (data URL) in a 40 × 30 rectangle (contain: letterboxed, the sides left uncut and lifted over), 60° bit, darkDepth 0.4, lines 0.5 along X, back and forth',
+    model: project({
+      shapes: [rect('s-rect', 40, 30)],
+      tools: [v60],
+      operations: [imageEngrave('o-engrave', 't-v60', 's-rect', RING_PNG)],
+    }),
+  },
+  {
+    name: 'image-engrave-disc-inverted',
+    covers:
+      'image engraving clipped by a 30 mm disc: the ring PNG inverted (light deepest), cover, lightDepth 0.1 (all carved), darkDepth 1, gamma 2, lines 0.8 at 30°, all one way',
+    model: project({
+      shapes: [circle('s-disc', 30)],
+      tools: [v90],
+      operations: [
+        imageEngrave('o-engrave', 't-v90', 's-disc', RING_PNG, {
+          imageFit: 'cover',
+          invertImage: true,
+          lightDepth: 0.1,
+          darkDepth: 1,
+          gamma: 2,
+          lineSpacing: 0.8,
+          rasterAngle: 30,
+          allPassesInSameDirection: true,
+        }),
+      ],
+    }),
+  },
+  {
+    name: 'image-engrave-layout',
+    covers:
+      'image engraving placed by hand: the ring PNG at 60% of its fitted size, aligned left and top of a 40 × 30 rectangle, moved 2 right and 3 down; lines at 90°',
+    model: project({
+      shapes: [rect('s-rect', 40, 30)],
+      tools: [v60],
+      operations: [
+        imageEngrave('o-engrave', 't-v60', 's-rect', RING_PNG, {
+          imageScale: 60,
+          imageAlignX: 'left',
+          imageAlignY: 'top',
+          imageOffsetX: 2,
+          imageOffsetY: -3,
+          rasterAngle: 90,
+        }),
+      ],
+    }),
+  },
+  {
+    name: 'image-engrave-clearing',
+    covers:
+      'image engraving 2.5 mm deep (the ring PNG, cover, in a 40 mm disc, lines 0.6), cleared first with a 3 mm end mill: offset rings inside each level’s outline, innermost out (depthPerStep 1, the last level on the ridges between grooves), island by island down through the levels, engagement 0.4, leaveStock 0.2, ramping',
+    model: project({
+      shapes: [circle('s-disc', 40)],
+      tools: [v60, { ...em3, ramp: true, rampAngle: 5 }],
+      operations: [
+        imageEngraveClear('o-clear', 't-em3', 'o-engrave'),
+        imageEngrave('o-engrave', 't-v60', 's-disc', RING_PNG, {
+          imageFit: 'cover',
+          darkDepth: 2.5,
+          lineSpacing: 0.6,
         }),
       ],
     }),
