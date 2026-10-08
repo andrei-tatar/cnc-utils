@@ -669,6 +669,21 @@ export type ItemAction = {
                     </svg>
                   </button>
                 }
+                @if (clonable) {
+                  <button
+                    class="btn btn-sm item-action-button"
+                    type="button"
+                    [title]="'Clone ' + itemLabel"
+                    [attr.aria-label]="
+                      'Clone ' + itemLabel + ' ' + itemName(field.model)
+                    "
+                    (click)="$event.stopPropagation(); cloneItem($index)"
+                  >
+                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3" />
+                    </svg>
+                  </button>
+                }
                 @if (toggle; as t) {
                   <button
                     class="btn btn-sm toggle-button"
@@ -955,6 +970,33 @@ export class ArrayTypeComponent
     this.add(undefined, this.inline ? { id } : { id, expanded: true });
   }
 
+  /** `props.clonable`: each item's header has a button that copies it. */
+  get clonable() {
+    return this.props['clonable'] === true;
+  }
+
+  /**
+   * Put a copy of the item right after it, opened for editing. The copy and
+   * the items of its nested lists (transforms, points, …) get new ids, so
+   * they're new pipelines rather than ones shared with the original; what
+   * it refers to (`shapeId`, `toolId`, …) stays as is.
+   */
+  async cloneItem(index: number) {
+    const original = this.model?.[index];
+    if (!original) {
+      return;
+    }
+    const copy = await withNewIds(structuredClone(original));
+    if (original.name) {
+      copy.name = `${original.name} copy`;
+    }
+    // Find it again: generating ids is asynchronous.
+    const current = (this.model ?? []).indexOf(original);
+    const at = (current === -1 ? index : current) + 1;
+    this.collapseAllItems();
+    this.add(at, { ...copy, expanded: true });
+  }
+
   /** Ask before removing, mentioning anything that refers to the item. */
   async confirmRemove(index: number) {
     const model = this.field.fieldGroup?.[index]?.model;
@@ -1101,6 +1143,28 @@ export class ArrayTypeComponent
       this.formControl.controls[i].get('expanded')?.setValue(false);
     }
   }
+}
+
+/**
+ * `item` (a list item: an object with an `id`) with a new id, and the same
+ * for the items of the lists inside it.
+ */
+async function withNewIds(item: any): Promise<any> {
+  if (Array.isArray(item)) {
+    return Promise.all(item.map(withNewIds));
+  }
+  if (!item || typeof item !== 'object') {
+    return item;
+  }
+  const entries = await Promise.all(
+    Object.entries(item).map(async ([key, value]) => [
+      key,
+      key === 'id' && typeof value === 'string'
+        ? await generateId()
+        : await withNewIds(value),
+    ]),
+  );
+  return Object.fromEntries(entries);
 }
 
 /** Whether `item` has a field named like `shapeId` holding one of `ids`. */
