@@ -1,5 +1,4 @@
 import { CamPolygon, CamVertex } from './types';
-import { lazy } from '../util';
 import { KERNEL_WASM } from './kernel-wasm';
 
 /**
@@ -79,16 +78,26 @@ type Exports = {
  * build), or bytes handed over beforehand (Node: tests and scripts set
  * `globalThis.cncKernelWasm`).
  */
-const Kernel = lazy(async (): Promise<Exports> => {
-  const given = (globalThis as { cncKernelWasm?: BufferSource }).cncKernelWasm;
-  const bytes = given ?? (await (await fetch(KERNEL_WASM)).arrayBuffer());
-  const { instance } = await WebAssembly.instantiate(bytes, {});
-  return instance.exports as unknown as Exports;
-});
+let kernel: Promise<Exports> | null = null;
+
+/**
+ * The kernel's instance, made on first use. A call that traps (a panic in
+ * the kernel) can leave its memory half-updated, so the instance is then
+ * dropped and the next call makes a fresh one.
+ */
+function instance(): Promise<Exports> {
+  return (kernel ??= (async () => {
+    const given = (globalThis as { cncKernelWasm?: BufferSource })
+      .cncKernelWasm;
+    const bytes = given ?? (await (await fetch(KERNEL_WASM)).arrayBuffer());
+    const { instance } = await WebAssembly.instantiate(bytes, {});
+    return instance.exports as unknown as Exports;
+  })());
+}
 
 /** Loads the kernel (calls below do too, when needed). */
 export function loadKernel(): Promise<unknown> {
-  return Kernel.value;
+  return instance();
 }
 
 function encode(polygons: CamPolygon[]): Float64Array {
@@ -134,13 +143,14 @@ async function run(
   inputs: CamPolygon[][],
   call: (k: Exports, args: number[]) => number,
 ): Promise<CamPolygon[]> {
-  const k = await Kernel.value;
+  const k = await instance();
   const buffers = inputs.map((polygons) => {
     const data = encode(polygons);
     const ptr = k.kernel_alloc(data.length);
     new Float64Array(k.memory.buffer, ptr, data.length).set(data);
     return { ptr, len: data.length };
   });
+  let trapped = false;
   try {
     const len = call(
       k,
@@ -150,8 +160,17 @@ async function run(
     return decode(
       new Float64Array(k.memory.buffer, k.kernel_result(), len).slice(),
     );
+  } catch (error) {
+    if (error instanceof WebAssembly.RuntimeError) {
+      trapped = true;
+      kernel = null;
+    }
+    throw error;
   } finally {
-    for (const b of buffers) k.kernel_free(b.ptr, b.len);
+    // A trapped instance is dropped, its memory with it.
+    if (!trapped) {
+      for (const b of buffers) k.kernel_free(b.ptr, b.len);
+    }
   }
 }
 

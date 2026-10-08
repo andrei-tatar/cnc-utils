@@ -1,7 +1,9 @@
 import {
   ApplicationConfig,
   importProvidersFrom,
+  ErrorHandler,
   provideAppInitializer,
+  provideBrowserGlobalErrorListeners,
   provideZonelessChangeDetection,
   provideZoneChangeDetection,
 } from '@angular/core';
@@ -30,6 +32,7 @@ import { evaluateField } from './model-editor/variables/field';
 import { preloadModel } from './services/model-persistence';
 import { CamService } from './services/cam.service';
 import { ShapeExporter } from './model-editor/shapes/shape-export';
+import { AppErrorHandler } from './services/app-error-handler';
 
 export function WholeNumberValidator(
   _: AbstractControl,
@@ -51,6 +54,10 @@ export const appConfig: ApplicationConfig = {
   providers: [
     //provideZoneChangeDetection({ eventCoalescing: true }),
     provideZonelessChangeDetection(),
+    // Uncaught errors and rejections go to the error handler too, which
+    // shows them (see AppErrorHandler).
+    provideBrowserGlobalErrorListeners(),
+    { provide: ErrorHandler, useClass: AppErrorHandler },
     // The saved project is read (asynchronously) before anything uses it.
     provideAppInitializer(preloadModel),
     { provide: ShapeExporter, useExisting: CamService },

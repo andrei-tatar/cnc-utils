@@ -72,6 +72,7 @@ import { ShapeExporter } from '../model-editor/shapes/shape-export';
 import { collapsedSections$ } from '../model-editor/components/collapsed-sections';
 import { ModelStore } from './model-store.service';
 import { WorkTracker } from './work-tracker.service';
+import { recover } from '../pipeline/errors';
 
 /**
  * Wires the reactive graph: model → shapes → G-code → toolpaths, plus what
@@ -173,12 +174,14 @@ export class CamService implements ShapeExporter {
             switchMap(({ paths, input, cells }) =>
               input
                 ? race(
-                    worker.simulateStock(
-                      paths,
-                      input.tools,
-                      input.stock,
-                      cells,
-                    ),
+                    worker
+                      .simulateStock(paths, input.tools, input.stock, cells)
+                      .pipe(
+                        recover<Heightmap | null>(
+                          'simulating the cuts',
+                          () => null,
+                        ),
+                      ),
                     this.workTracker.working$,
                   )
                 : of(null),

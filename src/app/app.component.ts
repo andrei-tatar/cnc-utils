@@ -12,6 +12,7 @@ import { ViewerComponent } from './viewer/viewer.component';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
 import { JobAction, ToolbarComponent } from './toolbar/toolbar.component';
 import { EditorDividerComponent } from './editor-divider/editor-divider.component';
+import { ErrorToastComponent } from './error-toast/error-toast.component';
 import { loadEditorWidth } from './editor-divider/editor-width';
 import { ModelStore } from './services/model-store.service';
 import { CamService } from './services/cam.service';
@@ -27,6 +28,7 @@ import { ModelHistory } from './services/model-history.service';
     ModelEditorComponent,
     ToolbarComponent,
     EditorDividerComponent,
+    ErrorToastComponent,
   ],
   templateUrl: './app.component.html',
   host: { '(document:keydown)': 'onKeydown($event)' },

@@ -9,6 +9,7 @@ import {
   scan,
   switchMap,
 } from 'rxjs';
+import { recover } from './errors';
 import { GCodeBuilder, JobTime } from '../../cam/gcode-builder';
 import { programOffset, resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
@@ -181,7 +182,14 @@ function createOperationEntry(
     ),
     switchMap(({ builder, tabs, radius }) =>
       tabs.length
-        ? race(worker.keepTabs(builder, tabs, radius), working$)
+        ? race(
+            worker.keepTabs(builder, tabs, radius).pipe(
+              // Cutting through the tabs beats not cutting at all; the
+              // user is told.
+              recover('keeping the cuts out of the tabs', () => builder),
+            ),
+            working$,
+          )
         : of(builder),
     ),
   );

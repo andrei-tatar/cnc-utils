@@ -375,8 +375,13 @@ fn stitch(kept: &[Seg]) -> Vec<Pline> {
             continue;
         }
         let pline = closed_from(&chain);
-        let cleaned = pline.remove_redundant(EPS).unwrap_or(pline);
-        loops.push(cleaned);
+        // A piece healed onto itself has nothing to it.
+        if pline.vertex_count() < 2 {
+            continue;
+        }
+        if let Some(cleaned) = without_redundant(pline) {
+            loops.push(cleaned);
+        }
     }
     clean_loops(loops)
 }
@@ -384,6 +389,70 @@ fn stitch(kept: &[Seg]) -> Vec<Pline> {
 /// Sub-loops narrower than this (area over length, mm) are slivers of no
 /// width: a loop's way out and back along itself.
 const NO_WIDTH: f64 = 1e-5;
+
+/// Loops smaller than this across (mm) are worked on scaled up (see
+/// without_redundant).
+const SMALL: f64 = 1e-2;
+
+/// The loop without repeated points and the middle points of straight runs
+/// (CavalierContours' remove_redundant), or nothing when its points all but
+/// coincide.
+///
+/// remove_redundant's tests are absolute — twice a corner's area and a dot
+/// product against EPS — so in a loop a micron or so across (a sliver where
+/// pieces crossed at a glancing angle) every corner looks redundant: it
+/// takes the loop down to nothing and then indexes past its end. A loop
+/// that small is cleaned scaled up to a millimetre or so and scaled back,
+/// so only points that really repeat or line up are taken out.
+fn without_redundant(pline: Pline) -> Option<Pline> {
+    let (x0, y0, x1, y1) = segments(&pline).iter().fold(
+        (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ),
+        |(x0, y0, x1, y1), s| {
+            let (a, b, c, d) = s.bounds();
+            (x0.min(a), y0.min(b), x1.max(c), y1.max(d))
+        },
+    );
+    let across = (x1 - x0).max(y1 - y0);
+    if across >= SMALL {
+        return Some(pline.remove_redundant(EPS).unwrap_or(pline));
+    }
+    // Points no further apart than this are one point (and clean_loops
+    // drops a loop this small anyway).
+    if across <= 10.0 * EPS {
+        return None;
+    }
+    // Uniform scaling keeps the bulges.
+    let k = 1.0 / across;
+    let mut scaled = Pline::with_capacity(pline.vertex_count(), true);
+    for v in pline.iter_vertexes() {
+        scaled.add((v.x - x0) * k, (v.y - y0) * k, v.bulge);
+    }
+    let cleaned = scaled.remove_redundant(EPS).unwrap_or(scaled);
+    if cleaned.vertex_count() < 2 {
+        return None;
+    }
+    let mut out = Pline::with_capacity(cleaned.vertex_count(), true);
+    for v in cleaned.iter_vertexes() {
+        out.add(x0 + v.x / k, y0 + v.y / k, v.bulge);
+    }
+    Some(out)
+}
+
+/// Whether a closed loop encloses nothing to speak of: fewer than two
+/// vertices, or an area no wider than NO_WIDTH along its length.
+fn has_no_width(pline: &Pline) -> bool {
+    if pline.vertex_count() < 2 {
+        return true;
+    }
+    let a = area(pline).abs();
+    let length = segments(pline).iter().map(|s| s.length()).sum::<f64>();
+    a <= EPS * EPS || a <= NO_WIDTH * length
+}
 
 /**
  * Loops split where they pass a point twice (a loop pinched into two, or
@@ -398,9 +467,7 @@ pub fn clean_loops(loops: Vec<Pline>) -> Vec<Pline> {
             continue;
         }
         for part in split_pinches(&pline) {
-            let a = area(&part).abs();
-            let length = segments(&part).iter().map(|s| s.length()).sum::<f64>();
-            if part.vertex_count() >= 2 && a > EPS * EPS && a > NO_WIDTH * length {
+            if !has_no_width(&part) {
                 out.push(part);
             }
         }
@@ -833,5 +900,29 @@ pub(crate) mod tests {
         let outside = clip_open(&[line], &region, FillRule::NonZero, false);
         let lengths: f64 = outside.iter().map(|p| p.path_length()).sum();
         assert!(close(lengths, 12.0), "{lengths}");
+    }
+
+    /// A needle a few tenths of a micron across, as stitching the pieces
+    /// of a shrunk outline (a 45° image engraving's, off a heightmap) made
+    /// it: wide enough for NO_WIDTH, but every corner passed
+    /// remove_redundant's absolute tests, which emptied it and panicked.
+    /// It's kept, all three corners.
+    #[test]
+    fn stitching_a_tiny_needle_keeps_it() {
+        let points = [
+            V2::new(9.140911628669771, -20.545855456142505),
+            V2::new(9.140603955236758, -20.54572379127183),
+            V2::new(9.140911628669771, -20.54541754486023),
+        ];
+        let segs: Vec<Seg> = (0..3)
+            .map(|i| {
+                let a = points[i];
+                Seg::new(Vertex::new(a.x, a.y, 0.0), points[(i + 1) % 3])
+            })
+            .collect();
+        let loops = stitch(&segs);
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].vertex_count(), 3);
+        assert!((area(&loops[0]).abs() - 6.736682678365469e-8).abs() < 1e-12);
     }
 }

@@ -103,6 +103,11 @@ const operations = [
   ImageEngraveClearDefinition,
 ];
 
+/** What an operation of `type` is called in the editor. */
+export function operationLabel(type: string | undefined): string {
+  return operations.find((o) => o.type === type)?.label ?? type ?? 'operation';
+}
+
 // The bits each operation works with (and how to say so when it doesn't).
 const allowedBits: Record<
   string,
