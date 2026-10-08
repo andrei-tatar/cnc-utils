@@ -13,6 +13,11 @@ export type ToolOverrides = {
   /** Ramp in or plunge; 'tool' (or empty) follows the tool. */
   rampMode?: 'tool' | 'ramp' | 'plunge' | null;
   rampAngle?: number | null;
+  /**
+   * Feed rate, plunge rate and spindle speed worked out (for the tool, the
+   * cut, the stock's wood and the machine) instead of typed.
+   */
+  autoFeeds?: boolean;
 };
 
 /** The feeds and speeds of a tool, with an operation's overrides on top. */
@@ -48,7 +53,15 @@ export function withOverrides<
 /** The tool's feeds and speeds, grouped. */
 export const toolFeedsAndSpeeds: FormlyFieldConfig = {
   wrappers: ['group'],
-  props: { label: 'feeds & speeds' },
+  props: {
+    label: 'feeds & speeds',
+    collapsible: true,
+    // Open when a feed or speed is set, so it isn't missed.
+    startOpen: (model: any) =>
+      ['feedRate', 'plungeFeedRate', 'spindleSpeed'].some((k) =>
+        typeof model?.[k] === 'string' ? /\S/.test(model[k]) : model?.[k] > 0,
+      ),
+  },
   fieldGroup: [
     {
       key: 'feedRate',
@@ -73,7 +86,7 @@ export const toolFeedsAndSpeeds: FormlyFieldConfig = {
     {
       key: 'ramp',
       type: 'boolean',
-      defaultValue: false,
+      defaultValue: true,
       props: {
         label: 'ramp in instead of plunging',
       },
@@ -145,10 +158,22 @@ function inherited(
 }
 
 /**
- * The operation's overrides, grouped; all optional. Ramping only applies to
- * the operations listed in `rampTypes`.
+ * Working the feeds and speeds out: a field that turns it on, and the
+ * expressions for each input it fills in.
+ */
+export type FeedsCalculation = {
+  field: FormlyFieldConfig;
+  expressions(
+    key: 'feedRate' | 'plungeFeedRate' | 'spindleSpeed',
+  ): NonNullable<FormlyFieldConfig['expressions']>;
+};
+
+/**
+ * The operation's overrides, grouped; all optional, after `calculate`'s
+ * field. Ramping only applies to the operations listed in `rampTypes`.
  */
 export function operationFeedsAndSpeeds(
+  calculate: FeedsCalculation,
   rampTypes: readonly string[],
 ): FormlyFieldConfig {
   const hideUnlessRamps = (field: FormlyFieldConfig) =>
@@ -166,19 +191,24 @@ export function operationFeedsAndSpeeds(
       label: 'feeds & speeds',
       description: 'empty uses the tool’s',
       collapsible: true,
-      // Open when something's overridden, so it isn't missed.
+      // Open when something's overridden by hand, so it isn't missed.
       startOpen: (model: any) =>
-        ['feedRate', 'plungeFeedRate', 'spindleSpeed', 'rampAngle'].some(
-          (k) => model?.[k] > 0,
-        ) || ['ramp', 'plunge'].includes(model?.rampMode),
+        (!model?.autoFeeds &&
+          ['feedRate', 'plungeFeedRate', 'spindleSpeed'].some(
+            (k) => model?.[k] > 0,
+          )) ||
+        model?.rampAngle > 0 ||
+        ['ramp', 'plunge'].includes(model?.rampMode),
     },
     fieldGroup: [
+      calculate.field,
       {
         key: 'feedRate',
         type: 'number',
         props: { label: 'feed rate', min: 0 },
         expressions: {
           'props.placeholder': inherited('feedRate', 'carveFeedRate'),
+          ...calculate.expressions('feedRate'),
         },
       },
       {
@@ -187,6 +217,7 @@ export function operationFeedsAndSpeeds(
         props: { label: 'plunge fr', min: 0 },
         expressions: {
           'props.placeholder': inherited('plungeFeedRate', 'plungeFeedRate'),
+          ...calculate.expressions('plungeFeedRate'),
         },
       },
       {
@@ -222,6 +253,7 @@ export function operationFeedsAndSpeeds(
         props: { label: 'spindle speed', min: 0 },
         expressions: {
           'props.placeholder': inherited('spindleSpeed', 'spindleSpeed'),
+          ...calculate.expressions('spindleSpeed'),
         },
       },
     ],

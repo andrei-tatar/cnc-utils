@@ -483,8 +483,15 @@ export class ExpressionEditorComponent implements AfterViewInit, OnDestroy {
     this.stopListening?.();
   }
 
+  /**
+   * Can't be typed in: disabled, or read-only (`props.readonly`, a value
+   * worked out elsewhere; its control stays enabled, so it's still in the
+   * form's value).
+   */
   get disabled(): boolean {
-    return !!this.field().formControl?.disabled;
+    return (
+      !!this.field().formControl?.disabled || !!this.field().props?.readonly
+    );
   }
 
   /**

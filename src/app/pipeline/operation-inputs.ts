@@ -66,6 +66,7 @@ export function operationInputs(
     spindleSpeed,
     rampMode,
     rampAngle,
+    autoFeeds: ___,
     ...operationParameters
   }: OperationType,
   { tools, operations }: Pick<ModelType, 'tools' | 'operations'>,
@@ -93,6 +94,7 @@ export function operationInputs(
         feedRate: _____,
         plungeFeedRate: ______,
         fluteLength: ________,
+        flutes: _________,
         ...parameters
       }) => parameters)(tool)
     : null;
