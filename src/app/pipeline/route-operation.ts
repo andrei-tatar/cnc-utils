@@ -15,6 +15,8 @@ import {
 } from './vcarve-source';
 import { pointLength } from '../model-editor/operations/operation-drill';
 import { depthPerStep } from '../model-editor/operations/depth-steps';
+import { operationLabel } from '../model-editor/operations';
+import { recover } from './errors';
 
 /** Everything that decides an operation's toolpath. */
 export type RoutingInputs = {
@@ -48,7 +50,13 @@ export function routeOperation(
   }
   const operationGcode = new GCodeBuilder().sourceOperationId(operationId);
   return race(
-    routed$.pipe(map((r) => operationGcode.concat(GCodeBuilder.clone(r)))),
+    routed$.pipe(
+      map((r) => operationGcode.concat(GCodeBuilder.clone(r))),
+      // Nothing cut, rather than no G-code at all.
+      recover(`routing ${operationLabel(inputs.op.type)}`, () =>
+        GCodeBuilder.clone(operationGcode),
+      ),
+    ),
     working$,
   );
 }

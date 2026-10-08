@@ -16,6 +16,7 @@ import {
   switchMap,
   tap,
 } from 'rxjs';
+import { recover } from './errors';
 import { CamShape } from '../../cam/types';
 import { GeometrySettings } from '../../cam/geometry';
 import worker from '../../worker';
@@ -137,8 +138,14 @@ function createShapeEntry(
     shapeParameters$.pipe(distinctUntilChanged((a, b) => deepEqual(a, b))),
     geometry$,
   ]).pipe(
-    map(([t, geometry]) => resolveShape(t, shapeId, geometry, entries$)),
-    switchMap((resolveShape) => race(resolveShape, working$)),
+    switchMap(([t, geometry]) =>
+      race(
+        resolveShape(t, shapeId, geometry, entries$).pipe(
+          recover(`making a ${t.type} shape`, () => [] as CamShape[]),
+        ),
+        working$,
+      ),
+    ),
     shareLatest(),
   );
 
@@ -359,7 +366,16 @@ function createTransformEntry(
         distinctUntilChanged(),
         switchMap((shape) =>
           transform
-            ? race(worker.applyTransform(shape, transform, geometry), working$)
+            ? race(
+                worker.applyTransform(shape, transform, geometry).pipe(
+                  // Left as it came in.
+                  recover(
+                    `applying a ${transform.type} transform`,
+                    () => shape,
+                  ),
+                ),
+                working$,
+              )
             : of(shape),
         ),
       ),
