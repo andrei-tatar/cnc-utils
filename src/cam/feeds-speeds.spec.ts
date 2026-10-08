@@ -10,7 +10,11 @@ import {
 } from './feeds-speeds';
 
 describe('feedsAndSpeeds', () => {
-  const slot = (diameter: number, depth: number, flutes = 2): Cut => ({
+  const slot = (
+    diameter: number,
+    depth: number,
+    flutes = 2,
+  ): Extract<Cut, { kind: 'mill' }> => ({
     kind: 'mill',
     diameter,
     flutes,
@@ -80,6 +84,27 @@ describe('feedsAndSpeeds', () => {
     const full = feedsAndSpeeds(slot(3, 0.5))!;
     expect(light.chipLoad).toBeGreaterThan(full.chipLoad);
     expect(light.chipLoad).toBeLessThanOrEqual(full.chipLoad * 1.5 + 1e-9);
+  });
+
+  it('feeds a sloping edge faster for the same chip, up to twice', () => {
+    const straight = feedsAndSpeeds(slot(3, 0.5, 1))!;
+    const sloping = feedsAndSpeeds({ ...slot(3, 0.5, 1), edge: 0.7 })!;
+    const flat = feedsAndSpeeds({ ...slot(3, 0.5, 1), edge: 0.1 })!;
+    expect(sloping.chipLoad).toBeCloseTo(straight.chipLoad / 0.7, 6);
+    expect(sloping.notes.join()).toContain('1.4×');
+    expect(flat.chipLoad).toBeCloseTo(straight.chipLoad * 2, 6);
+  });
+
+  it('takes the chip load and the heaviest slot for the bit’s own size', () => {
+    // A 12.7 mm 60° V-bit 3 mm deep cuts 3.5 mm wide.
+    const narrow = { ...slot(3.46, 3, 1), edge: 1 };
+    const vBit = feedsAndSpeeds({ ...narrow, toolDiameter: 12.7 })!;
+    expect(feedsAndSpeeds(narrow)!.notes.join()).toContain('eased off');
+    expect(vBit.notes).toEqual([]);
+    expect(vBit.chipLoad).toBeCloseTo(
+      feedsAndSpeeds(slot(12.7, 3, 1))!.chipLoad,
+      6,
+    );
   });
 
   it('drills at the plunge rate only, telling to peck deep holes', () => {
