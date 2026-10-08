@@ -3,6 +3,7 @@ import {
   DEFAULT_GCODE_OPTIONS,
   GcodeOptions,
 } from '../../../cam/gcode-options';
+import { CURVE_TOLERANCE } from '../../../cam/geometry';
 
 export type ModelType = {
   gcode: GcodeOptions;
@@ -218,8 +219,8 @@ export const field: FormlyFieldConfig = {
         label: 'curve precision',
         description:
           'mm: how closely SVG and text curves (fitted with arcs) and anything stretched into an ellipse are followed; circles and arcs are exact; smaller is smoother but slower',
-        min: 0.001,
-        max: 1,
+        min: CURVE_TOLERANCE.min,
+        max: CURVE_TOLERANCE.max,
         required: true,
       },
     },

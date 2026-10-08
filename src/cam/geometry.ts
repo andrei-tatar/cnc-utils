@@ -21,6 +21,23 @@ export const DEFAULT_GEOMETRY: GeometrySettings = {
   decimals: 2,
 };
 
+/**
+ * The curve tolerances (mm) that can be used: finer would take ever more
+ * pieces to follow a curve (none at 0: it never gets there).
+ */
+export const CURVE_TOLERANCE = { min: 0.001, max: 1 };
+
+/**
+ * A curve tolerance that can be used: `value` kept within CURVE_TOLERANCE,
+ * or the default when it isn't a number.
+ */
+export function usableCurveTolerance(value: unknown): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return DEFAULT_GEOMETRY.curveTolerance;
+  }
+  return Math.min(CURVE_TOLERANCE.max, Math.max(CURVE_TOLERANCE.min, value));
+}
+
 let current = DEFAULT_GEOMETRY;
 
 /**
@@ -32,6 +49,7 @@ let current = DEFAULT_GEOMETRY;
 export function useGeometry(settings?: Partial<GeometrySettings>) {
   if (settings) {
     current = { ...DEFAULT_GEOMETRY, ...settings };
+    current.curveTolerance = usableCurveTolerance(current.curveTolerance);
   }
 }
 

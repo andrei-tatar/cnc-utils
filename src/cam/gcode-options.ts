@@ -1,3 +1,5 @@
+import { usableCurveTolerance } from './geometry';
+
 /** A corner, the middle of a side, or the middle of a box. */
 export type BoxAnchor =
   `${'xmin' | 'xmax' | 'xcenter'}-${'ymin' | 'ymax' | 'ycenter'}`;
@@ -118,5 +120,7 @@ export function resolveGcodeOptions(
       (merged as any)[key] = value;
     }
   }
+  // A field left out of range (0, say) is still stored: never use it so.
+  merged.curveTolerance = usableCurveTolerance(merged.curveTolerance);
   return merged;
 }
