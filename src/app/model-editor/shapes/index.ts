@@ -144,6 +144,7 @@ export const field: FormlyFieldConfig = {
       describeShape(shape, allShapes(field)),
     accent: '#2563eb',
     collapsible: true,
+    clonable: true,
     toggle: {
       key: 'hidden',
       icon: 'eye',

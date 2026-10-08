@@ -171,6 +171,7 @@ export const field: FormlyFieldConfig = {
       ),
     accent: '#059669',
     collapsible: true,
+    clonable: true,
     toggle: {
       key: 'disabled',
       icon: 'switch',
