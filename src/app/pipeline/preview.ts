@@ -1,8 +1,10 @@
 import {
+  combineLatest,
   distinctUntilChanged,
   map,
   MonoTypeOperatorFunction,
   Observable,
+  of,
   scan,
 } from 'rxjs';
 import { CamPath, CamPoint3, Highlight } from '../../cam/types';
@@ -11,13 +13,35 @@ import { distinctItems, distinctJson } from './operators';
 import { borrowedShapeId } from '../model-editor/operations/describe';
 
 /**
+ * The model as the preview sees it: items of a collapsed editor section
+ * (`collapsedSections$`: `shapes`, `operations`) count as closed, since
+ * they can't be seen being edited.
+ */
+function openInEditor(
+  model$: Observable<ModelType>,
+  collapsedSections$: Observable<string[]>,
+): Observable<Pick<ModelType, 'shapes' | 'operations'>> {
+  return combineLatest([model$, collapsedSections$]).pipe(
+    map(([{ shapes, operations }, collapsed]) => ({
+      shapes: collapsed.includes('shapes')
+        ? shapes.map((s) => ({ ...s, expanded: false }))
+        : shapes,
+      operations: collapsed.includes('operations')
+        ? (operations ?? []).map((o) => ({ ...o, expanded: false }))
+        : operations,
+    })),
+  );
+}
+
+/**
  * Shapes toggled off in the editor (hidden in the preview only), unless
  * they're expanded: a shape being edited is shown.
  */
 export function hiddenShapeIds(
   model$: Observable<ModelType>,
+  collapsedSections$: Observable<string[]> = of([]),
 ): Observable<string[]> {
-  return model$.pipe(
+  return openInEditor(model$, collapsedSections$).pipe(
     map(({ shapes }) =>
       shapes.filter((s) => s.hidden && !s.expanded).map((s) => s.id),
     ),
@@ -27,12 +51,14 @@ export function hiddenShapeIds(
 
 /**
  * An expanded operation highlights its toolpaths and the shape it cuts;
- * otherwise an expanded shape highlights itself and its toolpaths.
+ * otherwise an expanded shape highlights itself and its toolpaths. Nothing
+ * expanded (or only in collapsed sections) highlights everything.
  */
 export function highlightFromModel(
   model$: Observable<ModelType>,
+  collapsedSections$: Observable<string[]> = of([]),
 ): Observable<Highlight> {
-  return model$.pipe(
+  return openInEditor(model$, collapsedSections$).pipe(
     map(({ shapes, operations }) => {
       const expandedOperations = (operations ?? []).filter((o) => o.expanded);
       if (expandedOperations.length) {

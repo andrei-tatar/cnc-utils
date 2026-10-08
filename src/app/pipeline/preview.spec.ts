@@ -82,4 +82,38 @@ describe('preview', () => {
     ]);
     subscription.unsubscribe();
   });
+
+  it('highlights everything while the open item’s section is collapsed', () => {
+    const model$ = new BehaviorSubject(
+      model({ operationExpanded: true, shownExpanded: true }),
+    );
+    const collapsed$ = new BehaviorSubject<string[]>([]);
+    const highlights: unknown[] = [];
+    const subscription = highlightFromModel(model$, collapsed$).subscribe((h) =>
+      highlights.push(h),
+    );
+    collapsed$.next(['operations']);
+    collapsed$.next(['operations', 'shapes']);
+    collapsed$.next([]);
+    expect(highlights).toEqual([
+      { shapes: ['shown'], operations: ['op'] },
+      { shapes: ['shown'], operations: [] },
+      { shapes: [], operations: [] },
+      { shapes: ['shown'], operations: ['op'] },
+    ]);
+    subscription.unsubscribe();
+  });
+
+  it('hides an open hidden shape while the shapes section is collapsed', () => {
+    const model$ = new BehaviorSubject(model({ hiddenExpanded: true }));
+    const collapsed$ = new BehaviorSubject<string[]>([]);
+    const hidden: string[][] = [];
+    const subscription = hiddenShapeIds(model$, collapsed$).subscribe((ids) =>
+      hidden.push(ids),
+    );
+    collapsed$.next(['shapes']);
+    collapsed$.next([]);
+    expect(hidden).toEqual([[], ['hidden'], []]);
+    subscription.unsubscribe();
+  });
 });

@@ -64,6 +64,7 @@ import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { resolveModel } from '../model-editor/variables/resolve';
 import { ShapeExporter } from '../model-editor/shapes/shape-export';
+import { collapsedSections$ } from '../model-editor/components/collapsed-sections';
 import { ModelStore } from './model-store.service';
 import { WorkTracker } from './work-tracker.service';
 
@@ -190,10 +191,12 @@ export class CamService implements ShapeExporter {
 
   readonly hiddenShapes$: Observable<string[]> = hiddenShapeIds(
     this.store.model$,
+    collapsedSections$,
   );
 
   readonly highlight$: Observable<Highlight> = highlightFromModel(
     this.store.model$,
+    collapsedSections$,
   );
 
   /**
