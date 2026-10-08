@@ -88,6 +88,7 @@ import {
 import { StockView, TimeSummary } from '../services/cam.service';
 import { JobWarning } from '../../cam/job-checks';
 import type { Heightmap } from '../../cam/simulate';
+import { SIMULATION_CELLS, SimulationQuality } from '../pipeline/simulation';
 import { stockSolid } from './helpers/stock-solid';
 
 /** The measuring line, drawn over everything. */
@@ -154,20 +155,37 @@ const EMPTY_VIEW_SIZE = 400;
           />
         </svg>
       </button>
-      <button
-        type="button"
-        title="Simulate: show the material left after cutting (S)"
-        aria-label="Simulate"
-        [class.active]="simulating"
-        [attr.aria-pressed]="simulating"
-        (click)="toggleSimulate()"
-      >
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M1.5 6.5 8 3l6.5 3.5v4L8 14l-6.5-3.5zM1.5 6.5 8 10l6.5-3.5M8 10v4M5 8.2v-2M11 8.2v-2"
-          />
-        </svg>
-      </button>
+      <div class="tools_row">
+        <button
+          type="button"
+          title="Simulate: show the material left after cutting (S)"
+          aria-label="Simulate"
+          [class.active]="simulating"
+          [attr.aria-pressed]="simulating"
+          (click)="toggleSimulate()"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M1.5 6.5 8 3l6.5 3.5v4L8 14l-6.5-3.5zM1.5 6.5 8 10l6.5-3.5M8 10v4M5 8.2v-2M11 8.2v-2"
+            />
+          </svg>
+        </button>
+        @if (simulating) {
+          <select
+            class="tools_quality"
+            aria-label="Simulation quality"
+            [title]="qualityTitle"
+            [value]="simulationQuality"
+            (change)="setSimulationQuality($any($event.target).value)"
+          >
+            @for (q of SIMULATION_QUALITIES; track q) {
+              <option [value]="q" [selected]="q === simulationQuality">
+                {{ q }}
+              </option>
+            }
+          </select>
+        }
+      </div>
     </div>
     @if (warnings.length) {
       <div class="checks">
@@ -266,6 +284,30 @@ const EMPTY_VIEW_SIZE = 400;
         &.active {
           color: #ffd54f;
           border-color: #ffd54f;
+        }
+      }
+
+      .tools_row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .tools_quality {
+        height: 30px;
+        padding: 0 6px;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        background: rgba(30, 30, 30, 0.85);
+        color: #bbb;
+        font:
+          12px/1 system-ui,
+          sans-serif;
+        cursor: pointer;
+
+        &:hover {
+          color: #fff;
+          border-color: #666;
         }
       }
 
@@ -496,11 +538,21 @@ export class ViewerComponent implements OnInit, OnDestroy {
   @Input()
   set simulation(value: Heightmap | null) {
     this.simulation$.next(value);
+    this.qualityTitle =
+      'Simulation quality' +
+      (value ? `: cells of ${value.cell.toFixed(2)} mm` : '');
   }
   private simulation$ = new BehaviorSubject<Heightmap | null>(null);
   /** Simulating: asks for the material left, and shows it. */
   simulating = false;
   @Output() simulateChange = new EventEmitter<boolean>();
+  /** How finely the material is simulated (finer is slower). */
+  @Input() simulationQuality: SimulationQuality = 'standard';
+  @Output() simulationQualityChange = new EventEmitter<SimulationQuality>();
+  readonly SIMULATION_QUALITIES = Object.keys(
+    SIMULATION_CELLS,
+  ) as SimulationQuality[];
+  qualityTitle = 'Simulation quality';
   /**
    * The toolpaths, hidden while the simulated material is shown (so are the
    * shapes).
@@ -1168,6 +1220,11 @@ export class ViewerComponent implements OnInit, OnDestroy {
     } else if (event.key === 'Escape' && this.measuring) {
       this.toggleMeasure();
     }
+  }
+
+  setSimulationQuality(quality: SimulationQuality) {
+    this.simulationQuality = quality;
+    this.simulationQualityChange.emit(quality);
   }
 
   /** Shows or hides the material left after cutting. */

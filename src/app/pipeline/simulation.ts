@@ -7,6 +7,39 @@ import { ModelType } from '../model-editor/model';
 const MARGIN = 5;
 
 /**
+ * How finely the material is simulated: about how many cells the block is
+ * split into. Time and memory grow with it (the solid drawn takes about
+ * 120 bytes a cell).
+ */
+export const SIMULATION_CELLS = {
+  draft: 150_000,
+  standard: 400_000,
+  fine: 4_000_000,
+  finest: 8_000_000,
+} as const;
+
+export type SimulationQuality = keyof typeof SIMULATION_CELLS;
+
+const QUALITY_STORAGE_KEY = 'ui.simulationQuality';
+
+/** The quality last chosen in this browser (standard at first). */
+export function loadSimulationQuality(): SimulationQuality {
+  try {
+    const value = localStorage.getItem(QUALITY_STORAGE_KEY);
+    if (value && value in SIMULATION_CELLS) {
+      return value as SimulationQuality;
+    }
+  } catch {}
+  return 'standard';
+}
+
+export function saveSimulationQuality(quality: SimulationQuality) {
+  try {
+    localStorage.setItem(QUALITY_STORAGE_KEY, quality);
+  } catch {}
+}
+
+/**
  * What the simulation needs: each enabled operation's bit, and the block of
  * material (the stock, or one round the cuts). Null with nothing to cut.
  */
