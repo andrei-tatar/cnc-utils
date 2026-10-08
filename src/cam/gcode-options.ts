@@ -95,7 +95,7 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   spindleSpeed: 12000,
   spindleDelay: 3,
   returnHome: false,
-  decimals: 2,
+  decimals: 3,
   arcs: true,
   optimizeTravel: true,
   curveTolerance: 0.01,
