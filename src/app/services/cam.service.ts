@@ -23,6 +23,7 @@ import {
   buildProgram,
   buildProgramPerTool,
   generateGcodeFromOperations,
+  operationDescriptions,
   Program,
   programPaths,
   programTime,
@@ -244,24 +245,28 @@ export class CamService implements ShapeExporter {
   constructor() {
     this.download$
       .pipe(
-        withLatestFrom(this.program$),
+        withLatestFrom(this.program$, this.model$),
         // The project as it is now, not as it was when last routed.
-        concatMap(async ([how, program]) => ({
+        concatMap(async ([how, program, model]) => ({
           how,
           program,
           metadata: await getModelMetadata(this.store.value),
+          descriptions: operationDescriptions(model),
         })),
       )
-      .subscribe(({ how, program, metadata }) => {
+      .subscribe(({ how, program, metadata, descriptions }) => {
         // Named after the saved project the work belongs to, if any.
         const name = `${
           fileNameFrom(this.store.project?.name ?? '') || 'gcode'
         }-${new Date().getTime()}`;
         if (how === 'one') {
-          downloadFile(buildProgram(program, metadata), `${name}.nc`);
+          downloadFile(
+            buildProgram(program, metadata, descriptions),
+            `${name}.nc`,
+          );
           return;
         }
-        const files = buildProgramPerTool(program, metadata);
+        const files = buildProgramPerTool(program, metadata, descriptions);
         const entries = files.map((file, i) => ({
           name: `${String(i + 1).padStart(2, '0')}-${
             fileNameFrom(

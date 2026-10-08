@@ -17,6 +17,7 @@ import { CamPath, CamShape, CamTab } from '../../cam/types';
 import { tabsNear, tabsOf } from '../../cam/tabs';
 import worker from '../../worker';
 import { ModelType } from '../model-editor/model';
+import { describeOperation } from '../model-editor/operations/describe';
 import { geometrySettings } from './geometry-settings';
 import { ShapeResults } from './shapes';
 import { OperationInputs, operationInputs } from './operation-inputs';
@@ -214,11 +215,47 @@ function createOperationEntry(
 }
 
 /**
- * The program's G-code: the embedded project (when given, as from
- * `getModelMetadata`), then each operation's G-code.
+ * What to say about each operation in the G-code (by operation id), with
+ * the `operationComments` option.
  */
-export function buildProgram(program: Program, modelMetadata?: string): string {
-  return wholeProgram(program, modelMetadata).build(program.options);
+export type OperationDescriptions = Record<string, string>;
+
+/**
+ * Each operation as the G-code describes it: its place in the list, its
+ * name if it has one, what it cuts and with which tool, e.g. "Operation 2:
+ * pocket 5 mm · circle Ø20 · T1 Ø6 mm end mill".
+ */
+export function operationDescriptions(model: ModelType): OperationDescriptions {
+  const operations = model.operations ?? [];
+  return Object.fromEntries(
+    operations.map((op, i) => {
+      const what = describeOperation(
+        op,
+        model.shapes ?? [],
+        model.tools ?? [],
+        operations,
+      );
+      return [
+        op.id,
+        `Operation ${i + 1}: ${op.name ? `${op.name} (${what})` : what}`,
+      ];
+    }),
+  );
+}
+
+/**
+ * The program's G-code: the embedded project (when given, as from
+ * `getModelMetadata`), then each operation's G-code, after a comment saying
+ * what it is (when described and the option is on).
+ */
+export function buildProgram(
+  program: Program,
+  modelMetadata?: string,
+  descriptions?: OperationDescriptions,
+): string {
+  return wholeProgram(program, modelMetadata, descriptions).build(
+    program.options,
+  );
 }
 
 /** One file of a program split by tool (see `buildProgramPerTool`). */
@@ -239,6 +276,7 @@ export type ToolFile = {
 export function buildProgramPerTool(
   program: Program,
   modelMetadata?: string,
+  descriptions?: OperationDescriptions,
 ): ToolFile[] {
   type Run = {
     toolNumber: number | null;
@@ -273,6 +311,7 @@ export function buildProgramPerTool(
         wholeProgram(
           { ...program, builders: [note, ...run.builders] },
           modelMetadata,
+          descriptions,
         ).build(program.options) + '\n',
     };
   });
@@ -298,12 +337,22 @@ export function programTime(program: Program): JobTime {
 }
 
 function wholeProgram(
-  { builders }: Program,
+  { builders, options }: Program,
   modelMetadata?: string,
+  descriptions?: OperationDescriptions,
 ): GCodeBuilder {
   const meta = new GCodeBuilder();
   if (modelMetadata !== undefined) {
     meta.addModelMetadata(modelMetadata);
+  }
+  if (descriptions && options.operationComments) {
+    builders = builders.flatMap((builder) => {
+      const id = builder.instructions.find(
+        (i) => i.type === 'source-operation',
+      );
+      const text = id?.type === 'source-operation' && descriptions[id.id];
+      return text ? [new GCodeBuilder().comment(text), builder] : [builder];
+    });
   }
   // One copy of every instruction, rather than one per operation.
   const result = GCodeBuilder.concatAll([meta, ...builders]);
