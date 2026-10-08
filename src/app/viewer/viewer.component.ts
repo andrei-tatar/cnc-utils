@@ -90,6 +90,7 @@ import { JobWarning } from '../../cam/job-checks';
 import type { Heightmap } from '../../cam/simulate';
 import { SIMULATION_CELLS, SimulationQuality } from '../pipeline/simulation';
 import { stockSolid } from './helpers/stock-solid';
+import { shapeLook$ } from './helpers/shape-look';
 
 /** The measuring line, drawn over everything. */
 const MEASURE_MATERIAL = new LineBasicMaterial({
@@ -1657,36 +1658,30 @@ export class ViewerComponent implements OnInit, OnDestroy {
               clean.add(clear);
             }
 
+            // One subscription for the whole look: highlighting a shape
+            // never shows it while it's hidden.
             clean.add(
-              combineLatest([o.highlight$, o.clamp$]).subscribe(
-                ([highlight, clamp]) => {
-                  sceneItems.forEach((item) => {
-                    if (item instanceof LineSegments) {
-                      item.material = clamp
-                        ? o.clampEdges
-                        : highlight
-                          ? o.materialHighlight
-                          : o.material;
-                    }
-                    if (item instanceof Mesh) {
-                      // Unfilled, not drawn at all.
-                      item.visible = clamp || highlight;
-                      item.material = clamp
+              shapeLook$(o).subscribe((look) => {
+                sceneItems.forEach((item) => {
+                  if (item instanceof LineSegments) {
+                    item.visible = look.outline.visible;
+                    item.material = {
+                      clamp: o.clampEdges,
+                      highlight: o.materialHighlight,
+                      plain: o.material,
+                    }[look.outline.material];
+                  }
+                  if (item instanceof Mesh) {
+                    item.visible = look.fill.visible;
+                    item.material =
+                      look.fill.material === 'clamp'
                         ? o.clampFaces
-                        : highlight
+                        : look.fill.visible
                           ? o.material
                           : o.nullMaterial;
-                    }
-                  });
-                  this.requestRender();
-                },
-              ),
-            );
-
-            clean.add(
-              o.hidden$.subscribe((hidden) => {
-                sceneItems.forEach((item) => (item.visible = !hidden));
-                tabs.visible = !hidden;
+                  }
+                });
+                tabs.visible = look.tabs;
                 this.requestRender();
               }),
             );
