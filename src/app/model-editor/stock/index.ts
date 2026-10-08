@@ -1,6 +1,7 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { DEFAULT_STOCK, StockOptions } from '../../../cam/stock';
 import { WoodGroup, WOODS } from '../../../cam/feeds-speeds';
+import { EditorState } from '../editor-state';
 
 const WOOD_GROUPS: Record<WoodGroup, string> = {
   softwood: 'softwoods',
@@ -15,6 +16,14 @@ export type ModelType = {
 
 const d = DEFAULT_STOCK;
 const hideUnlessStock = (field: FormlyFieldConfig) => !field.model?.enabled;
+
+/** Turning the stock on sizes it round every operation's cuts. */
+function fitStock(field: FormlyFieldConfig, event?: Event) {
+  // The change event comes before the control takes the new value.
+  if ((event?.target as HTMLInputElement | undefined)?.checked) {
+    (field.options?.formState as Partial<EditorState>)?.fitStock?.();
+  }
+}
 
 export const field: FormlyFieldConfig = {
   key: 'stock',
@@ -31,6 +40,8 @@ export const field: FormlyFieldConfig = {
       defaultValue: d.enabled,
       props: {
         label: 'set the stock size (shown, and cuts checked against it)',
+        description: 'turning it on fits the stock round every operation',
+        change: fitStock,
       },
     },
     {
