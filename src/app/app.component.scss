@@ -33,7 +33,8 @@
 
 .editor_content {
   flex: 1;
-  overflow-y: auto;
+  // Always shown, so expanding / collapsing doesn't shift the layout.
+  overflow-y: scroll;
   padding: 12px;
 }
 
