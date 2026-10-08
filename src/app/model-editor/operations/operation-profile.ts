@@ -95,7 +95,7 @@ const field: FormlyFieldConfig = {
         min: 0,
         label: 'lead in / out',
         description:
-          'mm, radius of an arc into and out of each loop, on the waste side; 0 for none',
+          'mm, radius of an arc into and out of each loop, on the waste side (inside holes); 0 for none',
         required: true,
       },
       expressions: { hide: hideUnlessOffset },
