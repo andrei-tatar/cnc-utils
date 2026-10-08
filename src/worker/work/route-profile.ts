@@ -7,6 +7,7 @@ import { applyTransform } from './apply-transform';
 import { getDistance } from '../../util';
 import { insideFirst, TravelStop, travelOrder } from '../../cam/travel-order';
 import { withLeads } from '../../cam/leads';
+import { containingPolygons } from '../../cam/polygon-nesting';
 import {
   bulgeOf,
   pointAlong,
@@ -146,15 +147,27 @@ async function profilePaths(
       ? (await holeSide(closed))(offset)
       : null;
 
-  const polygons = offsetInput
+  const paths = offsetInput
     .flatMap((s) => s.polygons)
     .filter(
       (p) => p.vertices.length >= 2 && (options.mode !== 'holes' || p.close),
-    )
-    .flatMap((p) =>
-      // Orient first, so pieces of a loop keep its direction.
-      keptStretches(orientPath(p, options.side, options.direction), keep),
     );
+  // A hole's loop has the waste on its other side: an outside profile cuts
+  // inside its holes, an inside one round them.
+  const loops = paths.filter((p) => p.close);
+  const containing = containingPolygons(loops);
+  const isHole = new Set(loops.filter((_, i) => containing[i].length % 2));
+  const polygons = paths.flatMap((p) =>
+    // Orient first, so pieces of a loop keep its direction.
+    keptStretches(
+      orientPath(
+        p,
+        isHole.has(p) ? otherSide(options.side) : options.side,
+        options.direction,
+      ),
+      keep,
+    ),
+  );
 
   return options.optimizeTravel === false
     ? polygons
@@ -176,7 +189,7 @@ function cutPasses(
   from: number,
   levels: number[],
   options: {
-    side: 'outside' | 'inside' | 'on-line';
+    direction: 'climb' | 'conventional';
     toolSize: number;
     leadIn?: number;
     rampAngle?: number | null;
@@ -185,7 +198,13 @@ function cutPasses(
 ) {
   const rampAngle = options.rampAngle ?? null;
   if (leads && polygon.close && polygon.vertices.length > 1) {
-    const path = withLeads(polygon.vertices, options.side, options.leadIn!);
+    // Loops are oriented for the direction (see orientPath): climbing,
+    // the part is on the right and the waste on the left.
+    const path = withLeads(
+      polygon.vertices,
+      options.direction === 'climb' ? 'left' : 'right',
+      options.leadIn!,
+    );
     let level = from;
     for (const depth of levels) {
       carvePass(builder, path, false, level, depth, {
@@ -375,6 +394,13 @@ function keptStretches(
  * counter-clockwise around an inside one (and the reverse for conventional).
  * Only closed loops have a meaningful winding.
  */
+/** The side a hole's loop is cut on, for a profile on `side`. */
+function otherSide(
+  side: 'outside' | 'inside' | 'on-line',
+): 'outside' | 'inside' | 'on-line' {
+  return side === 'outside' ? 'inside' : side === 'inside' ? 'outside' : side;
+}
+
 function orientPath(
   polygon: CamPolygon,
   side: 'outside' | 'inside' | 'on-line',
