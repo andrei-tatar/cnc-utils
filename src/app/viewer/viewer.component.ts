@@ -728,10 +728,14 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.controls.addEventListener('change', this.requestRender);
     this.requestRender();
 
+    // Shapes lie flat at Z0, over each other and the stock's top: what's
+    // see-through mustn't write depth, or which one shows is decided pixel
+    // by pixel (in steps, as their depths round differently).
     const material = new LineBasicMaterial({
       transparent: true,
       color: 'orange',
       opacity: 0.2,
+      depthWrite: false,
     });
     const materialHighlight = new LineBasicMaterial({
       color: 'orange',
@@ -739,6 +743,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const nullMaterial = new LineBasicMaterial({
       opacity: 0,
       transparent: true,
+      depthWrite: false,
     });
     const clampEdges = new LineBasicMaterial({ color: '#ef4444' });
     const clampFaces = new MeshBasicMaterial({
@@ -1607,6 +1612,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
                           : o.material;
                     }
                     if (item instanceof Mesh) {
+                      // Unfilled, not drawn at all.
+                      item.visible = clamp || highlight;
                       item.material = clamp
                         ? o.clampFaces
                         : highlight
