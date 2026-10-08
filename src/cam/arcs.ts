@@ -11,6 +11,8 @@ import { CamPoint, CamPolygon, CamVertex } from './types';
 
 /** Lines standing in for arcs stray no further than this by default (mm). */
 export const DEFAULT_TOLERANCE = 0.01;
+/** The finest tolerance curves are ever followed to (mm). */
+const MIN_TOLERANCE = 1e-4;
 
 export type Arc = {
   center: CamPoint;
@@ -117,6 +119,10 @@ export function arcSteps(
   sweep: number,
   tolerance = DEFAULT_TOLERANCE,
 ): number {
+  // Never finer than this: at 0 a curve would take endless pieces.
+  tolerance = Number.isNaN(tolerance)
+    ? DEFAULT_TOLERANCE
+    : Math.max(MIN_TOLERANCE, tolerance);
   if (!(radius > tolerance)) {
     return Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2)));
   }
