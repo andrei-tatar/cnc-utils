@@ -4,6 +4,7 @@ import {
   GcodeOptions,
 } from '../../../cam/gcode-options';
 import { CURVE_TOLERANCE } from '../../../cam/geometry';
+import { MACHINES } from '../../../cam/feeds-speeds';
 
 export type ModelType = {
   gcode: GcodeOptions;
@@ -24,6 +25,20 @@ export const field: FormlyFieldConfig = {
     accent: '#475569',
   },
   fieldGroup: [
+    {
+      key: 'machine',
+      type: 'enum',
+      defaultValue: d.machine,
+      props: {
+        label: 'machine',
+        description: 'what operations’ feeds & speeds are worked out for',
+        required: true,
+        options: MACHINES.map((machine) => ({
+          value: machine.id,
+          label: machine.name,
+        })),
+      },
+    },
     {
       wrappers: ['group'],
       props: {

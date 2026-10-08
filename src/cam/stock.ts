@@ -1,3 +1,4 @@
+import { DEFAULT_WOOD } from './feeds-speeds';
 import { anchorPoint, Box, BoxAnchor, GcodeOptions } from './gcode-options';
 
 /** The material being cut, and where the G-code's zero is on it. */
@@ -18,6 +19,8 @@ export type StockOptions = {
    * the middle of the stock.
    */
   xyZero: 'design' | BoxAnchor;
+  /** The wood it is (an id in `WOODS`), for working out feeds and speeds. */
+  material: string;
 };
 
 export const DEFAULT_STOCK: StockOptions = {
@@ -29,6 +32,7 @@ export const DEFAULT_STOCK: StockOptions = {
   y: 0,
   zZero: 'top',
   xyZero: 'design',
+  material: DEFAULT_WOOD,
 };
 
 /** Complete stock settings from a (possibly partial) stored value. */

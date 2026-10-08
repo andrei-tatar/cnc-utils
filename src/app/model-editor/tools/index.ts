@@ -54,6 +54,8 @@ export type ToolType = {
   cornerRadius?: number;
   /** Drill: the angle of its point (degrees, 118 for most twist drills). */
   pointAngle?: number;
+  /** How many cutting edges it has (2 when not set): for feeds and speeds. */
+  flutes?: number;
   /** How long its cutting edge is (mm): deeper cuts are flagged. */
   fluteLength?: number | null;
   /** Keyhole: the diameter of the neck above its head (mm). */
@@ -348,6 +350,18 @@ export const field: FormlyFieldConfig = {
           required: true,
         },
         expressions: { hide: hideUnlessBit('drill') },
+      },
+      {
+        key: 'flutes',
+        type: 'number',
+        defaultValue: 2,
+        props: {
+          min: 1,
+          label: 'flutes',
+          description: 'cutting edges, for working out feeds and speeds',
+          required: true,
+        },
+        validators: { validation: ['whole-number'] },
       },
       {
         key: 'fluteLength',

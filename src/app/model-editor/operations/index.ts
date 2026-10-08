@@ -14,6 +14,7 @@ import {
   operationFeedsAndSpeeds,
   ToolOverrides,
 } from '../tools/feeds-and-speeds';
+import { autoFeedsField, calculatedFeedExpressions } from './feeds-calculator';
 
 import {
   Definition as PocketDefinition,
@@ -305,16 +306,19 @@ export const field: FormlyFieldConfig = {
       },
       ...operations.map((t) => t.fieldGroup),
       // Only these ramp into their cuts.
-      operationFeedsAndSpeeds([
-        PocketDefinition.type,
-        ProfileDefinition.type,
-        VCarveDefinition.type,
-        VCarveClearDefinition.type,
-        RestDefinition.type,
-        ChamferDefinition.type,
-        InlayDefinition.type,
-        FlatPlugDefinition.type,
-      ]),
+      operationFeedsAndSpeeds(
+        { field: autoFeedsField, expressions: calculatedFeedExpressions },
+        [
+          PocketDefinition.type,
+          ProfileDefinition.type,
+          VCarveDefinition.type,
+          VCarveClearDefinition.type,
+          RestDefinition.type,
+          ChamferDefinition.type,
+          InlayDefinition.type,
+          FlatPlugDefinition.type,
+        ],
+      ),
     ],
   },
 };

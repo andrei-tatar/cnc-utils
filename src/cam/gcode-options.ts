@@ -1,3 +1,4 @@
+import { DEFAULT_MACHINE } from './feeds-speeds';
 import { usableCurveTolerance } from './geometry';
 
 /** A corner, the middle of a side, or the middle of a box. */
@@ -19,6 +20,11 @@ export function anchorPoint(
 
 /** Project-wide settings for the generated G-code. */
 export type GcodeOptions = {
+  /**
+   * The machine the job runs on (an id in `MACHINES`): what feeds and
+   * speeds are worked out for.
+   */
+  machine: string;
   /** Height for rapid moves and tool changes, in mm above the stock. */
   safetyHeight: number;
   /** Default cutting feed rate (mm/min), for tools without their own. */
@@ -85,6 +91,7 @@ export type GcodeOptions = {
 };
 
 export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
+  machine: DEFAULT_MACHINE,
   safetyHeight: 5,
   carveFeedRate: 1200,
   plungeFeedRate: 300,
