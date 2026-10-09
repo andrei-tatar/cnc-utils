@@ -118,10 +118,6 @@ const operations = [
   RotateDefinition,
 ];
 
-/** The stock is a cylinder held on a rotary axis. */
-const onRoundStock = (field: FormlyFieldConfig) =>
-  onRotary(field) && rootModel(field)?.stock?.shape === 'cylinder';
-
 /** Rotate steps and rotary repeats: no tool, no shape, nothing cut. */
 const cutsNothing = (field: FormlyFieldConfig) =>
   NO_TOOL.has(field.model?.type);
@@ -395,19 +391,33 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
       type: 'boolean',
       defaultValue: false,
       props: {
-        label: 'wrap round the cylinder',
+        label: 'wrap round the stock',
       },
       expressions: {
         // A clearing (or rest machining) is wrapped as what it clears for.
         hide: (field: FormlyFieldConfig) =>
           cutsNothing(field) ||
-          !onRoundStock(field) ||
+          !onRotary(field) ||
           belongsToAnother(field.model?.type),
         'props.description': (field: FormlyFieldConfig) => {
           const stock = rootModel(field)?.stock;
-          const across = stock?.rotaryAlong === 'y' ? 'X' : 'Y';
-          const r = (numberIn(field, stock?.diameter) ?? 0) / 2;
-          return `draw it unrolled: ${across} runs round the stock, the axis line on top, ±${Math.round(Math.PI * r * 10) / 10} mm either side to go all round`;
+          const alongY = stock?.rotaryAlong === 'y';
+          const n = (value: unknown) => numberIn(field, value as any) ?? 0;
+          // On a cylinder, its surface; on a box, the circle its corners
+          // turn in, depth below that.
+          const round = stock?.shape === 'cylinder';
+          const r = round
+            ? n(stock?.diameter) / 2
+            : Math.hypot(
+                n(alongY ? stock?.width : stock?.height) / 2,
+                n(stock?.thickness) / 2,
+              );
+          const half = Math.round(Math.PI * r * 10) / 10;
+          return `draw it unrolled: ${alongY ? 'X' : 'Y'} runs round the stock, the axis line on top, ±${half} mm either side to go all round${
+            round
+              ? ''
+              : `; on the circle its corners turn in (Ø${Math.round(r * 20) / 10}), depth below that`
+          }`;
         },
       },
     },

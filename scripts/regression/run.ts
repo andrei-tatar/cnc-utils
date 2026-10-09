@@ -330,7 +330,11 @@ async function rotaryHeightmaps(
   )) {
     let block;
     if (wrapped) {
-      const half = Math.PI * rotary.halfThickness;
+      // On the wrap circle: a cylinder's, or round a box's corners.
+      const wrapR = rotary.round
+        ? rotary.halfThickness
+        : Math.hypot(rotary.halfWidth, rotary.halfThickness);
+      const half = Math.PI * wrapR;
       let min = rotary.across - half;
       let max = rotary.across + half;
       for (const path of group)
@@ -343,7 +347,7 @@ async function rotaryHeightmaps(
         rotary.along === 'x'
           ? { ...stock, minY: min, maxY: max }
           : { ...stock, minX: min, maxX: max };
-      block = { ...block, top: 0, bottom: -rotary.halfThickness };
+      block = { ...block, top: 0, bottom: -wrapR };
     } else {
       const half = top(angle + 90);
       const [min, max] = [rotary.across - half, rotary.across + half];

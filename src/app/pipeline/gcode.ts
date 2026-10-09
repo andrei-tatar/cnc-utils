@@ -78,12 +78,12 @@ export type ProgramStep = {
 export function programSteps(
   operations: ModelType['operations'],
   rotary: boolean,
-  /** The stock is round: operations can be wrapped round it. */
-  round = false,
+  /** Operations can be wrapped round the stock (it's on a rotary axis). */
+  canWrap = false,
 ): ProgramStep[] {
   const all = flatOperations(operations);
   const step = (op: any, rotation: number | null): ProgramStep =>
-    round && operationWrap(op, all)
+    canWrap && operationWrap(op, all)
       ? { id: op.id, rotation, wrap: true }
       : { id: op.id, rotation };
   return (operations ?? []).flatMap((op: any): ProgramStep[] => {
@@ -179,7 +179,7 @@ export function generateGcodeFromOperations(
   const steps$ = model$.pipe(
     map((model) => {
       const rotary = rotaryOf(resolveStock(model.stock));
-      return programSteps(model.operations, !!rotary, !!rotary?.round);
+      return programSteps(model.operations, !!rotary, !!rotary);
     }),
     distinctJson(),
   );

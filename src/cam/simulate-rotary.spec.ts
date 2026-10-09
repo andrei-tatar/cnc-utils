@@ -176,4 +176,37 @@ describe('simulating a stock on a rotary axis', () => {
     }
     expect(top).toBeCloseTo(-3, 0);
   });
+
+  it('rounds a square blank with rings wrapped round it', () => {
+    // 40 × 40: its corners turn in a circle of radius 20√2; rings all round,
+    // down to radius 15, between X30 and X70.
+    const r = Math.hypot(20, 20);
+    const rings: CamPath[] = [];
+    for (let x = 30; x <= 70; x += 2) {
+      rings.push({
+        sourceShapeId: 's',
+        sourceOperationId: 'slot',
+        type: 'carve',
+        wrapped: true,
+        rotation: 0,
+        points: [
+          { x, y: 20 - Math.PI * r, z: -(r - 15) },
+          { x, y: 20 + Math.PI * r, z: -(r - 15) },
+        ],
+      });
+    }
+    const solid = simulateRotaryStock(rings, tools, rotary, stock, 400_000);
+    let inside = 0;
+    let outside = 0;
+    const p = solid.positions;
+    for (let v = 0; v < p.length; v += 3) {
+      if (p[v] < 40 || p[v] > 60) continue;
+      const fromAxis = Math.hypot(p[v + 1] - 20, p[v + 2] + 20);
+      inside = Math.max(inside, fromAxis);
+      outside = Math.max(outside, Math.abs(fromAxis - 15));
+    }
+    // Round there: radius 15 all round (within a grid step).
+    expect(inside).toBeLessThan(15.6);
+    expect(outside).toBeLessThan(0.6);
+  });
 });

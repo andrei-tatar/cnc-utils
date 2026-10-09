@@ -379,7 +379,7 @@ export class CamService implements ShapeExporter {
           angles: rotaryOf(view.stock)
             ? operationAngles(o, model.operations)
             : null,
-          wrapped: !!rotaryOf(view.stock)?.round && operationWrap(o, all),
+          wrapped: !!rotaryOf(view.stock) && operationWrap(o, all),
           seconds: time.byOperation.get(o.id)!,
         };
       });

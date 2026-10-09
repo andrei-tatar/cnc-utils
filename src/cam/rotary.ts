@@ -145,6 +145,22 @@ export function operationPointOnBlank(
 }
 
 /**
+ * The circle a wrapped design is wrapped on: a cylinder's own, or the one
+ * a box's corners turn in (what's outside it is air). Wrapped Z is the depth
+ * below it.
+ */
+export function wrapRadius(rotary: Rotary): number {
+  return rotary.round
+    ? rotary.halfThickness
+    : Math.hypot(rotary.halfWidth, rotary.halfThickness);
+}
+
+/** How much higher the wrap circle's top is than the stock's top at 0°. */
+export function wrapShift(rotary: Rotary): number {
+  return wrapRadius(rotary) - rotary.halfThickness;
+}
+
+/**
  * Which way round a wrapped design goes, as the axis turns (+1 or −1):
  * so that, unrolled, it reads as drawn seen from outside the stock. Along
  * X a positive turn brings the +Y side up, along Y the −X side.
@@ -154,9 +170,9 @@ export function wrapDirection(rotary: Rotary): 1 | -1 {
 }
 
 /**
- * A point of an operation wrapped round a round stock from `angle` (drawn
+ * A point of an operation wrapped round the stock from `angle` (drawn
  * unrolled: across the axis is round it, the axis line at `angle`; Z the
- * depth below the surface) on the blank at 0°.
+ * depth below the wrap circle, `wrapRadius`) on the blank at 0°.
  */
 export function wrappedPointOnBlank(
   rotary: Rotary,
@@ -167,13 +183,15 @@ export function wrappedPointOnBlank(
   const across = (alongX ? point.y : point.x) - rotary.across;
   const turned =
     angle +
-    wrapDirection(rotary) * (across / rotary.halfThickness) * (180 / Math.PI);
+    wrapDirection(rotary) * (across / wrapRadius(rotary)) * (180 / Math.PI);
+  // Z below the wrap circle to Z from the top at 0°.
+  const z = point.z + wrapShift(rotary);
   return onBlank(
     rotary,
     turned,
     alongX
-      ? { x: point.x, y: rotary.across, z: point.z }
-      : { x: rotary.across, y: point.y, z: point.z },
+      ? { x: point.x, y: rotary.across, z }
+      : { x: rotary.across, y: point.y, z },
   );
 }
 

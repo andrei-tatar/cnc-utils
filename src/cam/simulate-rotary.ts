@@ -1,4 +1,4 @@
-import { Rotary, rotaryTop, wrapDirection } from './rotary';
+import { Rotary, rotaryTop, wrapDirection, wrapRadius } from './rotary';
 import {
   Heightmap,
   SimulatedStock,
@@ -60,7 +60,7 @@ export function simulateRotaryStock(
     }));
   // Wrapped cuts: an unrolled heightmap each, read round the axis.
   const wrapped = all.filter((m) => m.wrapped);
-  const r = rotary.halfThickness;
+  const r = wrapRadius(rotary);
   const circumference = 2 * Math.PI * r;
 
   // The grid, a step past the stock all round so its surface closes.
@@ -272,7 +272,7 @@ function unrolledBlock(
   paths: CamPath[],
 ): SimulatedStock {
   const alongX = rotary.along === 'x';
-  const half = Math.PI * rotary.halfThickness;
+  const half = Math.PI * wrapRadius(rotary);
   let min = rotary.across - half;
   let max = rotary.across + half;
   for (const path of paths) {
@@ -289,7 +289,7 @@ function unrolledBlock(
         minY: min,
         maxY: max,
         top: 0,
-        bottom: -rotary.halfThickness,
+        bottom: -wrapRadius(rotary),
       }
     : {
         minX: min,
@@ -297,7 +297,7 @@ function unrolledBlock(
         minY: stock.minY,
         maxY: stock.maxY,
         top: 0,
-        bottom: -rotary.halfThickness,
+        bottom: -wrapRadius(rotary),
       };
 }
 
