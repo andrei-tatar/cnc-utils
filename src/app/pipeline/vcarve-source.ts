@@ -254,6 +254,7 @@ export function imageEngraveOptions(
       alignY: op.imageAlignY ?? 'middle',
       offsetX: op.imageOffsetX ?? 0,
       offsetY: op.imageOffsetY ?? 0,
+      rotation: op.imageRotation ?? 0,
     },
     invert: !!op.invertImage,
     lightDepth: op.lightDepth ?? 0,

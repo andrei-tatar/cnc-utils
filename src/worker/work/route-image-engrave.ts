@@ -11,6 +11,8 @@ import {
   engraveRuns,
   ImageLayout,
   imagePlacement,
+  quarterTurns,
+  rotateBrightness,
 } from '../../cam/image-engrave';
 import { CamShape } from '../../cam/types';
 import { brightnessAt, imagePixels } from './image-pixels';
@@ -104,28 +106,35 @@ export async function imageEngraveRuns(
   const box = polygonsBounds(region);
 
   // Drawn about a pixel per sample (no larger than it is).
+  // Turned a quarter (or three) the image's width and height swap places.
+  const turns = quarterTurns(options.layout.rotation);
+  const sideways = turns % 2 === 1;
   let placement: Bounds = box;
   const pixels = await imagePixels(
     options.image,
     (width, height) => {
-      placement = imagePlacement(box, width, height, options.layout);
+      const [w, h] = sideways ? [height, width] : [width, height];
+      placement = imagePlacement(box, w, h, options.layout);
       const across = (mm: number, own: number) =>
         Math.min(own, MAX_PIXELS, Math.ceil(mm / options.sampleStep));
-      return {
-        width: across(placement.maxX - placement.minX, width),
-        height: across(placement.maxY - placement.minY, height),
-      };
+      const wide = across(placement.maxX - placement.minX, w);
+      const high = across(placement.maxY - placement.minY, h);
+      // Drawn as it is, turned after.
+      return sideways
+        ? { width: high, height: wide }
+        : { width: wide, height: high };
     },
     'high',
   );
-  const brightness: Brightness = {
+  const drawn: Brightness = {
     width: pixels.width,
     height: pixels.height,
     data: new Float32Array(pixels.width * pixels.height),
   };
-  for (let i = 0; i < brightness.data.length; i++) {
-    brightness.data[i] = brightnessAt(pixels.data, i) / 255;
+  for (let i = 0; i < drawn.data.length; i++) {
+    drawn.data[i] = brightnessAt(pixels.data, i) / 255;
   }
+  const brightness = rotateBrightness(drawn, turns);
 
   // The bit can't carve deeper than its cone.
   const cone = vBitCone(options);

@@ -72,7 +72,37 @@ export type ImageLayout = {
   /** Moved this far from there (mm). */
   offsetX: number;
   offsetY: number;
+  /** Turned clockwise this far first: 0, 90, 180 or 270 (degrees). */
+  rotation?: number;
 };
+
+/** Clockwise quarter turns for `rotation` (degrees), 0 – 3. */
+export function quarterTurns(rotation: number | undefined): number {
+  return ((Math.round((rotation ?? 0) / 90) % 4) + 4) % 4;
+}
+
+/** `image` turned clockwise `turns` quarter turns. */
+export function rotateBrightness(image: Brightness, turns: number): Brightness {
+  const t = ((turns % 4) + 4) % 4;
+  if (!t) return image;
+  const { width: w, height: h, data } = image;
+  const width = t === 2 ? w : h;
+  const height = t === 2 ? h : w;
+  const out = new Float32Array(data.length);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // Pixel (x, y), rows from the top, to where the turn takes it.
+      const [nx, ny] =
+        t === 1
+          ? [h - 1 - y, x]
+          : t === 2
+            ? [w - 1 - x, h - 1 - y]
+            : [y, w - 1 - x];
+      out[ny * width + nx] = data[y * w + x];
+    }
+  }
+  return { width, height, data: out };
+}
 
 /**
  * Where an image `width` × `height` px goes in `box`: fitted as `layout`

@@ -36,9 +36,12 @@ export type StockOptions = {
   zZero: 'top' | 'bottom' | 'axis';
   /**
    * Where X0 Y0 is in the G-code: the design's own origin, or a corner or
-   * the middle of the stock.
+   * the middle of the stock; on a rotary axis, also on the axis at one end
+   * of the stock along it (`axis-start`: its lower X or Y; `axis-end`: the
+   * other), where the chuck is. On the table, those read as the design's
+   * origin.
    */
-  xyZero: 'design' | BoxAnchor;
+  xyZero: 'design' | BoxAnchor | 'axis-start' | 'axis-end';
   /** The wood it is (an id in `WOODS`), for working out feeds and speeds. */
   material: string;
 };
@@ -119,7 +122,7 @@ export function resolveStock(
 
 /**
  * What the G-code adds to design coordinates (mm): its zero moved to the
- * stock's corner or middle, and up by the stock's thickness for Z0 at the
+ * stock's corner or middle (or on the rotary axis at one end), and up by the stock's thickness for Z0 at the
  * bottom (by half of it for Z0 on the rotary axis). Nothing without stock.
  */
 export function stockOffset(stock: StockOptions): {
@@ -132,7 +135,19 @@ export function stockOffset(stock: StockOptions): {
   }
   let x = 0;
   let y = 0;
-  if (stock.xyZero !== 'design') {
+  if (stock.xyZero === 'axis-start' || stock.xyZero === 'axis-end') {
+    // On the axis (across it, the stock's middle), at one end along it.
+    if (stock.mount === 'rotary') {
+      const start = stock.xyZero === 'axis-start';
+      if (stock.rotaryAlong === 'y') {
+        x = -(stock.x + stock.width / 2);
+        y = -(start ? stock.y : stock.y + stock.height);
+      } else {
+        x = -(start ? stock.x : stock.x + stock.width);
+        y = -(stock.y + stock.height / 2);
+      }
+    }
+  } else if (stock.xyZero !== 'design') {
     const zero = anchorPoint(stock.xyZero, {
       minX: stock.x,
       minY: stock.y,
@@ -148,5 +163,17 @@ export function stockOffset(stock: StockOptions): {
       : stock.mount === 'rotary'
         ? stock.thickness / 2
         : stock.thickness;
-  return { x, y, z };
+  // (No −0 from negating a zero.)
+  return { x: x || 0, y: y || 0, z };
+}
+
+/**
+ * The end of the stock along a rotary axis an `axis-start` / `axis-end`
+ * zero is at, e.g. "the −Y end".
+ */
+export function axisEndLabel(
+  along: 'x' | 'y',
+  end: 'axis-start' | 'axis-end',
+): string {
+  return `the ${end === 'axis-start' ? '−' : '+'}${along.toUpperCase()} end`;
 }

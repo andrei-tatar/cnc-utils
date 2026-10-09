@@ -23,6 +23,8 @@ export interface ModelType {
   /** Moved this far from there (mm). */
   imageOffsetX: number;
   imageOffsetY: number;
+  /** Turned clockwise first: 0, 90, 180 or 270 (degrees). */
+  imageRotation?: number;
   /** Carve the light areas deepest instead (a negative). */
   invertImage: boolean;
   /** Depth for white (mm). */
@@ -67,9 +69,25 @@ const field: FormlyFieldConfig = {
           (model?.imageAlignX ?? 'center') !== 'center' ||
           (model?.imageAlignY ?? 'middle') !== 'middle' ||
           !!model?.imageOffsetX ||
-          !!model?.imageOffsetY,
+          !!model?.imageOffsetY ||
+          !!model?.imageRotation,
       },
       fieldGroup: [
+        {
+          key: 'imageRotation',
+          type: 'enum',
+          defaultValue: 0,
+          props: {
+            label: 'turned',
+            required: true,
+            options: [
+              { value: 0, label: 'as it is' },
+              { value: 90, label: '90° clockwise' },
+              { value: 180, label: '180°' },
+              { value: 270, label: '90° anticlockwise' },
+            ],
+          },
+        },
         {
           key: 'imageFit',
           type: 'enum',

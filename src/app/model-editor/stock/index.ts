@@ -1,5 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
-import { DEFAULT_STOCK, StockOptions } from '../../../cam/stock';
+import { axisEndLabel, DEFAULT_STOCK, StockOptions } from '../../../cam/stock';
 import { WoodGroup, WOODS } from '../../../cam/feeds-speeds';
 import { EditorState } from '../editor-state';
 
@@ -24,6 +24,39 @@ const isCylinder = (field: FormlyFieldConfig) =>
 const roundAcross = (field: FormlyFieldConfig, axis: 'x' | 'y' | 'z') =>
   isCylinder(field) &&
   (axis === 'z' || (field.model?.rotaryAlong === 'y' ? 'x' : 'y') === axis);
+
+/**
+ * Moving the stock onto a rotary axis puts X0 Y0 on the axis (at its lower
+ * end: the chuck's, until said otherwise); back on the table, at the
+ * design's origin if it was on the axis. Only when the mount is changed
+ * here, not when a project is loaded.
+ */
+function zeroForMount(field: FormlyFieldConfig) {
+  // Once the select's control has its new value.
+  setTimeout(() => {
+    const xyZero = field.parent?.formControl?.get('xyZero');
+    if (!xyZero) return;
+    const onAxis = ['axis-start', 'axis-end'].includes(xyZero.value);
+    if (field.formControl?.value === 'rotary' && !onAxis) {
+      xyZero.setValue('axis-start');
+    } else if (field.formControl?.value !== 'rotary' && onAxis) {
+      xyZero.setValue('design');
+    }
+  });
+}
+
+/**
+ * Turning the rotary axis the other way: asks whether to turn the project
+ * with it (only when changed here, not when a project is loaded).
+ */
+function offerToTurn(field: FormlyFieldConfig) {
+  // Once the select's control has its new value.
+  setTimeout(() => {
+    const to = field.formControl?.value === 'y' ? 'y' : 'x';
+    const from = to === 'x' ? 'y' : 'x';
+    (field.options?.formState as Partial<EditorState>)?.turnProject?.(from, to);
+  });
+}
 
 /** Turning the stock on sizes it round every operation's cuts. */
 function fitStock(field: FormlyFieldConfig, event?: Event) {
@@ -63,6 +96,7 @@ export const field: FormlyFieldConfig = {
           { value: 'table', label: 'on the table' },
           { value: 'rotary', label: 'on a rotary axis (4th axis)' },
         ],
+        change: zeroForMount,
       },
       expressions: {
         hide: hideUnlessStock,
@@ -84,6 +118,7 @@ export const field: FormlyFieldConfig = {
           { value: 'x', label: 'X' },
           { value: 'y', label: 'Y' },
         ],
+        change: offerToTurn,
       },
       expressions: {
         hide: (field: FormlyFieldConfig) =>
@@ -213,16 +248,28 @@ export const field: FormlyFieldConfig = {
       props: {
         label: 'X0 Y0 at',
         required: true,
-        options: [
-          { value: 'design', label: 'the design’s origin' },
-          { value: 'xmin-ymin', label: 'the stock’s bottom-left corner' },
-          { value: 'xcenter-ycenter', label: 'the middle of the stock' },
-          { value: 'xmax-ymin', label: 'the stock’s bottom-right corner' },
-          { value: 'xmin-ymax', label: 'the stock’s top-left corner' },
-          { value: 'xmax-ymax', label: 'the stock’s top-right corner' },
-        ],
       },
-      expressions: { hide: hideUnlessStock },
+      expressions: {
+        hide: hideUnlessStock,
+        // On a rotary axis: on the axis, at the chuck's end of the stock.
+        'props.options': (field: FormlyFieldConfig) => {
+          const along = field.model?.rotaryAlong === 'y' ? 'y' : 'x';
+          return [
+            { value: 'design', label: 'the design’s origin' },
+            ...(onRotary(field)
+              ? (['axis-start', 'axis-end'] as const).map((end) => ({
+                  value: end,
+                  label: `on the axis, at ${axisEndLabel(along, end)} (the chuck’s)`,
+                }))
+              : []),
+            { value: 'xmin-ymin', label: 'the stock’s bottom-left corner' },
+            { value: 'xcenter-ycenter', label: 'the middle of the stock' },
+            { value: 'xmax-ymin', label: 'the stock’s bottom-right corner' },
+            { value: 'xmin-ymax', label: 'the stock’s top-left corner' },
+            { value: 'xmax-ymax', label: 'the stock’s top-right corner' },
+          ];
+        },
+      },
     },
     {
       key: 'material',
