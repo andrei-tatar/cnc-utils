@@ -93,15 +93,23 @@ type Output = {
   gcodeArcs: number;
   time: number;
   warnings: string[];
-  heightmap: {
-    minX: number;
-    minY: number;
-    cell: number;
-    nx: number;
-    ny: number;
-    top: number;
-    bottom: number;
-  } | null;
+  heightmap: HeightmapInfo | null;
+  /**
+   * For stock on a rotary axis, instead: the material left by the cuts at
+   * each angle, a heightmap in that angle's frame (`rotaryHeightmaps`).
+   * Their heights follow one another in the heights file.
+   */
+  rotaryHeightmaps?: ({ angle: number; wrapped?: true } & HeightmapInfo)[];
+};
+
+type HeightmapInfo = {
+  minX: number;
+  minY: number;
+  cell: number;
+  nx: number;
+  ny: number;
+  top: number;
+  bottom: number;
 };
 
 async function allFixtures(): Promise<Fixture[]> {
@@ -240,13 +248,118 @@ async function runProject(
     options: { ...program.options, curveTolerance: SIMULATED_TOLERANCE },
   });
   const input = simulationInput(fine, model);
-  if (input) {
+  if (input?.rotary) {
+    // On a rotary axis: what the cuts at each angle leave, angle by angle
+    // (the solid shown is where the blank is under all of them).
+    const maps = await rotaryHeightmaps(
+      fine,
+      input.tools,
+      input.rotary,
+      input.stock,
+    );
+    output.rotaryHeightmaps = maps.map(({ angle, wrapped, map }) => {
+      const { heights: _, ...info } = map;
+      return { angle, ...(wrapped ? { wrapped } : {}), ...info };
+    });
+    heights = new Float32Array(
+      maps.reduce((n, { map }) => n + map.heights.length, 0),
+    );
+    let at = 0;
+    for (const { map } of maps) {
+      heights.set(map.heights, at);
+      at += map.heights.length;
+    }
+  } else if (input) {
     const map = await simulateStock(fine, input.tools, input.stock);
     const { heights: h, ...rest } = map;
     output.heightmap = rest;
     heights = h;
   }
   return { output, heights };
+}
+
+/**
+ * The material left by the cuts at each angle the stock is turned to, a
+ * heightmap in that angle's frame over the blank as turned: what
+ * `rotaryHeightmaps` (src/cam/simulate-rotary.ts) works out, done here with
+ * what every checkout has, so older ones can still be recorded.
+ */
+async function rotaryHeightmaps(
+  paths: CamPath[],
+  tools: Parameters<typeof simulateStock>[1],
+  rotary: {
+    along: 'x' | 'y';
+    across: number;
+    halfWidth: number;
+    halfThickness: number;
+    round?: boolean;
+  },
+  stock: Parameters<typeof simulateStock>[2],
+) {
+  const top = (angle: number) => {
+    const r = (angle * Math.PI) / 180;
+    return rotary.round
+      ? rotary.halfThickness
+      : rotary.halfWidth * Math.abs(Math.sin(r)) +
+          rotary.halfThickness * Math.abs(Math.cos(r));
+  };
+  // By angle; the cuts wrapped round a round stock apart, on its surface
+  // unrolled.
+  const groups = new Map<
+    string,
+    { angle: number; wrapped?: true; paths: CamPath[] }
+  >();
+  for (const path of paths) {
+    if (path.type !== 'carve') continue;
+    const p = path as { rotation?: number; wrapped?: boolean };
+    let angle =
+      Math.round(((((p.rotation ?? 0) % 360) + 360) % 360) * 1e6) / 1e6;
+    if (angle === 360) angle = 0;
+    const key = `${p.wrapped ? 'wrapped ' : ''}${angle}`;
+    const group = groups.get(key) ?? {
+      angle,
+      ...(p.wrapped ? { wrapped: true as const } : {}),
+      paths: [],
+    };
+    group.paths.push(path);
+    groups.set(key, group);
+  }
+  const maps = [];
+  for (const { angle, wrapped, paths: group } of [...groups.values()].sort(
+    (a, b) => Number(!!a.wrapped) - Number(!!b.wrapped) || a.angle - b.angle,
+  )) {
+    let block;
+    if (wrapped) {
+      const half = Math.PI * rotary.halfThickness;
+      let min = rotary.across - half;
+      let max = rotary.across + half;
+      for (const path of group)
+        for (const q of path.points) {
+          const across = rotary.along === 'x' ? q.y : q.x;
+          min = Math.min(min, across - 10);
+          max = Math.max(max, across + 10);
+        }
+      block =
+        rotary.along === 'x'
+          ? { ...stock, minY: min, maxY: max }
+          : { ...stock, minX: min, maxX: max };
+      block = { ...block, top: 0, bottom: -rotary.halfThickness };
+    } else {
+      const half = top(angle + 90);
+      const [min, max] = [rotary.across - half, rotary.across + half];
+      block =
+        rotary.along === 'x'
+          ? { ...stock, minY: min, maxY: max }
+          : { ...stock, minX: min, maxX: max };
+      block = { ...block, top: 0, bottom: -2 * top(angle) };
+    }
+    maps.push({
+      angle,
+      ...(wrapped ? { wrapped } : {}),
+      map: await simulateStock(group, tools, block),
+    });
+  }
+  return maps;
 }
 
 function round(v: number) {
@@ -577,7 +690,60 @@ function compareOutputs(
       detail: 'simulated in only one run',
     });
   }
+
+  // On a rotary axis: angle by angle.
+  const baseMaps = rotaryMaps(base, baseHeights);
+  const curMaps = rotaryMaps(cur, curHeights);
+  if (baseMaps || curMaps) {
+    const keyOf = (m: { angle: number; wrapped?: true }) =>
+      `${m.wrapped ? 'wrapped from ' : 'at '}A${fmt(m.angle)}`;
+    const keys = [
+      ...new Set([...(baseMaps ?? []), ...(curMaps ?? [])].map(keyOf)),
+    ];
+    for (const key of keys) {
+      const what = `material left ${key}`;
+      const a = baseMaps?.find((m) => keyOf(m) === key);
+      const b = curMaps?.find((m) => keyOf(m) === key);
+      if (!a || !b) {
+        checks.push({
+          what,
+          ok: false,
+          detail: `cut at this angle in only one run (${a ? 'the baseline' : 'this one'})`,
+        });
+        continue;
+      }
+      const h = compareHeights(
+        a.info,
+        a.heights,
+        b.info,
+        b.heights,
+        nearOutline([base, cur], Math.max(a.info.cell, b.info.cell)),
+      );
+      const walls = h.walls
+        ? `; ${h.walls} more on walls of no thickness or lone (see compareHeights)`
+        : '';
+      checks.push({
+        what,
+        ok: h.bad === 0,
+        note: h.bad === 0 && h.walls > 0,
+        detail: `${h.bad} of ${h.total} cells off by more than ${TOLERANCE.height} mm (worst ${fmt(h.worst)} mm${h.at ? ` at ${h.at.map(fmt).join(',')}` : ''}; in that angle's frame)${walls}`,
+        cells: h.cells,
+      });
+    }
+  }
   return checks;
+}
+
+/** A run's heightmaps by angle, on a rotary axis (null otherwise). */
+function rotaryMaps(output: Output, heights: Float32Array | null) {
+  if (!output.rotaryHeightmaps || !heights) return null;
+  let at = 0;
+  return output.rotaryHeightmaps.map(({ angle, wrapped, ...info }) => {
+    const count = info.nx * info.ny;
+    const slice = heights.subarray(at, at + count);
+    at += count;
+    return { angle, ...(wrapped ? { wrapped } : {}), info, heights: slice };
+  });
 }
 
 /**
@@ -723,12 +889,33 @@ function compareHeights(
  */
 function heightOverlay(base: Output, cells: number[][]): string | null {
   const outlines = Object.values(base.shapes).flat();
-  const all = [...outlines.flatMap((l) => l.points), ...cells];
-  if (!all.length) return null;
-  const minX = Math.min(...all.map((p) => p[0])) - 2;
-  const maxX = Math.max(...all.map((p) => p[0])) + 2;
-  const minY = Math.min(...all.map((p) => p[1])) - 2;
-  const maxY = Math.max(...all.map((p) => p[1])) + 2;
+  // At most this many dots (evenly picked): an overlay for every differing
+  // cell of a big job would be tens of megabytes.
+  const MAX_DOTS = 20_000;
+  if (cells.length > MAX_DOTS) {
+    const every = cells.length / MAX_DOTS;
+    cells = Array.from(
+      { length: MAX_DOTS },
+      (_, k) => cells[Math.floor(k * every)],
+    );
+  }
+  // Bounds by a loop: spreading a hundred thousand points into Math.min
+  // overflows the stack.
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const p of [...outlines.flatMap((l) => l.points), ...cells]) {
+    minX = Math.min(minX, p[0]);
+    maxX = Math.max(maxX, p[0]);
+    minY = Math.min(minY, p[1]);
+    maxY = Math.max(maxY, p[1]);
+  }
+  if (!(minX <= maxX)) return null;
+  minX -= 2;
+  maxX += 2;
+  minY -= 2;
+  maxY += 2;
   const S = 1200 / Math.max(maxX - minX, maxY - minY);
   const tx = (p: number[]) =>
     `${((p[0] - minX) * S).toFixed(1)},${((maxY - p[1]) * S).toFixed(1)}`;

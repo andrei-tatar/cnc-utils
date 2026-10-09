@@ -62,6 +62,12 @@ export type CamPath = {
    */
   rotation?: number;
   /**
+   * Wrapped round a round stock: its points are in the unrolled surface
+   * (across the axis is round it, from `rotation`; see
+   * `wrappedPointOnBlank` in rotary.ts).
+   */
+  wrapped?: boolean;
+  /**
    * Cuts only: the feed rate (mm/min) of the move to each point, one per
    * point (the first point's is the rate in effect where the path starts).
    */

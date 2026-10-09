@@ -1,10 +1,5 @@
 import { GCodeBuilder } from './gcode-builder';
-import {
-  DEFAULT_STOCK,
-  programOffset,
-  stockAround,
-  stockOffset,
-} from './stock';
+import { DEFAULT_STOCK, stockAround, stockOffset } from './stock';
 
 describe('stockOffset', () => {
   const stock = {
@@ -106,7 +101,7 @@ describe('estimateTime', () => {
   });
 });
 
-describe('programOffset', () => {
+describe('cutBounds', () => {
   const cuts = new GCodeBuilder()
     .goToSafeHeight()
     .travelTo(10, 20)
@@ -117,8 +112,6 @@ describe('programOffset', () => {
     .travelTo(30, 50)
     .plunge(-1)
     .carveTo(30, 40);
-  const stock = { x: -5, y: -6, z: 12 };
-
   it('measures the cuts, not the travel', () => {
     expect(cuts.cutBounds()).toEqual({
       minX: 10,
@@ -127,35 +120,6 @@ describe('programOffset', () => {
       maxY: 50,
     });
     expect(new GCodeBuilder().travelTo(1, 2).cutBounds()).toBeNull();
-  });
-
-  it('keeps the stock offset without a reference point', () => {
-    expect(
-      programOffset([cuts.cutBounds()], {
-        offset: stock,
-        referencePoint: 'none',
-        referenceX: 0,
-        referenceY: 0,
-      }),
-    ).toEqual(stock);
-  });
-
-  it('moves the reference point where asked, keeping Z', () => {
-    const at = (
-      referencePoint: 'xmin-ymax' | 'xcenter-ycenter',
-      referenceX = 0,
-      referenceY = 0,
-    ) =>
-      programOffset([null, cuts.cutBounds()], {
-        offset: stock,
-        referencePoint,
-        referenceX,
-        referenceY,
-      });
-    // Top-left (10, 50) to 0, 0.
-    expect(at('xmin-ymax')).toEqual({ x: -10, y: -50, z: 12 });
-    // The middle (35, 35) to 100, 100.
-    expect(at('xcenter-ycenter', 100, 100)).toEqual({ x: 65, y: 65, z: 12 });
   });
 });
 

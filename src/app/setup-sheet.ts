@@ -23,6 +23,8 @@ export type SetupSheetData = {
      * cut (null: no axis).
      */
     angles?: number[] | null;
+    /** Wrapped round the round stock, from each angle. */
+    wrapped?: boolean;
     seconds: number;
   }[];
   total: number;
@@ -62,11 +64,9 @@ export function setupSheetHtml(data: SetupSheetData): string {
   const mm = (v: number) => `${round(v)} mm`;
 
   const xy =
-    options.referencePoint !== 'none'
-      ? `X${round(options.referenceX)} Y${round(options.referenceY)} at the cuts’ ${ANCHORS[options.referencePoint]}`
-      : stock.enabled && stock.xyZero !== 'design'
-        ? `the stock’s ${ANCHORS[stock.xyZero]}`
-        : 'the design’s origin';
+    stock.enabled && stock.xyZero !== 'design'
+      ? `the stock’s ${ANCHORS[stock.xyZero]}`
+      : 'the design’s origin';
   const rotary = rotaryOf(stock);
   const z =
     !stock.enabled || stock.zZero === 'top'
@@ -204,7 +204,7 @@ export function setupSheetHtml(data: SetupSheetData): string {
   ${data.operations
     .map(
       (op, i) =>
-        `<tr><td class="check"><span class="box"></span></td><td>${i + 1}</td><td><span class="swatch" style="background:${color.get(op.id)}"></span>${esc(op.name)}</td><td>${esc(op.tool ?? '—')}</td>${rotary ? `<td>${esc(turn(op.angles ?? [0]))}</td>` : ''}<td class="num">${duration(op.seconds)}</td></tr>`,
+        `<tr><td class="check"><span class="box"></span></td><td>${i + 1}</td><td><span class="swatch" style="background:${color.get(op.id)}"></span>${esc(op.name)}</td><td>${esc(op.tool ?? '—')}</td>${rotary ? `<td>${esc(`${op.wrapped ? 'wrapped round from ' : ''}${turn(op.angles ?? [0])}`)}</td>` : ''}<td class="num">${duration(op.seconds)}</td></tr>`,
     )
     .join('\n  ')}
   <tr><td></td><td></td><td><strong>Total</strong></td><td></td>${rotary ? '<td></td>' : ''}<td class="num"><strong>${duration(data.total)}</strong></td></tr>

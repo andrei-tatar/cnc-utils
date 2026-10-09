@@ -80,15 +80,6 @@ export type GcodeOptions = {
   geometryDecimals: number;
   /** Rapid (G0) speed, mm/min: only for estimating how long a job takes. */
   rapidRate: number;
-  /**
-   * Move the G-code so this point of the cuts' bounding box (where the
-   * tool's centre goes) lands on `referenceX`, `referenceY`; `none` leaves
-   * it where the design (or the stock's X0 Y0) puts it. Overrides the
-   * stock's X0 Y0.
-   */
-  referencePoint: 'none' | BoxAnchor;
-  referenceX: number;
-  referenceY: number;
   /** The rotary axis' letter in the G-code (when the stock is on one). */
   rotaryAxis: 'A' | 'B' | 'C';
   /**
@@ -96,6 +87,14 @@ export type GcodeOptions = {
    * other way round than the right-hand rule (see `rotary.ts`).
    */
   rotaryReversed: boolean;
+  /**
+   * How cuts wrapped round a round stock (turning the axis as they go) are
+   * given their speed: `compensated`, an F worked out per move so the
+   * controller (which takes degrees as millimetres) cuts at the feed rate
+   * along the surface; `inverse-time`, G93 with each move's F the
+   * number of times a minute it's done (G94 after).
+   */
+  rotaryFeed: 'compensated' | 'inverse-time';
   /**
    * Added to every coordinate written (not to the preview): moves the
    * G-code's zero onto the stock. Set from the stock settings.
@@ -127,11 +126,9 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   curveTolerance: 0.01,
   geometryDecimals: 2,
   rapidRate: 3000,
-  referencePoint: 'none',
-  referenceX: 0,
-  referenceY: 0,
   rotaryAxis: 'A',
   rotaryReversed: false,
+  rotaryFeed: 'compensated',
 };
 
 /** Complete options from a (possibly partial) stored value. */

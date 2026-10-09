@@ -136,6 +136,7 @@ export function reuseUnchangedPaths(): MonoTypeOperatorFunction<CamPath[]> {
             const kept =
               old &&
               old.rotation === path.rotation &&
+              old.wrapped === path.wrapped &&
               samePoints(old.points, path.points) &&
               sameFeeds(old.feeds, path.feeds)
                 ? old

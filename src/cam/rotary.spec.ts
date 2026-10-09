@@ -8,6 +8,7 @@ import {
   rotaryOf,
   rotaryShift,
   sideUp,
+  wrappedPointOnBlank,
 } from './rotary';
 import {
   DEFAULT_STOCK,
@@ -224,5 +225,169 @@ describe('G-code with the stock on a rotary axis', () => {
     const without = job().estimateTime({ ...options, rotary: null });
     const turning = job().estimateTime(options);
     expect(turning.total).toBeGreaterThan(without.total);
+  });
+});
+
+describe('G-code wrapped round a round stock', () => {
+  // Ø40, 100 long, along X: across at Y20, the axis 20 below the top.
+  const rotary: Rotary = rotaryOf(
+    resolveStock({
+      enabled: true,
+      mount: 'rotary',
+      rotaryAlong: 'x',
+      shape: 'cylinder',
+      diameter: 40,
+      width: 100,
+      x: 0,
+      y: 0,
+    }),
+  )!;
+  const options: GcodeOptions = {
+    ...DEFAULT_GCODE_OPTIONS,
+    header: false,
+    spindle: false,
+    toolChange: 'none',
+    rotary,
+  };
+  // A quarter of the way round, 2 deep: the unrolled surface's quarter.
+  const quarter = (Math.PI * 20) / 2;
+  const job = () =>
+    new GCodeBuilder()
+      .sourceOperationId('wrapped')
+      .rotate(0, true)
+      .travelTo(10, 20)
+      .plunge(-2)
+      .carveTo(10, 20 + quarter)
+      .goToSafeHeight()
+      .stopProgram();
+  const cuts = (gcode: string) =>
+    gcode.split('\n').filter((l) => !l.startsWith(';'));
+
+  it('turns the axis as it goes, the bit over the axis', () => {
+    const lines = cuts(job().build(options));
+    expect(lines).toContain('G0 X10 Y20');
+    // 90° round, at the feed along the surface where the bit is (2 deep:
+    // radius 18), written in the controller's degrees-as-mm.
+    const speed = (1200 * 90) / ((18 * Math.PI) / 2);
+    expect(lines).toContain(`G1 A90 F${Math.round(speed * 1000) / 1000}`);
+    expect(lines.some((l) => /Y5\d/.test(l))).toBeFalse();
+  });
+
+  it('or in inverse time, each move’s F the times a minute it takes', () => {
+    const lines = cuts(job().build({ ...options, rotaryFeed: 'inverse-time' }));
+    const g93 = lines.indexOf('G93');
+    const g94 = lines.indexOf('G94');
+    expect(g93).toBeGreaterThan(-1);
+    expect(g94).toBeGreaterThan(g93);
+    const along = (18 * Math.PI) / 2;
+    expect(lines).toContain(
+      `G1 A90 F${Math.round((1200 / along) * 1000) / 1000}`,
+    );
+  });
+
+  it('gives the preview the cut unrolled, in points along it', () => {
+    const cut = job()
+      .toPaths(options)
+      .find((p) => p.type === 'carve' && p.points.length > 3)!;
+    expect(cut.wrapped).toBeTrue();
+    expect(cut.rotation).toBe(0);
+    const last = cut.points[cut.points.length - 1];
+    expect(last.x).toBeCloseTo(10, 6);
+    expect(last.y).toBeCloseTo(20 + quarter, 2);
+    expect(last.z).toBeCloseTo(-2, 6);
+    // Wrapped on the blank: a quarter turn round brings it to the +Y side.
+    const onBlank = wrappedPointOnBlank(rotary, 0, last);
+    expect(onBlank.y).toBeCloseTo(20 + 18, 2);
+    expect(onBlank.z).toBeCloseTo(-20, 2);
+  });
+
+  it('turns the axis the short way between cuts, not the whole way back', () => {
+    // Two spirals, each three turns long (−540° to 540°), side by side.
+    const at = (degrees: number) => 20 + (degrees * Math.PI * 20) / 180;
+    const lines = cuts(
+      new GCodeBuilder()
+        .rotate(0, true)
+        .travelTo(10, at(-540))
+        .plunge(-1)
+        .carveTo(10, at(540))
+        .goToSafeHeight()
+        .travelTo(20, at(-540))
+        .plunge(-1)
+        .carveTo(20, at(540))
+        .goToSafeHeight()
+        .stopProgram()
+        .build(options),
+    );
+    const angles = lines.map((l) => /A(-?[\d.]+)/.exec(l)?.[1]);
+    // To the first spiral's start: half a turn, not one and a half.
+    const first = lines.findIndex((l) => l.startsWith('G0 X10'));
+    expect(Math.abs(+angles[first]!)).toBe(180);
+    // Each cut goes the whole three turns.
+    const cutsA = lines.filter((l) => l.startsWith('G1') && /A/.test(l));
+    expect(cutsA.length).toBe(2);
+    // From the first spiral's end to the second's start: no turning at all.
+    const second = lines.findIndex((l) => l.startsWith('G0 X20'));
+    expect(lines[second]).toBe('G0 X20');
+    // Back to exactly 0° at the end.
+    expect(lines[lines.length - 2]).toBe('G0 A0');
+    // And the preview's travel between them is no spiral.
+    const travel = new GCodeBuilder()
+      .rotate(0, true)
+      .travelTo(10, at(-540))
+      .plunge(-1)
+      .carveTo(10, at(540))
+      .goToSafeHeight()
+      .travelTo(20, at(-540))
+      .toPaths(options)
+      .filter((p) => p.type === 'travel' && p.wrapped)
+      .pop()!;
+    // (up and along X: on the stock, never round it).
+    const placed = travel.points.map((p) => wrappedPointOnBlank(rotary, 0, p));
+    const ys = placed.map((p) => p.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(0.01);
+  });
+
+  it('counts the time going round', () => {
+    const time = job().estimateTime(options);
+    // About 28 mm cut at 1200 mm/min, at least.
+    expect(time.total).toBeGreaterThan(((18 * Math.PI) / 2 / 1200) * 60);
+  });
+});
+
+describe('wrapping round a round stock along Y', () => {
+  const rotary: Rotary = rotaryOf(
+    resolveStock({
+      enabled: true,
+      mount: 'rotary',
+      rotaryAlong: 'y',
+      shape: 'cylinder',
+      diameter: 40,
+      height: 100,
+      x: 0,
+      y: 0,
+    }),
+  )!;
+
+  it('keeps a design reading as drawn: +X in the drawing is +X on the stock', () => {
+    // A little way +X of the axis line, on the surface.
+    const p = wrappedPointOnBlank(rotary, 0, { x: 25, y: 50, z: 0 });
+    expect(p.x).toBeGreaterThan(20);
+    // A quarter of the way round: on the +X side.
+    const q = wrappedPointOnBlank(rotary, 0, {
+      x: 20 + (Math.PI * 20) / 2,
+      y: 50,
+      z: 0,
+    });
+    expect(q.x).toBeCloseTo(40, 6);
+    expect(q.z).toBeCloseTo(-20, 6);
+  });
+
+  it('turns the axis the way that brings that side up', () => {
+    const gcode = new GCodeBuilder()
+      .rotate(0, true)
+      .travelTo(20 + (Math.PI * 20) / 2, 50)
+      .build({ ...DEFAULT_GCODE_OPTIONS, rotary });
+    // −90° brings the +X side up (along Y, +90° brings −X up).
+    expect(gcode).toContain('G0 X20 Y50 A-90');
   });
 });

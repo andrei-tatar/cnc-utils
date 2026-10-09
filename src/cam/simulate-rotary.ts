@@ -1,4 +1,4 @@
-import { Rotary, rotaryTop } from './rotary';
+import { Rotary, rotaryTop, wrapDirection } from './rotary';
 import {
   Heightmap,
   SimulatedStock,
@@ -49,17 +49,19 @@ export function simulateRotaryStock(
   stock: SimulatedStock,
   maxCells = 400_000,
 ): SimulatedSolid {
-  const frames = [...groupByAngle(paths)].map(([angle, group]) => ({
-    angle,
-    map: simulateStock(
-      group,
-      tools,
-      frameBlock(rotary, stock, angle),
-      maxCells,
-    ),
-    ...turn(angle),
-    top: rotaryTop(rotary, angle),
-  }));
+  const all = rotaryHeightmaps(paths, tools, rotary, stock, maxCells);
+  const frames = all
+    .filter((m) => !m.wrapped)
+    .map(({ angle, map }) => ({
+      angle,
+      map,
+      ...turn(angle),
+      top: rotaryTop(rotary, angle),
+    }));
+  // Wrapped cuts: an unrolled heightmap each, read round the axis.
+  const wrapped = all.filter((m) => m.wrapped);
+  const r = rotary.halfThickness;
+  const circumference = 2 * Math.PI * r;
 
   // The grid, a step past the stock all round so its surface closes.
   const sx = stock.maxX - stock.minX;
@@ -120,6 +122,40 @@ export function simulateRotaryStock(
         if (cut) cut.depth = -height / (2 * frame.top);
       }
     }
+    if (wrapped.length) {
+      // How far round the point is: the angle that turns it to the top.
+      const turned =
+        (alongX ? Math.atan2(u, w) : Math.atan2(-u, w)) * (180 / Math.PI);
+      const radius = Math.hypot(u, w);
+      const along = alongX ? x : y;
+      for (const { angle, map } of wrapped) {
+        // Its place in the unrolled surface, and every whole turn either
+        // way the heightmap reaches (a design going round several times).
+        const rel = ((((turned - angle + 180) % 360) + 360) % 360) - 180;
+        const at = across + (wrapDirection(rotary) * rel * Math.PI * r) / 180;
+        const [low, high] = alongX
+          ? [map.minY, map.minY + map.ny * map.cell]
+          : [map.minX, map.minX + map.nx * map.cell];
+        let height = Infinity;
+        const first = Math.ceil((low - at) / circumference);
+        const last = Math.floor((high - at) / circumference);
+        for (let k = first; k <= last; k++) {
+          const unrolled = at + k * circumference;
+          height = Math.min(
+            height,
+            alongX
+              ? heightAt(map, along, unrolled)
+              : heightAt(map, unrolled, along),
+          );
+        }
+        if (!Number.isFinite(height)) continue;
+        const below = height - (radius - r);
+        if (below < f) {
+          f = below;
+          if (cut) cut.depth = -height / r;
+        }
+      }
+    }
     return f;
   };
 
@@ -161,19 +197,108 @@ export function simulateRotaryStock(
   };
 }
 
-/** The cuts by how far the stock is turned for them (degrees, 0 – 360). */
-function groupByAngle(paths: CamPath[]): Map<number, CamPath[]> {
-  const groups = new Map<number, CamPath[]>();
+/**
+ * The material left by the cuts at each angle the stock is turned to
+ * (degrees, 0 – 360, in increasing order), each a heightmap in that angle's
+ * frame over the blank as turned (`frameBlock`); and by those wrapped round
+ * a round stock, a heightmap each of the unrolled surface (`wrapped`, by the
+ * angle the unrolling starts from; depth below the surface). What
+ * `simulateRotaryStock` intersects, and what the regression harness
+ * compares.
+ */
+export function rotaryHeightmaps(
+  paths: CamPath[],
+  tools: Record<string, SimulatedTool>,
+  rotary: Rotary,
+  stock: SimulatedStock,
+  maxCells = 400_000,
+): { angle: number; wrapped?: true; map: Heightmap }[] {
+  return [...groupByAngle(paths)]
+    .sort(
+      ([, a], [, b]) =>
+        Number(!!a.wrapped) - Number(!!b.wrapped) || a.angle - b.angle,
+    )
+    .map(([, { angle, wrapped, paths: group }]) => ({
+      angle,
+      ...(wrapped ? { wrapped } : {}),
+      map: simulateStock(
+        group,
+        tools,
+        wrapped
+          ? unrolledBlock(rotary, stock, group)
+          : frameBlock(rotary, stock, angle),
+        maxCells,
+      ),
+    }));
+}
+
+/**
+ * The cuts by how far the stock is turned for them (degrees, 0 – 360), the
+ * wrapped ones apart.
+ */
+function groupByAngle(
+  paths: CamPath[],
+): Map<string, { angle: number; wrapped?: true; paths: CamPath[] }> {
+  const groups = new Map<
+    string,
+    { angle: number; wrapped?: true; paths: CamPath[] }
+  >();
   for (const path of paths) {
     if (path.type !== 'carve') continue;
     const turned = path.rotation ?? 0;
-    const angle = Math.round((((turned % 360) + 360) % 360) * 1e6) / 1e6;
-    const key = angle === 360 ? 0 : angle;
+    let angle = Math.round((((turned % 360) + 360) % 360) * 1e6) / 1e6;
+    if (angle === 360) angle = 0;
+    const key = `${path.wrapped ? 'wrapped ' : ''}${angle}`;
     const group = groups.get(key);
-    if (group) group.push(path);
-    else groups.set(key, [path]);
+    if (group) group.paths.push(path);
+    else
+      groups.set(key, {
+        angle,
+        ...(path.wrapped ? { wrapped: true as const } : {}),
+        paths: [path],
+      });
   }
   return groups;
+}
+
+/**
+ * The surface of a round stock unrolled, as a block: along the axis as it
+ * is, across it all the way round (half a turn either side of the axis
+ * line) and as far as `paths` go, down to the axis.
+ */
+function unrolledBlock(
+  rotary: Rotary,
+  stock: SimulatedStock,
+  paths: CamPath[],
+): SimulatedStock {
+  const alongX = rotary.along === 'x';
+  const half = Math.PI * rotary.halfThickness;
+  let min = rotary.across - half;
+  let max = rotary.across + half;
+  for (const path of paths) {
+    for (const p of path.points) {
+      const across = alongX ? p.y : p.x;
+      min = Math.min(min, across - 10);
+      max = Math.max(max, across + 10);
+    }
+  }
+  return alongX
+    ? {
+        minX: stock.minX,
+        maxX: stock.maxX,
+        minY: min,
+        maxY: max,
+        top: 0,
+        bottom: -rotary.halfThickness,
+      }
+    : {
+        minX: min,
+        maxX: max,
+        minY: stock.minY,
+        maxY: stock.maxY,
+        top: 0,
+        bottom: -rotary.halfThickness,
+      };
 }
 
 function turn(angle: number) {

@@ -11,7 +11,7 @@ import {
 } from 'rxjs';
 import { recover } from './errors';
 import { GCodeBuilder, JobTime } from '../../cam/gcode-builder';
-import { programOffset, resolveStock, stockOffset } from '../../cam/stock';
+import { resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
 import { CamPath, CamShape, CamTab } from '../../cam/types';
@@ -61,7 +61,12 @@ type OperationEntry = {
  * `rotation` (null: not on a rotary axis). An operation inside a rotary
  * repeat is cut once per angle.
  */
-export type ProgramStep = { id: string; rotation: number | null };
+export type ProgramStep = {
+  id: string;
+  rotation: number | null;
+  /** Wrapped round the round stock, from `rotation` (see `rotate`). */
+  wrap?: boolean;
+};
 
 /**
  * What the program cuts, in order: each operation of the list, with the
@@ -72,7 +77,13 @@ export type ProgramStep = { id: string; rotation: number | null };
 export function programSteps(
   operations: ModelType['operations'],
   rotary: boolean,
+  /** The stock is round: operations can be wrapped round it. */
+  round = false,
 ): ProgramStep[] {
+  const step = (op: any, rotation: number | null): ProgramStep =>
+    round && op.wrap
+      ? { id: op.id, rotation, wrap: true }
+      : { id: op.id, rotation };
   return (operations ?? []).flatMap((op: any): ProgramStep[] => {
     if (op.disabled || op.type === 'rotate') {
       return [];
@@ -84,19 +95,10 @@ export function programSteps(
       }
       const angles = repeatAngles(op);
       return op.order === 'operation'
-        ? inner.flatMap((o) =>
-            angles.map((rotation) => ({ id: o.id, rotation })),
-          )
-        : angles.flatMap((rotation) =>
-            inner.map((o) => ({ id: o.id, rotation })),
-          );
+        ? inner.flatMap((o) => angles.map((rotation) => step(o, rotation)))
+        : angles.flatMap((rotation) => inner.map((o) => step(o, rotation)));
     }
-    return [
-      {
-        id: op.id,
-        rotation: rotary ? operationRotation(op, operations) : null,
-      },
-    ];
+    return [step(op, rotary ? operationRotation(op, operations) : null)];
   });
 }
 
@@ -173,9 +175,10 @@ export function generateGcodeFromOperations(
     shareLatest(),
   );
   const steps$ = model$.pipe(
-    map((model) =>
-      programSteps(model.operations, !!rotaryOf(resolveStock(model.stock))),
-    ),
+    map((model) => {
+      const rotary = rotaryOf(resolveStock(model.stock));
+      return programSteps(model.operations, !!rotary, !!rotary?.round);
+    }),
     distinctJson(),
   );
   return combineLatest([entries$, steps$]).pipe(
@@ -184,10 +187,10 @@ export function generateGcodeFromOperations(
     // don't stall the whole G-code.
     switchMap(([entries, steps]) => {
       const byId = new Map(entries.map((e) => [e.id, e]));
-      const cuts = steps.flatMap(({ id, rotation }) => {
+      const cuts = steps.flatMap(({ id, rotation, wrap }) => {
         const entry = byId.get(id);
         return entry
-          ? [entry.result$.pipe(map((b) => turned(b, id, rotation)))]
+          ? [entry.result$.pipe(map((b) => turned(b, id, rotation, wrap)))]
           : [];
       });
       return cuts.length ? combineLatest(cuts) : of([]);
@@ -207,18 +210,7 @@ export function generateGcodeFromOperations(
           })),
           distinctJson(),
         ),
-      }).pipe(
-        map(({ builders, options }) => ({
-          builders,
-          options: {
-            ...options,
-            offset: programOffset(
-              builders.map((b) => b.cutBounds()),
-              options,
-            ),
-          },
-        })),
-      ),
+      }),
   );
 }
 
@@ -226,7 +218,7 @@ export function generateGcodeFromOperations(
 type FramedTabs = { frame: string; tabs: CamTab[] };
 
 /** Builders with the stock turned first, by builder and angle. */
-const turnedBuilders = new WeakMap<GCodeBuilder, Map<number, GCodeBuilder>>();
+const turnedBuilders = new WeakMap<GCodeBuilder, Map<string, GCodeBuilder>>();
 
 /**
  * `builder` (operation `id`'s) with the stock turned to `rotation` first;
@@ -237,6 +229,7 @@ function turned(
   builder: GCodeBuilder,
   id: string,
   rotation: number | null,
+  wrap = false,
 ): GCodeBuilder {
   if (rotation === null || !builder.cutBounds()) {
     return builder;
@@ -245,13 +238,14 @@ function turned(
   if (!byAngle) {
     turnedBuilders.set(builder, (byAngle = new Map()));
   }
-  let result = byAngle.get(rotation);
+  const key = `${rotation}${wrap ? ' wrapped' : ''}`;
+  let result = byAngle.get(key);
   if (!result) {
     result = new GCodeBuilder()
       .sourceOperationId(id)
-      .rotate(rotation)
+      .rotate(rotation, wrap)
       .concat(builder);
-    byAngle.set(rotation, result);
+    byAngle.set(key, result);
   }
   return result;
 }

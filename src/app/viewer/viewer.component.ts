@@ -111,7 +111,12 @@ import {
   ViewOptions,
 } from './helpers/view-options';
 import { DEFAULT_WOOD } from '../../cam/feeds-speeds';
-import { operationPointOnBlank, Rotary, rotaryOf } from '../../cam/rotary';
+import {
+  operationPointOnBlank,
+  Rotary,
+  rotaryOf,
+  wrappedPointOnBlank,
+} from '../../cam/rotary';
 import { shapeLook$ } from './helpers/shape-look';
 
 /** The measuring line, drawn over everything. */
@@ -876,6 +881,34 @@ export class ViewerComponent implements OnInit, OnDestroy {
             new LineSegments(outline, stockEdges),
             new Mesh(skin, stockSkin),
           );
+          // Its surface unrolled, flat on Z0: where wrapped operations'
+          // shapes are drawn (the axis line down its middle).
+          const half = Math.PI * r;
+          const [a0, a1] = [rotary.across - half, rotary.across + half];
+          const corners =
+            rotary.along === 'x'
+              ? [
+                  [x, a0],
+                  [x + width, a0],
+                  [x + width, a1],
+                  [x, a1],
+                ]
+              : [
+                  [a0, y],
+                  [a1, y],
+                  [a1, y + height],
+                  [a0, y + height],
+                ];
+          const unrolled = new Line(
+            new BufferGeometry().setFromPoints(
+              [...corners, corners[0]].map(
+                ([px, py]) => new Vector3(px, py, 0),
+              ),
+            ),
+            rotaryAxis,
+          );
+          unrolled.computeLineDistances();
+          stockBox.add(unrolled);
         } else {
           const box = new BoxGeometry(width, height, thickness);
           box.translate(x + width / 2, y + height / 2, -thickness / 2);
@@ -1161,7 +1194,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                   existing &&
                   sameItems(existing.paths, paths) &&
                   (existing.rotary === rotary ||
-                    paths.every((p) => p.rotation === undefined))
+                    paths.every((p) => p.rotation === undefined && !p.wrapped))
                 ) {
                   return [key, existing] as const;
                 }
@@ -1765,11 +1798,17 @@ export class ViewerComponent implements OnInit, OnDestroy {
             const feeds = new Float32Array(segments);
             // Where each path's points are drawn.
             const drawn = o.paths.map((path) =>
-              path.rotation !== undefined && o.rotary
-                ? path.points.map((p) =>
-                    operationPointOnBlank(o.rotary!, path.rotation!, p),
-                  )
-                : path.points,
+              !o.rotary
+                ? path.points
+                : path.wrapped
+                  ? path.points.map((p) =>
+                      wrappedPointOnBlank(o.rotary!, path.rotation ?? 0, p),
+                    )
+                  : path.rotation !== undefined
+                    ? path.points.map((p) =>
+                        operationPointOnBlank(o.rotary!, path.rotation!, p),
+                      )
+                    : path.points,
             );
             let at = 0;
             let segment = 0;
@@ -1849,7 +1888,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                     arrows[k].colorBy((p, segment) =>
                       colorOf(
                         path.feeds?.[segment] ?? NaN,
-                        path.rotation === undefined
+                        path.rotation === undefined && !path.wrapped
                           ? p.z
                           : (path.points[segment]?.z ?? 0),
                       ),
