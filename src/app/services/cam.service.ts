@@ -54,12 +54,13 @@ import { borrowedShapeId } from '../model-editor/operations/describe';
 import { nestPolygons } from '../../cam/polygon-nesting';
 import { hasArcs, polygonsBounds } from '../../cam/arcs';
 import { JobWarning } from '../../cam/job-checks';
-import type { Heightmap } from '../../cam/simulate';
+import type { Simulation } from '../../cam/simulate-rotary';
 import {
   loadSimulationQuality,
   saveSimulationQuality,
   SIMULATION_CELLS,
   SimulationQuality,
+  SimulationInput,
   simulationInput,
 } from '../pipeline/simulation';
 import worker from '../../worker';
@@ -72,6 +73,12 @@ import { ShapeExporter } from '../model-editor/shapes/shape-export';
 import { collapsedSections$ } from '../model-editor/components/collapsed-sections';
 import { ModelStore } from './model-store.service';
 import { WorkTracker } from './work-tracker.service';
+import { rotaryOf } from '../../cam/rotary';
+import { operationAngles } from '../model-editor/operations/rotation';
+import {
+  cutOperations,
+  flatOperations,
+} from '../model-editor/operations/flatten';
 import { recover } from '../pipeline/errors';
 
 /**
@@ -147,7 +154,7 @@ export class CamService implements ShapeExporter {
    * While simulating: what's left of the stock (or, without stock, of a
    * block round the cuts) once every toolpath is cut. Null otherwise.
    */
-  readonly simulation$: Observable<Heightmap | null> = this.simulate$.pipe(
+  readonly simulation$: Observable<Simulation | null> = this.simulate$.pipe(
     distinctUntilChanged(),
     switchMap((on) =>
       !on
@@ -167,21 +174,20 @@ export class CamService implements ShapeExporter {
             // (renames, feeds) don't simulate again.
             distinctUntilChanged(
               (a, b) =>
-                a.paths === b.paths &&
+                a.paths.length === b.paths.length &&
+                a.paths.every((path, i) => path === b.paths[i]) &&
                 a.cells === b.cells &&
                 JSON.stringify(a.input) === JSON.stringify(b.input),
             ),
             switchMap(({ paths, input, cells }) =>
               input
                 ? race(
-                    worker
-                      .simulateStock(paths, input.tools, input.stock, cells)
-                      .pipe(
-                        recover<Heightmap | null>(
-                          'simulating the cuts',
-                          () => null,
-                        ),
+                    simulate(paths, input, cells).pipe(
+                      recover<Simulation | null>(
+                        'simulating the cuts',
+                        () => null,
                       ),
+                    ),
                     this.workTracker.working$,
                   )
                 : of(null),
@@ -234,7 +240,7 @@ export class CamService implements ShapeExporter {
   async stockToFit(): Promise<ReturnType<typeof stockAround>> {
     await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
     const model = await firstValueFrom(this.model$);
-    const operations = model.operations ?? [];
+    const operations = flatOperations(model.operations);
     const cuts = await Promise.all(
       operations.map(async (operation) => {
         const shapeId = borrowedShapeId(operation, operations);
@@ -257,12 +263,17 @@ export class CamService implements ShapeExporter {
   ]).pipe(
     map(([time, model]) => ({
       total: time.total,
-      operations: (model.operations ?? [])
+      operations: flatOperations(model.operations)
         .filter((o) => (time.byOperation.get(o.id) ?? 0) > 0)
         .map((o) => ({
           name:
             o.name ||
-            describeOperation(o, model.shapes, model.tools, model.operations),
+            describeOperation(
+              o,
+              model.shapes,
+              model.tools,
+              flatOperations(model.operations),
+            ),
           seconds: time.byOperation.get(o.id)!,
         })),
     })),
@@ -353,16 +364,18 @@ export class CamService implements ShapeExporter {
       ]),
     );
     const time = programTime(program);
-    const operations = (model.operations ?? [])
-      .filter((o) => !o.disabled && (time.byOperation.get(o.id) ?? 0) > 0)
+    const all = flatOperations(model.operations);
+    const operations = cutOperations(model.operations)
+      .filter((o) => (time.byOperation.get(o.id) ?? 0) > 0)
       .map((o) => {
         const tool = model.tools.find((t) => t.id === o.toolId);
         return {
           id: o.id,
-          name:
-            o.name ||
-            describeOperation(o, model.shapes, model.tools, model.operations),
+          name: o.name || describeOperation(o, model.shapes, model.tools, all),
           tool: tool ? numberedToolLabel(tool) : null,
+          angles: rotaryOf(view.stock)
+            ? operationAngles(o, model.operations)
+            : null,
           seconds: time.byOperation.get(o.id)!,
         };
       });
@@ -377,7 +390,8 @@ export class CamService implements ShapeExporter {
       shapes: shapes.filter(
         (s) => !model.shapes.find((m) => m.id === s.sourceShapeId)?.hidden,
       ),
-      paths,
+      // Seen from above: not the cuts with the stock turned.
+      paths: paths.filter((p) => p.rotation === undefined),
       notes,
     });
     tab.document.open();
@@ -451,10 +465,10 @@ export class CamService implements ShapeExporter {
 
     if (!rows.length) {
       // No nests: what the outside profiles cut out, one row per outline.
-      const operations = model.operations ?? [];
+      const operations = flatOperations(model.operations);
       const seen = new Set<string>();
-      for (const op of operations) {
-        if (op.disabled || op.type !== 'profile' || op.side !== 'outside') {
+      for (const op of cutOperations(model.operations)) {
+        if (op.type !== 'profile' || op.side !== 'outside') {
           continue;
         }
         const shapeId = borrowedShapeId(op, operations);
@@ -520,6 +534,23 @@ export class CamService implements ShapeExporter {
 }
 
 /** The stock as the preview shows it. */
+/** The material left (in the worker): a solid on a rotary axis. */
+function simulate(
+  paths: CamPath[],
+  input: SimulationInput,
+  cells: number,
+): Observable<Simulation> {
+  return input.rotary
+    ? worker.simulateRotaryStock(
+        paths,
+        input.tools,
+        input.rotary,
+        input.stock,
+        cells,
+      )
+    : worker.simulateStock(paths, input.tools, input.stock, cells);
+}
+
 export type StockView = {
   stock: StockOptions;
   /** Where X0 Y0 Z0 of the G-code is, in design coordinates. */

@@ -1,7 +1,7 @@
 import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { numberIn, resolvedModelOf } from '../variables/field';
-import { allShapes, shapeLabel } from '../shapes/describe';
+import { allShapes, rootModel, shapeLabel } from '../shapes/describe';
 import {
   allTools,
   BitType,
@@ -15,6 +15,8 @@ import {
   ToolOverrides,
 } from '../tools/feeds-and-speeds';
 import { autoFeedsField, calculatedFeedExpressions } from './feeds-calculator';
+import { onRotary, operationRotation } from './rotation';
+import { isTurned } from '../../../cam/rotary';
 
 import {
   Definition as PocketDefinition,
@@ -86,6 +88,18 @@ import {
   ModelType as ImageEngraveClearModelType,
 } from './operation-image-engrave-clear';
 
+import {
+  Definition as RotateDefinition,
+  ModelType as RotateModelType,
+} from './operation-rotate';
+
+import {
+  ModelType as RotaryRepeatModelType,
+  repeatAngles,
+  rotaryRepeatDefinition,
+} from './operation-rotary-repeat';
+import { NO_TOOL, ROTARY_REPEAT } from './flatten';
+
 const operations = [
   PocketDefinition,
   ProfileDefinition,
@@ -101,11 +115,18 @@ const operations = [
   InlayDefinition,
   ImageEngraveDefinition,
   ImageEngraveClearDefinition,
+  RotateDefinition,
 ];
+
+/** Rotate steps and rotary repeats: no tool, no shape, nothing cut. */
+const cutsNothing = (field: FormlyFieldConfig) =>
+  NO_TOOL.has(field.model?.type);
 
 /** What an operation of `type` is called in the editor. */
 export function operationLabel(type: string | undefined): string {
-  return operations.find((o) => o.type === type)?.label ?? type ?? 'operation';
+  return (
+    typesIn(false).find((o) => o.type === type)?.label ?? type ?? 'operation'
+  );
 }
 
 // The bits each operation works with (and how to say so when it doesn't).
@@ -176,15 +197,15 @@ export type ModelType = {
         | FlatPlugModelType
         | ImageEngraveModelType
         | ImageEngraveClearModelType
+        | RotateModelType
+        | RotaryRepeatModelType
       )
   >;
 };
 
-export const field: FormlyFieldConfig = {
-  key: 'operations',
-  type: 'repeat',
-  defaultValue: [],
-  props: {
+/** The operations list's settings (the outer list, or a repeat's own). */
+function listProps(inner: boolean): FormlyFieldConfig['props'] {
+  return {
     label: 'operations',
     itemLabel: 'operation',
     describeItem: (operation: any, field: FormlyFieldConfig) =>
@@ -195,7 +216,25 @@ export const field: FormlyFieldConfig = {
         allOperations(field),
       ),
     accent: '#059669',
-    collapsible: true,
+    // With the stock on a rotary axis, how far it's turned for each
+    // operation (by the rotate steps above it), or how many angles a
+    // rotary repeat cuts at.
+    itemTag: (operation: any, field: FormlyFieldConfig) => {
+      if (!onRotary(field) || inner || operation?.type === 'rotate') {
+        return null;
+      }
+      if (operation?.type === ROTARY_REPEAT) {
+        return `×${repeatAngles(operation).length}`;
+      }
+      const angle = operationRotation(
+        operation,
+        rootModel(field)?.operations ?? [],
+        (value) => numberIn(field, value as any),
+      );
+      return isTurned(angle) ? `A${Math.round(angle * 1000) / 1000}` : null;
+    },
+    // A repeat's list isn't a section: nothing to fold away.
+    collapsible: !inner,
     clonable: true,
     toggle: {
       key: 'disabled',
@@ -203,135 +242,149 @@ export const field: FormlyFieldConfig = {
       onTitle: 'Disable: leave out of the G-code and preview',
       offTitle: 'Disabled — click to include in the G-code again',
     },
-  },
-  fieldArray: {
-    fieldGroup: [
-      {
-        key: 'id',
-        type: 'hidden',
+  };
+}
+
+/** Types of operation that can go in a list (a repeat's: no rotating). */
+function typesIn(inner: boolean) {
+  return inner ? operations : [...operations, rotaryRepeat];
+}
+
+/** An operation's fields (in the outer list, or inside a rotary repeat). */
+function operationFields(inner: boolean): FormlyFieldConfig[] {
+  const types = typesIn(inner);
+  return [
+    {
+      key: 'id',
+      type: 'hidden',
+    },
+    {
+      key: 'disabled',
+      type: 'hidden',
+      defaultValue: false,
+    },
+    {
+      key: 'expanded',
+      type: 'hidden',
+      defaultValue: false,
+    },
+    {
+      key: 'name',
+      type: 'input',
+      props: {
+        label: 'name',
       },
-      {
-        key: 'disabled',
-        type: 'hidden',
-        defaultValue: false,
+      expressions: {
+        'props.placeholder': (field: FormlyFieldConfig) =>
+          describeOperation(
+            resolvedModelOf(field),
+            allShapes(field),
+            allTools(field),
+            allOperations(field),
+          ),
       },
-      {
-        key: 'expanded',
-        type: 'hidden',
-        defaultValue: false,
+    },
+    {
+      key: 'toolId',
+      type: 'enum',
+      props: {
+        label: 'tool',
+        required: true,
       },
-      {
-        key: 'name',
-        type: 'input',
-        props: {
-          label: 'name',
-        },
-        expressions: {
-          'props.placeholder': (field: FormlyFieldConfig) =>
-            describeOperation(
-              resolvedModelOf(field),
-              allShapes(field),
-              allTools(field),
-              allOperations(field),
-            ),
-        },
-      },
-      {
-        key: 'toolId',
-        type: 'enum',
-        props: {
-          label: 'tool',
-          required: true,
-        },
-        validators: {
-          toolExists: {
-            expression: (control: AbstractControl, field: FormlyFieldConfig) =>
-              !control.value ||
-              allTools(field).some((t) => t.id === control.value),
-            message: 'This tool was deleted — pick another one',
-          },
-        },
-        expressions: {
-          'props.options': (field: FormlyFieldConfig) =>
-            allTools(field).map((tool) => ({
-              value: tool.id,
-              label: numberedToolLabel(tool, numberIn(field, tool.index)),
-            })),
-        },
-      },
-      {
-        key: 'shapeId',
-        type: 'enum',
-        props: {
-          label: 'shape',
-          required: true,
-        },
-        validators: {
-          shapeExists: {
-            expression: (control: AbstractControl, field: FormlyFieldConfig) =>
-              !control.value ||
-              allShapes(field).some((s) => s.id === control.value),
-            message: 'This shape was deleted — pick another one',
-          },
-        },
-        expressions: {
-          // Clearing, inlay plugs and rest machining use the shape of the
-          // operation they belong to.
-          hide: (field: FormlyFieldConfig) =>
-            borrowsShape.has(field.model?.type),
-          'props.options': (field: FormlyFieldConfig) => {
-            const shapes = allShapes(field);
-            return shapes.map((shape) => ({
-              value: shape.id,
-              label: shapeLabel(shape, shapes),
-            }));
-          },
+      validators: {
+        toolExists: {
+          expression: (control: AbstractControl, field: FormlyFieldConfig) =>
+            !control.value ||
+            allTools(field).some((t) => t.id === control.value),
+          message: 'This tool was deleted — pick another one',
         },
       },
-      {
-        key: 'type',
-        type: 'enum',
-        props: {
-          label: 'type',
-          required: true,
+      expressions: {
+        hide: cutsNothing,
+        'props.options': (field: FormlyFieldConfig) =>
+          allTools(field).map((tool) => ({
+            value: tool.id,
+            label: numberedToolLabel(tool, numberIn(field, tool.index)),
+          })),
+      },
+    },
+    {
+      key: 'shapeId',
+      type: 'enum',
+      props: {
+        label: 'shape',
+        required: true,
+      },
+      validators: {
+        shapeExists: {
+          expression: (control: AbstractControl, field: FormlyFieldConfig) =>
+            !control.value ||
+            allShapes(field).some((s) => s.id === control.value),
+          message: 'This shape was deleted — pick another one',
         },
-        validators: {
-          bitType: {
-            expression: (
-              control: AbstractControl,
-              field: FormlyFieldConfig,
-            ) => {
-              const tool = allTools(field).find(
-                (t) => t.id === field.model?.toolId,
-              );
-              return (
-                !tool || allowsBit(control.value, tool.bitType ?? 'end-mill')
-              );
-            },
-            message: (_: unknown, field: FormlyFieldConfig) => {
-              const type = field.formControl?.value;
-              const label = operations.find((o) => o.type === type)?.label;
-              return `${label ?? type} needs ${allowedBits[type]?.needs ?? 'another tool'}`;
-            },
-          },
+      },
+      expressions: {
+        // Clearing, inlay plugs and rest machining use the shape of the
+        // operation they belong to.
+        hide: (field: FormlyFieldConfig) =>
+          borrowsShape.has(field.model?.type) || cutsNothing(field),
+        'props.options': (field: FormlyFieldConfig) => {
+          const shapes = allShapes(field);
+          return shapes.map((shape) => ({
+            value: shape.id,
+            label: shapeLabel(shape, shapes),
+          }));
         },
-        expressions: {
-          'props.options': (field: FormlyFieldConfig) => {
+      },
+    },
+    {
+      key: 'type',
+      type: 'enum',
+      props: {
+        label: 'type',
+        required: true,
+      },
+      validators: {
+        bitType: {
+          expression: (control: AbstractControl, field: FormlyFieldConfig) => {
             const tool = allTools(field).find(
               (t) => t.id === field.model?.toolId,
             );
-            const bitType = tool?.bitType ?? 'end-mill';
-            return operations
-              .filter(
-                (t) =>
-                  allowsBit(t.type, bitType) || t.type === field.model?.type,
-              )
-              .map((t) => ({ value: t.type, label: t.label }));
+            return (
+              !tool || allowsBit(control.value, tool.bitType ?? 'end-mill')
+            );
+          },
+          message: (_: unknown, field: FormlyFieldConfig) => {
+            const type = field.formControl?.value;
+            const label = types.find((o) => o.type === type)?.label;
+            return `${label ?? type} needs ${allowedBits[type]?.needs ?? 'another tool'}`;
           },
         },
       },
-      ...operations.map((t) => t.fieldGroup),
-      // Only these ramp into their cuts.
+      expressions: {
+        'props.options': (field: FormlyFieldConfig) => {
+          const tool = allTools(field).find(
+            (t) => t.id === field.model?.toolId,
+          );
+          const bitType = tool?.bitType ?? 'end-mill';
+          return types
+            .filter(
+              (t) =>
+                t.type === field.model?.type ||
+                // Rotating only with the stock on a rotary axis, and not
+                // inside a rotary repeat.
+                (NO_TOOL.has(t.type)
+                  ? !inner && onRotary(field)
+                  : allowsBit(t.type, bitType)),
+            )
+            .map((t) => ({ value: t.type, label: t.label }));
+        },
+      },
+    },
+    ...types.map((t) => t.fieldGroup),
+    // Only these ramp into their cuts.
+    withHide(
+      cutsNothing,
       operationFeedsAndSpeeds(
         { field: autoFeedsField, expressions: calculatedFeedExpressions },
         [
@@ -346,6 +399,44 @@ export const field: FormlyFieldConfig = {
           ImageEngraveClearDefinition.type,
         ],
       ),
-    ],
+    ),
+  ];
+}
+
+/** What a rotary repeat cuts at each angle: a list of its own. */
+const innerList: FormlyFieldConfig = {
+  key: 'operations',
+  type: 'repeat',
+  defaultValue: [],
+  props: {
+    ...listProps(true),
+    label: 'cut at each angle',
   },
+  fieldArray: { fieldGroup: operationFields(true) },
 };
+
+const rotaryRepeat = rotaryRepeatDefinition(innerList);
+
+export const field: FormlyFieldConfig = {
+  key: 'operations',
+  type: 'repeat',
+  defaultValue: [],
+  props: listProps(false),
+  fieldArray: { fieldGroup: operationFields(false) },
+};
+
+/** `field`, also hidden when `hide` says so. */
+function withHide(
+  hide: (field: FormlyFieldConfig) => boolean,
+  field: FormlyFieldConfig,
+): FormlyFieldConfig {
+  const own = field.expressions?.['hide'];
+  return {
+    ...field,
+    expressions: {
+      ...field.expressions,
+      hide: (f: FormlyFieldConfig) =>
+        hide(f) || (typeof own === 'function' ? !!own(f) : !!own),
+    },
+  };
+}

@@ -5,6 +5,7 @@ import {
 } from '../../../cam/gcode-options';
 import { CURVE_TOLERANCE } from '../../../cam/geometry';
 import { MACHINES } from '../../../cam/feeds-speeds';
+import { onRotary } from '../operations/rotation';
 
 export type ModelType = {
   gcode: GcodeOptions;
@@ -179,6 +180,43 @@ export const field: FormlyFieldConfig = {
           defaultValue: d.referenceY,
           props: { label: 'to Y', required: true },
           expressions: { hide: hideUnlessReference },
+        },
+      ],
+    },
+    {
+      wrappers: ['group'],
+      props: {
+        label: 'rotary axis',
+        description:
+          'how the controller names and turns it; safe height is raised to clear the stock’s corners as it turns',
+        collapsible: true,
+      },
+      expressions: { hide: (field: FormlyFieldConfig) => !onRotary(field) },
+      fieldGroup: [
+        {
+          key: 'rotaryAxis',
+          type: 'enum',
+          defaultValue: d.rotaryAxis,
+          props: {
+            label: 'letter',
+            description: 'the axis’ name in the G-code (in degrees)',
+            required: true,
+            options: [
+              { value: 'A', label: 'A' },
+              { value: 'B', label: 'B' },
+              { value: 'C', label: 'C' },
+            ],
+          },
+        },
+        {
+          key: 'rotaryReversed',
+          type: 'boolean',
+          defaultValue: d.rotaryReversed,
+          props: {
+            label: 'turns the other way',
+            description:
+              'tick if a positive angle turns the top of the stock towards +Y (axis along X) or −X (along Y)',
+          },
         },
       ],
     },

@@ -10,6 +10,13 @@ import {
 import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { shapeLabel } from '../model-editor/shapes/describe';
 import { nestPolygons } from '../../cam/polygon-nesting';
+import { rotaryOf } from '../../cam/rotary';
+import { rotationMismatch } from '../model-editor/operations/rotation';
+import { anglesLabel } from '../model-editor/operations/operation-rotary-repeat';
+import {
+  cutOperations,
+  flatOperations,
+} from '../model-editor/operations/flatten';
 
 /** Round bits, which leave corners rounded. */
 const ROUND = ['end-mill', 'ball-nose', 'bull-nose'];
@@ -22,9 +29,11 @@ export function jobChecks(
 ): JobWarning[] {
   const shapesOf = (id: string | undefined) =>
     shapes.filter((s) => s.sourceShapeId === id);
-  const operations = model.operations ?? [];
+  // Inside rotary repeats too; borrowing ones look among all of them.
+  const listed = model.operations ?? [];
+  const operations = flatOperations(listed);
 
-  const checked = operations.flatMap((op): CheckedOperation[] => {
+  const checked = cutOperations(listed).flatMap((op): CheckedOperation[] => {
     const tool = model.tools.find((t) => t.id === op.toolId);
     if (op.disabled || !tool) return [];
     const shapeId = borrowedShapeId(op, operations);
@@ -88,16 +97,39 @@ export function jobChecks(
       ).map(({ outer }) => outer),
     );
 
-  return checkJob({
-    stock: resolveStock(model.stock),
-    operations: checked,
-    paths,
-    parts,
-    keepOuts: model.shapes
-      .filter((s) => s.clamp)
-      .map((s) => ({
-        name: shapeLabel(s, model.shapes),
-        polygons: shapesOf(s.id).flatMap((shape) => shape.polygons),
-      })),
-  });
+  // Clearings and rest machining cut where the operation they belong to
+  // did: with the stock on a rotary axis, it must be turned the same.
+  const stock = resolveStock(model.stock);
+  const name = (op: any) =>
+    op.name || describeOperation(op, model.shapes, model.tools, operations);
+  const turnedWrong: JobWarning[] = !rotaryOf(stock)
+    ? []
+    : cutOperations(listed).flatMap((op) => {
+        const mismatch = rotationMismatch(op, listed);
+        return mismatch
+          ? [
+              {
+                level: 'warning' as const,
+                text: `${name(op)}: cut with the stock turned to ${anglesLabel(mismatch.angles) || 'no angle'}, but “${name(mismatch.other)}” at ${anglesLabel(mismatch.otherAngles) || 'no angle'}: put it where that one is (under the same rotate step, or in the same rotary repeat)`,
+                operationId: op.id,
+              },
+            ]
+          : [];
+      });
+
+  return [
+    ...turnedWrong,
+    ...checkJob({
+      stock,
+      operations: checked,
+      paths,
+      parts,
+      keepOuts: model.shapes
+        .filter((s) => s.clamp)
+        .map((s) => ({
+          name: shapeLabel(s, model.shapes),
+          polygons: shapesOf(s.id).flatMap((shape) => shape.polygons),
+        })),
+    }),
+  ];
 }

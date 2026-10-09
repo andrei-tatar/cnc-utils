@@ -4,11 +4,32 @@
 //
 // A template's name is its file name ("box-template.nc" → "Box template")
 // unless the file has a "; name: …" comment line; a "; description: …" line
-// adds a description.
+// adds a description, and "; group: …" the heading it's listed under (in the
+// order of GROUPS, then any others alphabetically, then those without one
+// under "Other"; by name within each).
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const DIR = "templates";
+
+// The menu's headings, in order.
+const GROUPS = [
+  "Boxes & casework",
+  "Kitchen & gifts",
+  "Signs & inlays",
+  "Shop & machine",
+  "Rotary axis",
+];
+const OTHER = "Other";
+
+function groupRank(group) {
+  const known = GROUPS.indexOf(group);
+  return known >= 0
+    ? known
+    : group === OTHER
+      ? GROUPS.length + 1
+      : GROUPS.length;
+}
 
 function comment(lines, key) {
   const prefix = `; ${key}:`;
@@ -36,9 +57,19 @@ const templates = readdirSync(DIR)
       file,
       name: comment(lines, "name") || nameFromFile(file),
       description: comment(lines, "description") ?? "",
+      group: comment(lines, "group") || OTHER,
     };
   })
-  .filter(Boolean);
+  .filter(Boolean)
+  .sort(
+    (a, b) =>
+      groupRank(a.group) - groupRank(b.group) ||
+      a.group.localeCompare(b.group) ||
+      a.name.localeCompare(b.name),
+  );
 
-writeFileSync(join(DIR, "index.json"), JSON.stringify(templates, null, 2) + "\n");
+writeFileSync(
+  join(DIR, "index.json"),
+  JSON.stringify(templates, null, 2) + "\n",
+);
 console.log(`templates: ${templates.length} listed in ${DIR}/index.json`);

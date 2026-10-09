@@ -11,6 +11,11 @@ import { CamPath, CamPoint3, Highlight } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
 import { distinctItems, distinctJson } from './operators';
 import { borrowedShapeId } from '../model-editor/operations/describe';
+import {
+  flatOperations,
+  NO_TOOL,
+  ROTARY_REPEAT,
+} from '../model-editor/operations/flatten';
 
 /**
  * The model as the preview sees it: items of a collapsed editor section
@@ -50,8 +55,9 @@ export function hiddenShapeIds(
 }
 
 /**
- * An expanded operation highlights its toolpaths and the shape it cuts;
- * otherwise an expanded shape highlights itself and its toolpaths. Nothing
+ * An expanded operation highlights its toolpaths and the shape it cuts (a
+ * rotate step, those of the operations it turns the stock for; a rotary
+ * repeat, those of its operations, or of those open in it); otherwise an expanded shape highlights itself and its toolpaths. Nothing
  * expanded (or only in collapsed sections) highlights everything.
  */
 export function highlightFromModel(
@@ -60,10 +66,23 @@ export function highlightFromModel(
 ): Observable<Highlight> {
   return openInEditor(model$, collapsedSections$).pipe(
     map(({ shapes, operations }) => {
-      const expandedOperations = (operations ?? []).filter((o) => o.expanded);
+      const expandedOperations = (operations ?? []).flatMap((o: any, i) => {
+        if (!o.expanded) return [];
+        if (o.type === 'rotate') return turnedBy(i, operations);
+        if (o.type === ROTARY_REPEAT) {
+          // Those open inside it, or all of them.
+          const inner: any[] = o.operations ?? [];
+          const open = inner.filter((x) => x.expanded);
+          return open.length ? open : inner;
+        }
+        return [o];
+      });
       if (expandedOperations.length) {
         const shapeIds = expandedOperations.flatMap((operation) => {
-          const effective = borrowedShapeId(operation, operations);
+          const effective = borrowedShapeId(
+            operation,
+            flatOperations(operations),
+          );
           return effective ? [effective] : [];
         });
         return {
@@ -77,6 +96,19 @@ export function highlightFromModel(
       };
     }),
     distinctJson(),
+  );
+}
+
+/** The operations the rotate step at `index` turns the stock for. */
+function turnedBy(
+  index: number,
+  operations: ModelType['operations'],
+): ModelType['operations'] {
+  const below = operations.slice(index + 1);
+  const next = below.findIndex((o) => o.type === 'rotate' && !o.disabled);
+  // Rotary repeats turn the stock for themselves.
+  return (next < 0 ? below : below.slice(0, next)).filter(
+    (o) => !NO_TOOL.has(o.type!),
   );
 }
 
@@ -103,6 +135,7 @@ export function reuseUnchangedPaths(): MonoTypeOperatorFunction<CamPath[]> {
             const old = previous.get(key);
             const kept =
               old &&
+              old.rotation === path.rotation &&
               samePoints(old.points, path.points) &&
               sameFeeds(old.feeds, path.feeds)
                 ? old

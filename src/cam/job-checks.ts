@@ -89,7 +89,8 @@ export function checkJob(input: JobCheckInput): JobWarning[] {
     const add = (level: JobWarning['level'], text: string) =>
       warnings.push({ level, text: `${op.name}: ${text}`, operationId: op.id });
 
-    if (input.stock.enabled) {
+    // On a rotary axis, there's no spoilboard under the stock.
+    if (input.stock.enabled && input.stock.mount !== 'rotary') {
       const below = depth - input.stock.thickness;
       if (below > SPOILBOARD_TOLERANCE + 1e-6) {
         add('warning', `cuts ${mm(below)} into the spoilboard`);

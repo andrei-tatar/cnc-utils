@@ -2,10 +2,15 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 import { rootModel, shapeLabel } from '../shapes/describe';
 import { numberedToolLabel, ToolType } from '../tools';
 import { totalDepth } from './depth-steps';
+import { flatOperations } from './flatten';
+import { anglesLabel, repeatAngles } from './operation-rotary-repeat';
 
-/** All operations in the model, from any field in the form. */
+/**
+ * All operations in the model, those inside rotary repeats too (after
+ * theirs), from any field in the form.
+ */
 export function allOperations(field: FormlyFieldConfig | undefined): any[] {
-  return rootModel(field)?.operations ?? [];
+  return flatOperations(rootModel(field)?.operations);
 }
 
 /** A readable name built from the operation's settings, shape and tool. */
@@ -77,6 +82,14 @@ export function describeOperation(
     case 'flat-plug':
       what = `flat inlay plug ${stepped(operation)}`;
       break;
+    case 'rotate':
+      return `rotate to ${Math.round((+operation.angle || 0) * 1000) / 1000}°`;
+    case 'rotary-repeat': {
+      const count = (operation.operations ?? []).length;
+      return `rotary repeat: ${count} operation${count === 1 ? '' : 's'} at ${anglesLabel(
+        repeatAngles(operation),
+      )}`;
+    }
     default:
       what = operation?.type ?? 'operation';
   }

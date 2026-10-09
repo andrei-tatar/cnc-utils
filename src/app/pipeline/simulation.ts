@@ -1,5 +1,7 @@
 import { SimulatedStock, SimulatedTool } from '../../cam/simulate';
 import { resolveStock } from '../../cam/stock';
+import { Rotary, rotaryOf } from '../../cam/rotary';
+import { cutOperations } from '../model-editor/operations/flatten';
 import { CamPath } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
 
@@ -39,6 +41,17 @@ export function saveSimulationQuality(quality: SimulationQuality) {
   } catch {}
 }
 
+/** What the simulation needs (see `simulationInput`). */
+export type SimulationInput = {
+  tools: Record<string, SimulatedTool>;
+  stock: SimulatedStock;
+  /**
+   * The rotary axis the stock is held on, if it is: then cuts are made with
+   * it turned (`simulateRotaryStock`), and what's left is a solid.
+   */
+  rotary: Rotary | null;
+};
+
 /**
  * What the simulation needs: each enabled operation's bit, and the block of
  * material (the stock, or one round the cuts). Null with nothing to cut.
@@ -46,11 +59,10 @@ export function saveSimulationQuality(quality: SimulationQuality) {
 export function simulationInput(
   paths: CamPath[],
   model: ModelType,
-): { tools: Record<string, SimulatedTool>; stock: SimulatedStock } | null {
+): SimulationInput | null {
   const tools: Record<string, SimulatedTool> = {};
   let widest = 0;
-  for (const op of model.operations ?? []) {
-    if (op.disabled) continue;
+  for (const op of cutOperations(model.operations)) {
     const tool = model.tools.find((t) => t.id === op.toolId);
     if (!tool || !(tool.diameter > 0)) continue;
     tools[op.id] = {
@@ -76,6 +88,7 @@ export function simulationInput(
         top: 0,
         bottom: -stock.thickness,
       },
+      rotary: rotaryOf(stock),
     };
   }
 
@@ -108,5 +121,6 @@ export function simulationInput(
       top: 0,
       bottom: deepest - 1,
     },
+    rotary: null,
   };
 }

@@ -12,7 +12,23 @@ export type Template = {
   file: string;
   name: string;
   description: string;
+  /** The heading it's listed under (the list comes sorted by it). */
+  group: string;
 };
+
+/** Templates under their headings, in the list's order. */
+export function groupTemplates(
+  templates: readonly Template[],
+): { group: string; templates: Template[] }[] {
+  const groups: { group: string; templates: Template[] }[] = [];
+  for (const template of templates) {
+    const group = template.group || 'Other';
+    const last = groups[groups.length - 1];
+    if (last?.group === group) last.templates.push(template);
+    else groups.push({ group, templates: [template] });
+  }
+  return groups;
+}
 
 /** The templates there are; none when the list can't be had. */
 export async function listTemplates(): Promise<Template[]> {

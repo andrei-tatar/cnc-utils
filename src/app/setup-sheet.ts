@@ -1,5 +1,6 @@
 import { BoxAnchor, GcodeOptions } from '../cam/gcode-options';
 import { StockOptions } from '../cam/stock';
+import { rotaryOf, sideUp } from '../cam/rotary';
 import { arcOf, forEachSegment, polygonsBounds } from '../cam/arcs';
 import { CamPath, CamPoint, CamPolygon, CamShape } from '../cam/types';
 
@@ -17,6 +18,11 @@ export type SetupSheetData = {
     name: string;
     /** "T2 Ø6 mm end mill". */
     tool: string | null;
+    /**
+     * Degrees the rotary axis turns the stock to for it, each time it's
+     * cut (null: no axis).
+     */
+    angles?: number[] | null;
     seconds: number;
   }[];
   total: number;
@@ -61,10 +67,22 @@ export function setupSheetHtml(data: SetupSheetData): string {
       : stock.enabled && stock.xyZero !== 'design'
         ? `the stock’s ${ANCHORS[stock.xyZero]}`
         : 'the design’s origin';
+  const rotary = rotaryOf(stock);
   const z =
-    stock.enabled && stock.zZero === 'bottom'
-      ? 'the bottom of the stock (the spoilboard)'
-      : 'the top of the stock';
+    !stock.enabled || stock.zZero === 'top'
+      ? rotary
+        ? 'the top of the stock, at 0°'
+        : 'the top of the stock'
+      : rotary
+        ? 'the rotary axis'
+        : 'the bottom of the stock (the spoilboard)';
+  const turn = (angles: readonly number[]) =>
+    angles
+      .map((angle) => {
+        const side = rotary && sideUp(rotary.along, angle);
+        return `${round(angle)}°${side ? ` (${side})` : ''}`;
+      })
+      .join(', ');
   const toolChange =
     options.toolChange === 'm6'
       ? 'automatic (T<n> M6)'
@@ -136,8 +154,17 @@ export function setupSheetHtml(data: SetupSheetData): string {
     <dl>
       ${
         stock.enabled
-          ? `<dt>Size</dt><dd>${round(stock.width)} × ${round(stock.height)} × ${mm(stock.thickness)}</dd>
-      <dt>Corner at</dt><dd>X${round(stock.x)} Y${round(stock.y)} (design)</dd>`
+          ? `<dt>Size</dt><dd>${
+              rotary?.round
+                ? `Ø${round(stock.diameter)} × ${mm(rotary.along === 'x' ? stock.width : stock.height)}, round`
+                : `${round(stock.width)} × ${round(stock.height)} × ${mm(stock.thickness)}`
+            }</dd>
+      <dt>Corner at</dt><dd>X${round(stock.x)} Y${round(stock.y)} (design)</dd>${
+        rotary
+          ? `
+      <dt>Held</dt><dd>on the rotary axis (${esc(options.rotaryAxis)}), along ${rotary.along.toUpperCase()}, centred on it</dd>`
+          : ''
+      }`
           : `<dt>Size</dt><dd>not set in the project</dd>`
       }
     </dl>
@@ -147,7 +174,11 @@ export function setupSheetHtml(data: SetupSheetData): string {
     <dl>
       <dt>X0 Y0</dt><dd>${esc(xy)}</dd>
       <dt>Z0</dt><dd>${esc(z)}</dd>
-      <dt>Safe height</dt><dd>${mm(options.safetyHeight)} above Z0</dd>
+      <dt>Safe height</dt><dd>${
+        rotary
+          ? `${mm(options.safetyHeight)} above the stock’s corners as it turns`
+          : `${mm(options.safetyHeight)} above Z0`
+      }</dd>
       <dt>Tool changes</dt><dd>${esc(toolChange)}</dd>
     </dl>
   </section>
@@ -168,15 +199,15 @@ export function setupSheetHtml(data: SetupSheetData): string {
 
 <h2>Operations</h2>
 <table>
-  <thead><tr><th class="check"></th><th>#</th><th>Operation</th><th>Tool</th><th class="num">Time</th></tr></thead>
+  <thead><tr><th class="check"></th><th>#</th><th>Operation</th><th>Tool</th>${rotary ? '<th>Turned to</th>' : ''}<th class="num">Time</th></tr></thead>
   <tbody>
   ${data.operations
     .map(
       (op, i) =>
-        `<tr><td class="check"><span class="box"></span></td><td>${i + 1}</td><td><span class="swatch" style="background:${color.get(op.id)}"></span>${esc(op.name)}</td><td>${esc(op.tool ?? '—')}</td><td class="num">${duration(op.seconds)}</td></tr>`,
+        `<tr><td class="check"><span class="box"></span></td><td>${i + 1}</td><td><span class="swatch" style="background:${color.get(op.id)}"></span>${esc(op.name)}</td><td>${esc(op.tool ?? '—')}</td>${rotary ? `<td>${esc(turn(op.angles ?? [0]))}</td>` : ''}<td class="num">${duration(op.seconds)}</td></tr>`,
     )
     .join('\n  ')}
-  <tr><td></td><td></td><td><strong>Total</strong></td><td></td><td class="num"><strong>${duration(data.total)}</strong></td></tr>
+  <tr><td></td><td></td><td><strong>Total</strong></td><td></td>${rotary ? '<td></td>' : ''}<td class="num"><strong>${duration(data.total)}</strong></td></tr>
   </tbody>
 </table>
 
@@ -187,7 +218,7 @@ ${
     : ''
 }
 
-<h2>Top view</h2>
+<h2>Top view${rotary ? ' (cuts with the stock turned aren’t drawn)' : ''}</h2>
 <figure>${drawing(data, color)}</figure>
 </main>
 </body>

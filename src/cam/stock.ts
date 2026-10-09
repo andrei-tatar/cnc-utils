@@ -14,8 +14,26 @@ export type StockOptions = {
   /** Where the stock's bottom-left corner is, in design coordinates. */
   x: number;
   y: number;
-  /** Z0 on the top of the stock, or on its bottom (the spoilboard). */
-  zZero: 'top' | 'bottom';
+  /**
+   * Lying on the table, or held on a rotary axis (centred on it, along X or
+   * Y: `rotaryAlong`), so operations can turn it first (see `rotary.ts`).
+   */
+  mount: 'table' | 'rotary';
+  rotaryAlong: 'x' | 'y';
+  /**
+   * On a rotary axis, a box or a cylinder (a round blank) of `diameter`,
+   * as long as the box is along the axis. `resolveStock` sets a cylinder's
+   * size across the axis and its thickness to its diameter, so its box is
+   * the box round it.
+   */
+  shape: 'box' | 'cylinder';
+  diameter: number;
+  /**
+   * Z0 on the top of the stock, on its bottom (the spoilboard), or on the
+   * rotary axis. The bottom on a rotary axis, or the axis on the table,
+   * read as the other.
+   */
+  zZero: 'top' | 'bottom' | 'axis';
   /**
    * Where X0 Y0 is in the G-code: the design's own origin, or a corner or
    * the middle of the stock.
@@ -32,6 +50,10 @@ export const DEFAULT_STOCK: StockOptions = {
   thickness: 18,
   x: 0,
   y: 0,
+  mount: 'table',
+  rotaryAlong: 'x',
+  shape: 'box',
+  diameter: 50,
   zZero: 'top',
   xyZero: 'design',
   material: DEFAULT_WOOD,
@@ -84,13 +106,21 @@ export function resolveStock(
       (merged as any)[key] = value;
     }
   }
+  // Round only on a rotary axis; across it, a cylinder is its diameter.
+  if (merged.mount !== 'rotary') {
+    merged.shape = 'box';
+  } else if (merged.shape === 'cylinder') {
+    merged.thickness = merged.diameter;
+    if (merged.rotaryAlong === 'y') merged.width = merged.diameter;
+    else merged.height = merged.diameter;
+  }
   return merged;
 }
 
 /**
  * What the G-code adds to design coordinates (mm): its zero moved to the
  * stock's corner or middle, and up by the stock's thickness for Z0 at the
- * bottom. Nothing without stock.
+ * bottom (by half of it for Z0 on the rotary axis). Nothing without stock.
  */
 export function stockOffset(stock: StockOptions): {
   x: number;
@@ -112,7 +142,13 @@ export function stockOffset(stock: StockOptions): {
     x = -zero.x;
     y = -zero.y;
   }
-  return { x, y, z: stock.zZero === 'bottom' ? stock.thickness : 0 };
+  const z =
+    stock.zZero === 'top'
+      ? 0
+      : stock.mount === 'rotary'
+        ? stock.thickness / 2
+        : stock.thickness;
+  return { x, y, z };
 }
 
 /**

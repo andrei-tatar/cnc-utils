@@ -1,7 +1,7 @@
 import { Color } from 'three';
 
 /** Surface → deepest cut: pale cyan, blue, magenta. */
-const DEPTH_STOPS = ['#b3f0ff', '#2f80ed', '#e040fb'];
+export const DEPTH_STOPS = ['#b3f0ff', '#2f80ed', '#e040fb'];
 /** Slowest → fastest feed: red, amber, green. */
 const FEED_STOPS = ['#ef5350', '#ffca28', '#66bb6a'];
 const DEPTH_COLORS = DEPTH_STOPS.map((hex) => new Color(hex));
