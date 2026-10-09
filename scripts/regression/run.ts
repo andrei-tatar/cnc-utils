@@ -986,12 +986,24 @@ function overlay(base: Output, cur: Output, check: Check): string | null {
   };
   const a = pick(base),
     b = pick(cur);
-  const all = [...a, ...b].flatMap((l) => l.points);
-  if (!all.length) return null;
-  const minX = Math.min(...all.map((p) => p[0])) - 1,
-    maxX = Math.max(...all.map((p) => p[0])) + 1;
-  const minY = Math.min(...all.map((p) => p[1])) - 1,
-    maxY = Math.max(...all.map((p) => p[1])) + 1;
+  // Bounds by a loop: spreading a job's worth of points into Math.min
+  // overflows the stack.
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const l of [...a, ...b])
+    for (const p of l.points) {
+      minX = Math.min(minX, p[0]);
+      maxX = Math.max(maxX, p[0]);
+      minY = Math.min(minY, p[1]);
+      maxY = Math.max(maxY, p[1]);
+    }
+  if (!(minX <= maxX)) return null;
+  minX -= 1;
+  maxX += 1;
+  minY -= 1;
+  maxY += 1;
   const S = 1200 / Math.max(maxX - minX, maxY - minY);
   const line = (l: { close?: boolean; points: number[][] }, colour: string) =>
     `<${l.close ? 'polygon' : 'polyline'} points="${l.points.map((p) => `${((p[0] - minX) * S).toFixed(1)},${((maxY - p[1]) * S).toFixed(1)}`).join(' ')}" fill="none" stroke="${colour}" stroke-width="1" opacity="0.7"/>`;
