@@ -144,6 +144,39 @@ export function operationPointOnBlank(
   });
 }
 
+/**
+ * Which way round a wrapped design goes, as the axis turns (+1 or −1):
+ * so that, unrolled, it reads as drawn seen from outside the stock. Along
+ * X a positive turn brings the +Y side up, along Y the −X side.
+ */
+export function wrapDirection(rotary: Rotary): 1 | -1 {
+  return rotary.along === 'x' ? 1 : -1;
+}
+
+/**
+ * A point of an operation wrapped round a round stock from `angle` (drawn
+ * unrolled: across the axis is round it, the axis line at `angle`; Z the
+ * depth below the surface) on the blank at 0°.
+ */
+export function wrappedPointOnBlank(
+  rotary: Rotary,
+  angle: number,
+  point: CamPoint3,
+): CamPoint3 {
+  const alongX = rotary.along === 'x';
+  const across = (alongX ? point.y : point.x) - rotary.across;
+  const turned =
+    angle +
+    wrapDirection(rotary) * (across / rotary.halfThickness) * (180 / Math.PI);
+  return onBlank(
+    rotary,
+    turned,
+    alongX
+      ? { x: point.x, y: rotary.across, z: point.z }
+      : { x: rotary.across, y: point.y, z: point.z },
+  );
+}
+
 /** How far a point the machine reaches is from the axis (mm). */
 export function distanceToAxis(rotary: Rotary, point: CamPoint3): number {
   const across = rotary.along === 'x' ? point.y : point.x;

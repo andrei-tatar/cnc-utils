@@ -31,7 +31,11 @@ Per project (tolerances at the top of `run.ts`):
 - the tabs on them: their footprints and tops;
 - the material left after every cut (the simulation's heightmap, simulated
   with arcs followed far finer than the preview's), allowing an edge to move
-  by a cell — this is what decides whether two runs cut the same;
+  by a cell — this is what decides whether two runs cut the same. With the
+  stock on a rotary axis, a heightmap per angle the stock is turned to
+  (`rotaryHeightmaps`: what the cuts at that angle leave, in its frame),
+  compared angle by angle (`material left at A90`); an angle cut in only
+  one run fails;
 - the job checks' warnings;
 - reported, not failed: each operation's cutting moves in the material
   (Z ≤ 0), in 3D (Hausdorff distance, travel left out; plus the number of

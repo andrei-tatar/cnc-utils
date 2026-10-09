@@ -4,6 +4,7 @@ import { arcOf, polygonsBounds, segmentPoints } from './arcs';
 import {
   distanceToAxis,
   isTurned,
+  wrapDirection,
   onBlank,
   rotaryClearance,
   rotaryShift,
@@ -285,9 +286,16 @@ export class GCodeBuilder {
    * Turn the stock on the rotary axis to `angle` (degrees) for what
    * follows, at safe height: what follows is in its frame (see
    * `rotary.ts`). Nothing without a rotary axis (`GcodeOptions.rotary`).
+   *
+   * With `wrap` (round stock only), what follows is wrapped round it: drawn
+   * unrolled, its position across the axis (Y along X, X along Y) runs
+   * round the circumference from `angle`, the axis line at `angle`, and Z
+   * is the depth below the surface. Each move turns the axis as it goes.
    */
-  rotate(angle: number) {
-    this._instructions.push({ type: 'rotate', angle });
+  rotate(angle: number, wrap = false) {
+    this._instructions.push(
+      wrap ? { type: 'rotate', angle, wrap } : { type: 'rotate', angle },
+    );
     return this;
   }
 
@@ -373,12 +381,36 @@ export class GCodeBuilder {
     let sourceShapeId = 'unknown';
     let sourceOperationId: string | undefined = undefined;
     // Where the tool is, as the machine moves (Z from the top at 0°).
-    let last: CamPoint3 = { x: 0, y: 0, z: 0 };
+    let last: CamPoint3 & { a?: number; turns?: number } = { x: 0, y: 0, z: 0 };
     let feed = o.carveFeedRate;
     let rotation = 0;
     let shift = 0;
-    const local = (p: CamPoint3): CamPoint3 =>
-      shift ? { x: p.x, y: p.y, z: p.z - shift } : { x: p.x, y: p.y, z: p.z };
+    let wrapping = false;
+    const rotary = o.rotary;
+    /** A point the machine reaches, in the operation's frame. */
+    const local = (
+      p: CamPoint3 & { a?: number; turns?: number },
+    ): CamPoint3 => {
+      if (wrapping && rotary) {
+        // Unrolled: the angle back to a position across the axis.
+        const across =
+          rotary.across +
+          wrapDirection(rotary) *
+            ((p.a ?? 0) - (p.turns ?? 0) - rotation) *
+            (Math.PI / 180) *
+            rotary.halfThickness;
+        return rotary.along === 'x'
+          ? { x: p.x, y: across, z: p.z }
+          : { x: across, y: p.y, z: p.z };
+      }
+      return shift
+        ? { x: p.x, y: p.y, z: p.z - shift }
+        : { x: p.x, y: p.y, z: p.z };
+    };
+    /** Wrapped moves split so their lines follow the surface. */
+    const wrapStep = rotary
+      ? Math.max(0.5, rotary.halfThickness * ((3 * Math.PI) / 180))
+      : Infinity;
 
     this.walk(options, {
       line: () => {},
@@ -386,15 +418,15 @@ export class GCodeBuilder {
         if (kind === 'shape') sourceShapeId = id;
         else sourceOperationId = id || undefined;
       },
-      rotate: (angle, newShift) => {
-        const rotary = o.rotary;
+      rotate: (angle, newShift, wrap, fromA, toA) => {
         if (path) paths.push(path);
         path = null;
-        if (rotary && angle !== rotation) {
-          const steps = Math.max(1, Math.ceil(Math.abs(angle - rotation) / 5));
+        if (rotary && toA !== fromA) {
+          // The turn itself, round the axis where the bit is.
+          const steps = Math.max(1, Math.ceil(Math.abs(toA - fromA) / 5));
           const points: CamPoint3[] = [];
           for (let k = 0; k <= steps; k++) {
-            const turned = rotation + ((angle - rotation) * k) / steps;
+            const turned = fromA + ((toA - fromA) * k) / steps;
             points.push(onBlank(rotary, turned, last));
           }
           paths.push({
@@ -406,6 +438,7 @@ export class GCodeBuilder {
         }
         rotation = angle;
         shift = newShift;
+        wrapping = wrap;
       },
       move: (code, changed, at) => {
         if (
@@ -417,7 +450,8 @@ export class GCodeBuilder {
           // Only turning (drawn by `rotate`).
           return;
         }
-        if (changed.feed !== undefined) feed = changed.feed;
+        if (changed.speed !== undefined) feed = changed.speed;
+        else if (changed.feed !== undefined) feed = changed.feed;
         const type = code === 'G0' ? 'travel' : 'carve';
         if (
           !path ||
@@ -427,17 +461,51 @@ export class GCodeBuilder {
         ) {
           if (path) paths.push(path);
           path = {
-            points: [local(last)],
+            // Unrolled as the move's end is (see below).
+            points: [local({ ...last, turns: at.turns })],
             sourceShapeId,
             sourceOperationId,
             type,
           };
-          if (isTurned(rotation)) path.rotation = rotation;
+          if (wrapping) {
+            path.wrapped = true;
+            path.rotation = rotation;
+          } else if (isTurned(rotation)) {
+            path.rotation = rotation;
+          }
           if (type === 'carve') path.feeds = [feed];
         }
-        last = { x: at.x, y: at.y, z: at.z };
-        path.points.push(local(last));
-        path.feeds?.push(feed);
+        // Both ends unrolled with the end's whole turns: the same place on
+        // the stock, and the move then goes the way the axis turns.
+        const from = local({ ...last, turns: at.turns });
+        if (wrapping && last.turns !== at.turns && path.points.length > 1) {
+          // Where it was, unrolled as it goes on (the same place).
+          path.points.push(from);
+          path.feeds?.push(feed);
+        }
+        last = { x: at.x, y: at.y, z: at.z, a: at.a, turns: at.turns };
+        const to = local(last);
+        // Wrapped, a move is straight in the unrolled surface, not in
+        // space: points along it, for the preview to wrap.
+        const pieces = wrapping
+          ? Math.min(
+              1000,
+              Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / wrapStep),
+            )
+          : 1;
+        for (let k = 1; k <= pieces; k++) {
+          const t = k / pieces;
+          path.points.push(
+            k === pieces
+              ? to
+              : {
+                  x: from.x + (to.x - from.x) * t,
+                  y: from.y + (to.y - from.y) * t,
+                  z: from.z + (to.z - from.z) * t,
+                },
+          );
+          path.feeds?.push(feed);
+        }
       },
     });
 
@@ -456,7 +524,7 @@ export class GCodeBuilder {
     let total = 0;
     let operation = '';
     let feed = o.carveFeedRate;
-    let last: CamPoint3 | null = null;
+    let last: (CamPoint3 & { a?: number }) | null = null;
     let rotation = 0;
     const add = (seconds: number) => {
       total += seconds;
@@ -470,22 +538,39 @@ export class GCodeBuilder {
       source: (kind, id) => {
         if (kind === 'operation') operation = id;
       },
-      rotate: (angle) => {
+      rotate: (angle, _shift, _wrap, fromA, toA) => {
         // Round the axis at the rapid speed, where the bit is.
         if (o.rotary && last && o.rapidRate > 0) {
-          const radians = (Math.abs(angle - rotation) * Math.PI) / 180;
+          const radians = (Math.abs(toA - fromA) * Math.PI) / 180;
           const length = distanceToAxis(o.rotary, last) * radians;
           add((length / o.rapidRate) * 60);
         }
         rotation = angle;
       },
       move: (code, changed, at) => {
-        if (changed.feed !== undefined) feed = changed.feed;
-        if (last) {
+        if (changed.speed !== undefined) feed = changed.speed;
+        else if (changed.feed !== undefined) feed = changed.feed;
+        const turningOnly =
+          changed.x === undefined &&
+          changed.y === undefined &&
+          changed.z === undefined;
+        // Turning alone is counted by `rotate`.
+        if (last && !turningOnly) {
+          // Round the axis too, where the bit is (wrapped cuts).
+          const da = ((at.a ?? 0) - (last.a ?? 0)) * (Math.PI / 180);
+          const round =
+            da && o.rotary
+              ? distanceToAxis(o.rotary, {
+                  x: (at.x + last.x) / 2,
+                  y: (at.y + last.y) / 2,
+                  z: (at.z + last.z) / 2,
+                }) * da
+              : 0;
           const length = Math.hypot(
             at.x - last.x,
             at.y - last.y,
             at.z - last.z,
+            round,
           );
           const rate = code === 'G0' ? o.rapidRate : feed;
           if (rate > 0) add((length / rate) * 60);
@@ -587,15 +672,44 @@ export class GCodeBuilder {
     const safeHeight = o.safetyHeight + (rotary ? rotaryClearance(rotary) : 0);
     /** Safe height in the frame of the stock as turned. */
     const safeZ = () => safeHeight - (off.z - base.z);
-    const turnTo = (to: number) => {
-      if (!rotary || to === angle) return;
+    // Wrapping round a round stock (see `rotate`), and the inverse-time
+    // feed mode (G93) its cuts are written in, if asked.
+    let wrap = false;
+    let inverseTime = false;
+    const leaveInverseTime = () => {
+      if (inverseTime) {
+        gcode.push('G94');
+        inverseTime = false;
+        // The controller's F is no feed rate now: write it again.
+        feedRate = null;
+      }
+    };
+    // Whole turns added to the angles written (wrapped cuts), so the axis
+    // never turns further than it must between cuts.
+    let turns = 0;
+    /**
+     * `to` (degrees) as the axis gets there the short way: the stock is the
+     * same way up a whole turn either way, so the one nearest where it is.
+     */
+    const nearest = (to: number) =>
+      a === null ? to : to + 360 * Math.round((a - to) / 360);
+    /** Turns the stock to `to`; `exactly` there, not a whole turn off. */
+    const turnTo = (to: number, wrapping = false, exactly = false) => {
+      if (!rotary) return;
+      const wrapNow = wrapping && rotary.round;
+      const target = exactly ? to : nearest(to);
+      if (to === angle && round(target) === a && wrapNow === wrap) return;
+      leaveInverseTime();
       move('G0', { z: safeZ() });
+      const from = a ?? 0;
       angle = to;
+      wrap = wrapNow;
+      turns = target - to;
       // Rounded, so Z in the operation's frame stays as it was rounded.
       const shift = round(rotaryShift(rotary, to));
       off = { ...base, z: base.z + shift };
-      out.rotate?.(to, shift);
-      move('G0', { a: to });
+      out.rotate?.(to, shift, wrap, from, target);
+      move('G0', { a: target });
     };
 
     let cycleActive = false;
@@ -613,7 +727,7 @@ export class GCodeBuilder {
 
         case 'rotate':
           flushCuts();
-          turnTo(instruction.angle);
+          turnTo(instruction.angle, instruction.wrap);
           break;
 
         case 'plunge':
@@ -633,7 +747,8 @@ export class GCodeBuilder {
             carveArc(instruction.to, instruction.z, instruction.bulge);
             break;
           }
-          if (arcs && x !== null && y !== null && z !== null) {
+          // Wrapped, a circle in the unrolled surface is no arc.
+          if (arcs && !wrap && x !== null && y !== null && z !== null) {
             if (pendingCuts.length && pendingFeed !== carveFeedRate) {
               flushCuts();
             }
@@ -687,7 +802,9 @@ export class GCodeBuilder {
         case 'stop-program':
           stopSpindle();
           // Turned back, ready for the next blank.
-          if (angle) turnTo(0);
+          // (Exactly 0, so the next job starts where it expects.)
+          if (a) turnTo(0, false, true);
+          leaveInverseTime();
           if (o.returnHome) {
             move('G0', { z: safeZ() });
             // The G-code's own zero.
@@ -766,7 +883,8 @@ export class GCodeBuilder {
         : cycle.chipBreak
           ? 'G73'
           : 'G83';
-      if (out.cycle) {
+      // Wrapped, the hole's position is partly an angle: no canned cycle.
+      if (out.cycle && !wrap) {
         if (z !== round(top + off.z)) {
           move('G0', { z: top });
         }
@@ -824,7 +942,7 @@ export class GCodeBuilder {
         z: z! - off.z,
       };
       const endZ = toZ ?? from.z;
-      if (arcs) {
+      if (arcs && !wrap) {
         flushCuts();
         const arc = arcOf(from, to, bulge);
         const end = { ...to, z: endZ };
@@ -835,7 +953,7 @@ export class GCodeBuilder {
       const points = segmentPoints(from, to, bulge, o.curveTolerance);
       points.forEach((p, k) => {
         const pz = from.z + ((endZ - from.z) * (k + 1)) / points.length;
-        if (arcs) {
+        if (arcs && !wrap) {
           pendingFeed = carveFeedRate;
           pendingCuts.push({ ...p, z: pz });
         } else {
@@ -959,6 +1077,26 @@ export class GCodeBuilder {
       flushCuts();
       const changed: MoveChange = {};
       const shift = raw ? { x: 0, y: 0, z: 0 } : off;
+      const from = { x, y, z, a };
+
+      // Wrapped: across the axis is round it, the tool over the axis.
+      if (wrap && !raw && rotary) {
+        const key = rotary.along === 'x' ? 'y' : 'x';
+        const across = to[key];
+        if (typeof across === 'number') {
+          const unrolled =
+            angle! +
+            wrapDirection(rotary) *
+              ((across - rotary.across) / rotary.halfThickness) *
+              (180 / Math.PI);
+          // A rapid between cuts goes the short way round; a cut carries on
+          // from where the last one was, however far round it goes.
+          if (code === 'G0' && a !== null) {
+            turns = 360 * Math.round((a - unrolled) / 360);
+          }
+          to = { ...to, [key]: rotary.across, a: unrolled + turns };
+        }
+      }
 
       if (typeof to.x === 'number') {
         const newX = round(to.x + shift.x);
@@ -988,8 +1126,41 @@ export class GCodeBuilder {
         }
       }
 
-      if (typeof feed === 'number' && feed !== feedRate) {
-        feedRate = changed.feed = feed;
+      let written = feed;
+      if (wrap && rotary && code === 'G1' && typeof feed === 'number') {
+        // The controller takes the A axis' degrees as millimetres: write F
+        // so the cut goes at `feed` along the surface where the bit is.
+        const dx = (x ?? 0) - (from.x ?? 0);
+        const dy = (y ?? 0) - (from.y ?? 0);
+        const dz = (z ?? 0) - (from.z ?? 0);
+        const da = (a ?? 0) - (from.a ?? 0);
+        const radius =
+          rotary.halfThickness + ((z ?? 0) + (from.z ?? 0)) / 2 - off.z;
+        const along = Math.hypot(
+          dx,
+          dy,
+          dz,
+          Math.max(0, radius) * da * (Math.PI / 180),
+        );
+        changed.speed = feed;
+        if (along > 1e-9) {
+          written =
+            o.rotaryFeed === 'inverse-time'
+              ? feed / along
+              : (feed * Math.hypot(dx, dy, dz, da)) / along;
+          written = Math.round(written * 1000) / 1000;
+        }
+        if (o.rotaryFeed === 'inverse-time') {
+          if (!inverseTime) {
+            gcode.push('G93');
+            inverseTime = true;
+          }
+          // Each move's own time: an F on every one.
+          feedRate = null;
+        }
+      }
+      if (typeof written === 'number' && written !== feedRate) {
+        feedRate = changed.feed = written;
       }
 
       if (
@@ -1000,7 +1171,13 @@ export class GCodeBuilder {
         changed.feed !== undefined
       ) {
         // Axes never set yet read as 0, as a G-code reader would assume.
-        out.move(code, changed, { x: x ?? 0, y: y ?? 0, z: z ?? 0 });
+        out.move(code, changed, {
+          x: x ?? 0,
+          y: y ?? 0,
+          z: z ?? 0,
+          a: a ?? 0,
+          turns,
+        });
       }
     }
   }
@@ -1059,6 +1236,12 @@ type MoveChange = {
   z?: number;
   /** The rotary axis' angle (degrees, as the stock turns). */
   a?: number;
+  /**
+   * Wrapped cuts: the feed rate (mm/min) the move goes at along the
+   * surface, when `feed` is what's written for it instead (compensated, or
+   * inverse time).
+   */
+  speed?: number;
   i?: number;
   j?: number;
   feed?: number;
@@ -1072,7 +1255,11 @@ type GcodeSink = {
   move(
     code: 'G0' | 'G1' | 'G2' | 'G3',
     changed: MoveChange,
-    at: CamPoint3,
+    at: CamPoint3 & {
+      a?: number;
+      /** Whole turns (degrees) added to wrapped cuts' angles. */
+      turns?: number;
+    },
   ): void;
   /** What the following moves belong to (an empty operation id clears it). */
   source?(kind: 'shape' | 'operation', id: string): void;
@@ -1081,7 +1268,14 @@ type GcodeSink = {
    * safe height), after which moves' Z is `shift` higher than in the
    * frame of the stock as turned.
    */
-  rotate?(angle: number, shift: number): void;
+  rotate?(
+    angle: number,
+    shift: number,
+    wrap: boolean,
+    /** The axis' angle before, and after (the short way round to `angle`). */
+    from: number,
+    to: number,
+  ): void;
   /**
    * A canned cycle as one line. Without it, cycles are handed to `move` as
    * the moves they make (for the preview).
@@ -1110,7 +1304,15 @@ export type PathInstruction =
   | { type: 'pause' }
   | { type: 'rapid-z'; z: number }
   | { type: 'dwell'; seconds: number }
-  | { type: 'rotate'; angle: number }
+  | {
+      type: 'rotate';
+      angle: number;
+      /**
+       * What follows is wrapped round a round stock: drawn unrolled, its
+       * position across the axis is an angle round it from `angle`.
+       */
+      wrap?: boolean;
+    }
   | ({ type: 'drill-cycle' } & DrillCycle)
   | {
       type: 'tool';

@@ -1,6 +1,6 @@
 import { polygonsBounds } from './arcs';
 import { DEFAULT_WOOD } from './feeds-speeds';
-import { anchorPoint, Box, BoxAnchor, GcodeOptions } from './gcode-options';
+import { anchorPoint, BoxAnchor } from './gcode-options';
 import { CamPolygon } from './types';
 
 /** The material being cut, and where the G-code's zero is on it. */
@@ -149,40 +149,4 @@ export function stockOffset(stock: StockOptions): {
         ? stock.thickness / 2
         : stock.thickness;
   return { x, y, z };
-}
-
-/**
- * What the G-code adds to design coordinates: `options.offset` (the
- * stock's), or, with a reference point, X and Y that put that point of the
- * cuts' bounding box (`bounds`, one per operation) where asked.
- */
-export function programOffset(
-  bounds: (Box | null)[],
-  options: Pick<
-    GcodeOptions,
-    'offset' | 'referencePoint' | 'referenceX' | 'referenceY'
-  >,
-): { x: number; y: number; z: number } {
-  const offset = options.offset ?? { x: 0, y: 0, z: 0 };
-  const box = bounds.reduce<Box | null>(
-    (a, b) =>
-      !a || !b
-        ? (a ?? b)
-        : {
-            minX: Math.min(a.minX, b.minX),
-            minY: Math.min(a.minY, b.minY),
-            maxX: Math.max(a.maxX, b.maxX),
-            maxY: Math.max(a.maxY, b.maxY),
-          },
-    null,
-  );
-  if (options.referencePoint === 'none' || !box) {
-    return offset;
-  }
-  const reference = anchorPoint(options.referencePoint, box);
-  return {
-    ...offset,
-    x: options.referenceX - reference.x,
-    y: options.referenceY - reference.y,
-  };
 }

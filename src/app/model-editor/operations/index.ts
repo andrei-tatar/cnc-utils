@@ -118,6 +118,10 @@ const operations = [
   RotateDefinition,
 ];
 
+/** The stock is a cylinder held on a rotary axis. */
+const onRoundStock = (field: FormlyFieldConfig) =>
+  onRotary(field) && rootModel(field)?.stock?.shape === 'cylinder';
+
 /** Rotate steps and rotary repeats: no tool, no shape, nothing cut. */
 const cutsNothing = (field: FormlyFieldConfig) =>
   NO_TOOL.has(field.model?.type);
@@ -181,6 +185,11 @@ export type ModelType = {
       disabled?: boolean;
       toolId: string;
       shapeId: string;
+      /**
+       * Wrapped round a round stock: drawn unrolled, across the axis is
+       * round it (see `rotate` in gcode-builder.ts). Not a routing input.
+       */
+      wrap?: boolean;
     } & ToolOverrides &
       (
         | PocketModelType
@@ -378,6 +387,24 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
                   : allowsBit(t.type, bitType)),
             )
             .map((t) => ({ value: t.type, label: t.label }));
+        },
+      },
+    },
+    {
+      key: 'wrap',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'wrap round the cylinder',
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          cutsNothing(field) || !onRoundStock(field),
+        'props.description': (field: FormlyFieldConfig) => {
+          const stock = rootModel(field)?.stock;
+          const across = stock?.rotaryAlong === 'y' ? 'X' : 'Y';
+          const r = (numberIn(field, stock?.diameter) ?? 0) / 2;
+          return `draw it unrolled: ${across} runs round the stock, the axis line on top, ±${Math.round(Math.PI * r * 10) / 10} mm either side to go all round`;
         },
       },
     },

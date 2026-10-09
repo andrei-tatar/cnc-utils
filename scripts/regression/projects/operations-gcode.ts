@@ -110,43 +110,6 @@ export default [
     }),
   },
   {
-    name: 'gcode-reference-point',
-    covers:
-      'referencePoint xmin-ymin moved to (10, 5): G-code offset from the cuts bounding box',
-    model: project({
-      shapes: [rect('s-rect', 50, 30, 0, [translate('x-move', 37, 21)])],
-      tools: [em6],
-      operations: [profile('o-profile', 't-em6', 's-rect')],
-      gcode: resolveGcodeOptions({
-        referencePoint: 'xmin-ymin',
-        referenceX: 10,
-        referenceY: 5,
-      }),
-    }),
-  },
-  {
-    name: 'gcode-reference-point-center',
-    covers:
-      'referencePoint xcenter-ycenter at (0, 0) overriding an enabled stock xyZero',
-    model: project({
-      shapes: [rect('s-rect', 50, 30, 0, [translate('x-move', 20, 20)])],
-      tools: [em6],
-      operations: [pocket('o-pocket', 't-em6', 's-rect')],
-      stock: resolveStock({
-        enabled: true,
-        width: 100,
-        height: 80,
-        thickness: 12,
-        xyZero: 'xmax-ymax',
-      }),
-      gcode: resolveGcodeOptions({
-        referencePoint: 'xcenter-ycenter',
-        referenceX: 0,
-        referenceY: 0,
-      }),
-    }),
-  },
-  {
     name: 'gcode-stock-offset',
     covers:
       'stock enabled at (-10, -10), 120×80×18, xyZero xmin-ymin, zZero bottom: offset applied to the written G-code only',

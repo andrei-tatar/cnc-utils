@@ -120,4 +120,60 @@ describe('simulating a stock on a rotary axis', () => {
     }
     expect(reach).toBeCloseTo(35, 0);
   });
+
+  it('cuts what’s wrapped round a cylinder, unrolled round it', () => {
+    const round = { ...rotary, round: true };
+    // Half way round from the top towards +Y, 3 deep, at X50.
+    const groove: CamPath = {
+      sourceShapeId: 's',
+      sourceOperationId: 'slot',
+      type: 'carve',
+      wrapped: true,
+      rotation: 0,
+      points: [
+        { x: 50, y: 20, z: -3 },
+        { x: 50, y: 20 + Math.PI * 20, z: -3 },
+      ],
+    };
+    const solid = simulateRotaryStock([groove], tools, round, stock, 400_000);
+    // On the +Y side (a quarter of the way round): 3 in; on the −Y side,
+    // not reached: as round as it was.
+    let plusY = -Infinity;
+    let minusY = Infinity;
+    const p = solid.positions;
+    for (let v = 0; v < p.length; v += 3) {
+      if (Math.abs(p[v] - 50) < 1 && Math.abs(p[v + 2] + 20) < 1) {
+        plusY = Math.max(plusY, p[v + 1]);
+        minusY = Math.min(minusY, p[v + 1]);
+      }
+    }
+    expect(plusY).toBeCloseTo(37, 0);
+    expect(minusY).toBeCloseTo(0, 0);
+  });
+
+  it('cuts what’s drawn several turns round, as far round as it goes', () => {
+    const round = { ...rotary, round: true };
+    const circumference = 2 * Math.PI * 20;
+    // Drawn four whole turns away: the same place, at the top.
+    const far: CamPath = {
+      sourceShapeId: 's',
+      sourceOperationId: 'slot',
+      type: 'carve',
+      wrapped: true,
+      rotation: 0,
+      points: [
+        { x: 50, y: 20 + 4 * circumference - 10, z: -3 },
+        { x: 50, y: 20 + 4 * circumference + 10, z: -3 },
+      ],
+    };
+    const solid = simulateRotaryStock([far], tools, round, stock, 400_000);
+    let top = -Infinity;
+    const p = solid.positions;
+    for (let v = 0; v < p.length; v += 3) {
+      if (Math.abs(p[v] - 50) < 1 && Math.abs(p[v + 1] - 20) < 1) {
+        top = Math.max(top, p[v + 2]);
+      }
+    }
+    expect(top).toBeCloseTo(-3, 0);
+  });
 });

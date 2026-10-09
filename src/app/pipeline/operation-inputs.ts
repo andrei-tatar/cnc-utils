@@ -71,6 +71,7 @@ export function operationInputs(
     rampMode,
     rampAngle,
     autoFeeds: ___,
+    wrap: ____,
     ...operationParameters
   }: OperationType,
   { tools, operations }: Pick<ModelType, 'tools' | 'operations'>,

@@ -14,8 +14,6 @@ export type ModelType = {
 const d = DEFAULT_GCODE_OPTIONS;
 
 const hideUnlessSpindle = (field: FormlyFieldConfig) => !field.model?.spindle;
-const hideUnlessReference = (field: FormlyFieldConfig) =>
-  (field.model?.referencePoint ?? 'none') === 'none';
 
 export const field: FormlyFieldConfig = {
   key: 'gcode',
@@ -144,43 +142,6 @@ export const field: FormlyFieldConfig = {
               "cut each operation's shapes nearest first (holes before the outline around them) instead of in the order they come",
           },
         },
-        {
-          key: 'referencePoint',
-          type: 'enum',
-          defaultValue: d.referencePoint,
-          props: {
-            label: 'move the toolpaths',
-            description:
-              'puts this point of the cuts’ bounding box (tool centre) at the X / Y below; overrides the stock’s X0 Y0',
-            required: true,
-            options: [
-              { value: 'none', label: 'no, keep them where they are' },
-              { value: 'xmin-ymax', label: 'top-left' },
-              { value: 'xcenter-ymax', label: 'top middle' },
-              { value: 'xmax-ymax', label: 'top-right' },
-              { value: 'xmin-ycenter', label: 'left middle' },
-              { value: 'xcenter-ycenter', label: 'centre' },
-              { value: 'xmax-ycenter', label: 'right middle' },
-              { value: 'xmin-ymin', label: 'bottom-left' },
-              { value: 'xcenter-ymin', label: 'bottom middle' },
-              { value: 'xmax-ymin', label: 'bottom-right' },
-            ],
-          },
-        },
-        {
-          key: 'referenceX',
-          type: 'number',
-          defaultValue: d.referenceX,
-          props: { label: 'to X', required: true },
-          expressions: { hide: hideUnlessReference },
-        },
-        {
-          key: 'referenceY',
-          type: 'number',
-          defaultValue: d.referenceY,
-          props: { label: 'to Y', required: true },
-          expressions: { hide: hideUnlessReference },
-        },
       ],
     },
     {
@@ -205,6 +166,24 @@ export const field: FormlyFieldConfig = {
               { value: 'A', label: 'A' },
               { value: 'B', label: 'B' },
               { value: 'C', label: 'C' },
+            ],
+          },
+        },
+        {
+          key: 'rotaryFeed',
+          type: 'enum',
+          defaultValue: d.rotaryFeed,
+          props: {
+            label: 'wrapped feeds',
+            description:
+              'how cuts that turn the axis as they go are given their speed',
+            required: true,
+            options: [
+              {
+                value: 'compensated',
+                label: 'F worked out per move (any controller)',
+              },
+              { value: 'inverse-time', label: 'inverse time (G93)' },
             ],
           },
         },

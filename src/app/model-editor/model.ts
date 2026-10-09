@@ -42,6 +42,7 @@ export type OperationParameters = OmitUnion<
   | 'shapeId'
   | 'toolId'
   | 'disabled'
+  | 'wrap'
   | keyof ToolOverrides
 >;
 /** What a tool contributes to toolpath routing (not to G-code text). */
