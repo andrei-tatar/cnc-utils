@@ -357,6 +357,11 @@ export type ItemAction = {
       white-space: nowrap;
     }
 
+    .item_tag {
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
     .toggle-button {
       display: inline-flex;
       align-items: center;
@@ -639,6 +644,9 @@ export type ItemAction = {
                 >
                 @if (itemType(field.model); as type) {
                   <span class="item_type">{{ type }}</span>
+                }
+                @if (itemTag(field.model); as tag) {
+                  <span class="item_type item_tag">{{ tag }}</span>
                 }
                 @if (problems.length) {
                   <span
@@ -926,6 +934,19 @@ export class ArrayTypeComponent
         resolvedItem(this.field, model, true),
         this.field,
       ) ?? ''
+    );
+  }
+
+  /**
+   * Optional `props.itemTag(model, field)`: a short note in the item's
+   * header, after its type (an operation's "A90"), or null.
+   */
+  itemTag(model: any): string | null {
+    return (
+      this.props['itemTag']?.(
+        resolvedItem(this.field, model, true),
+        this.field,
+      ) ?? null
     );
   }
 

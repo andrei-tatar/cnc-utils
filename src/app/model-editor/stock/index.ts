@@ -16,6 +16,14 @@ export type ModelType = {
 
 const d = DEFAULT_STOCK;
 const hideUnlessStock = (field: FormlyFieldConfig) => !field.model?.enabled;
+const onRotary = (field: FormlyFieldConfig) => field.model?.mount === 'rotary';
+/** A round blank: only on a rotary axis. */
+const isCylinder = (field: FormlyFieldConfig) =>
+  onRotary(field) && field.model?.shape === 'cylinder';
+/** Whether a cylinder's diameter stands for its size along `axis`. */
+const roundAcross = (field: FormlyFieldConfig, axis: 'x' | 'y' | 'z') =>
+  isCylinder(field) &&
+  (axis === 'z' || (field.model?.rotaryAlong === 'y' ? 'x' : 'y') === axis);
 
 /** Turning the stock on sizes it round every operation's cuts. */
 function fitStock(field: FormlyFieldConfig, event?: Event) {
@@ -45,6 +53,76 @@ export const field: FormlyFieldConfig = {
       },
     },
     {
+      key: 'mount',
+      type: 'enum',
+      defaultValue: d.mount,
+      props: {
+        label: 'held',
+        required: true,
+        options: [
+          { value: 'table', label: 'on the table' },
+          { value: 'rotary', label: 'on a rotary axis (4th axis)' },
+        ],
+      },
+      expressions: {
+        hide: hideUnlessStock,
+        'props.description': (field: FormlyFieldConfig) =>
+          onRotary(field)
+            ? 'centred on the axis; each operation can turn it first'
+            : '',
+      },
+    },
+    {
+      key: 'rotaryAlong',
+      type: 'enum',
+      defaultValue: d.rotaryAlong,
+      props: {
+        label: 'axis along',
+        description: 'the machine axis the rotary axis is parallel to',
+        required: true,
+        options: [
+          { value: 'x', label: 'X' },
+          { value: 'y', label: 'Y' },
+        ],
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessStock(field) || !onRotary(field),
+      },
+    },
+    {
+      key: 'shape',
+      type: 'enum',
+      defaultValue: d.shape,
+      props: {
+        label: 'shape',
+        required: true,
+        options: [
+          { value: 'box', label: 'a box (square or rectangular)' },
+          { value: 'cylinder', label: 'a cylinder (round)' },
+        ],
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessStock(field) || !onRotary(field),
+      },
+    },
+    {
+      key: 'diameter',
+      type: 'number',
+      defaultValue: d.diameter,
+      props: {
+        label: 'diameter',
+        description: 'mm; its length is set along the axis',
+        min: 0,
+        required: true,
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessStock(field) || !isCylinder(field),
+      },
+    },
+    {
       key: 'width',
       type: 'number',
       defaultValue: d.width,
@@ -54,7 +132,13 @@ export const field: FormlyFieldConfig = {
         min: 0,
         required: true,
       },
-      expressions: { hide: hideUnlessStock },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessStock(field) || roundAcross(field, 'x'),
+        // A cylinder's only other size is along the axis.
+        'props.label': (field: FormlyFieldConfig) =>
+          isCylinder(field) ? 'length' : 'width',
+      },
     },
     {
       key: 'height',
@@ -66,14 +150,23 @@ export const field: FormlyFieldConfig = {
         min: 0,
         required: true,
       },
-      expressions: { hide: hideUnlessStock },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessStock(field) || roundAcross(field, 'y'),
+        // A cylinder's only other size is along the axis.
+        'props.label': (field: FormlyFieldConfig) =>
+          isCylinder(field) ? 'length' : 'height',
+      },
     },
     {
       key: 'thickness',
       type: 'number',
       defaultValue: d.thickness,
       props: { label: 'thickness', description: 'mm', min: 0, required: true },
-      expressions: { hide: hideUnlessStock },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessStock(field) || roundAcross(field, 'z'),
+      },
     },
     {
       key: 'x',
@@ -100,12 +193,18 @@ export const field: FormlyFieldConfig = {
       props: {
         label: 'Z0 at',
         required: true,
-        options: [
+      },
+      expressions: {
+        hide: hideUnlessStock,
+        // The bottom on a rotary axis, or the axis on the table, read as
+        // the other (see `stockOffset`).
+        'props.options': (field: FormlyFieldConfig) => [
           { value: 'top', label: 'the top of the stock' },
-          { value: 'bottom', label: 'the bottom (spoilboard)' },
+          onRotary(field)
+            ? { value: 'axis', label: 'the rotary axis' }
+            : { value: 'bottom', label: 'the bottom (spoilboard)' },
         ],
       },
-      expressions: { hide: hideUnlessStock },
     },
     {
       key: 'xyZero',

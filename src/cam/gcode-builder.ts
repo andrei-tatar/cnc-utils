@@ -1,6 +1,13 @@
 import { Box, GcodeOptions, resolveGcodeOptions } from './gcode-options';
 import { fitArcs } from './arc-fit';
 import { arcOf, polygonsBounds, segmentPoints } from './arcs';
+import {
+  distanceToAxis,
+  isTurned,
+  onBlank,
+  rotaryClearance,
+  rotaryShift,
+} from './rotary';
 import { CamPath, CamPoint, CamPoint3 } from './types';
 
 export class GCodeBuilder {
@@ -274,6 +281,16 @@ export class GCodeBuilder {
     return this;
   }
 
+  /**
+   * Turn the stock on the rotary axis to `angle` (degrees) for what
+   * follows, at safe height: what follows is in its frame (see
+   * `rotary.ts`). Nothing without a rotary axis (`GcodeOptions.rotary`).
+   */
+  rotate(angle: number) {
+    this._instructions.push({ type: 'rotate', angle });
+    return this;
+  }
+
   /** Wait `seconds` (G4), e.g. at the bottom of a hole. */
   dwell(seconds: number) {
     this._instructions.push({ type: 'dwell', seconds });
@@ -310,6 +327,8 @@ export class GCodeBuilder {
   }
 
   build(options: Partial<GcodeOptions> = {}): string {
+    const o = resolveGcodeOptions(options);
+    const reversed = o.rotaryReversed;
     const gcode: string[] = [];
     this.walk(
       options,
@@ -321,13 +340,17 @@ export class GCodeBuilder {
           if (changed.x !== undefined) coords.push(`X${changed.x}`);
           if (changed.y !== undefined) coords.push(`Y${changed.y}`);
           if (changed.z !== undefined) coords.push(`Z${changed.z}`);
+          if (changed.a !== undefined) {
+            const a = (reversed ? -changed.a : changed.a) || 0;
+            coords.push(`${o.rotaryAxis}${a}`);
+          }
           if (changed.i !== undefined) coords.push(`I${changed.i}`);
           if (changed.j !== undefined) coords.push(`J${changed.j}`);
           if (changed.feed !== undefined) coords.push(`F${changed.feed}`);
           gcode.push(`${code} ${coords.join(' ')}`);
         },
       },
-      resolveGcodeOptions(options).arcs,
+      o.arcs,
     );
     return gcode.join('\n');
   }
@@ -337,14 +360,25 @@ export class GCodeBuilder {
    * `build(options)` back would give, without writing the text. A new path
    * starts whenever the move type or the source shape/operation changes;
    * cuts carry each move's feed rate.
+   *
+   * With the stock turned on a rotary axis, paths are in their operation's
+   * frame (Z from the top as turned) and say how far it's turned
+   * (`rotation`); turning it is a travel round the axis, drawn on the blank
+   * at 0°.
    */
   toPaths(options: Partial<GcodeOptions> = {}): CamPath[] {
+    const o = resolveGcodeOptions(options);
     const paths: CamPath[] = [];
     let path: CamPath | null = null;
     let sourceShapeId = 'unknown';
     let sourceOperationId: string | undefined = undefined;
+    // Where the tool is, as the machine moves (Z from the top at 0°).
     let last: CamPoint3 = { x: 0, y: 0, z: 0 };
-    let feed = resolveGcodeOptions(options).carveFeedRate;
+    let feed = o.carveFeedRate;
+    let rotation = 0;
+    let shift = 0;
+    const local = (p: CamPoint3): CamPoint3 =>
+      shift ? { x: p.x, y: p.y, z: p.z - shift } : { x: p.x, y: p.y, z: p.z };
 
     this.walk(options, {
       line: () => {},
@@ -352,7 +386,37 @@ export class GCodeBuilder {
         if (kind === 'shape') sourceShapeId = id;
         else sourceOperationId = id || undefined;
       },
+      rotate: (angle, newShift) => {
+        const rotary = o.rotary;
+        if (path) paths.push(path);
+        path = null;
+        if (rotary && angle !== rotation) {
+          const steps = Math.max(1, Math.ceil(Math.abs(angle - rotation) / 5));
+          const points: CamPoint3[] = [];
+          for (let k = 0; k <= steps; k++) {
+            const turned = rotation + ((angle - rotation) * k) / steps;
+            points.push(onBlank(rotary, turned, last));
+          }
+          paths.push({
+            points,
+            sourceShapeId,
+            sourceOperationId,
+            type: 'travel',
+          });
+        }
+        rotation = angle;
+        shift = newShift;
+      },
       move: (code, changed, at) => {
+        if (
+          changed.x === undefined &&
+          changed.y === undefined &&
+          changed.z === undefined &&
+          changed.feed === undefined
+        ) {
+          // Only turning (drawn by `rotate`).
+          return;
+        }
         if (changed.feed !== undefined) feed = changed.feed;
         const type = code === 'G0' ? 'travel' : 'carve';
         if (
@@ -362,11 +426,17 @@ export class GCodeBuilder {
           sourceOperationId !== path.sourceOperationId
         ) {
           if (path) paths.push(path);
-          path = { points: [last], sourceShapeId, sourceOperationId, type };
+          path = {
+            points: [local(last)],
+            sourceShapeId,
+            sourceOperationId,
+            type,
+          };
+          if (isTurned(rotation)) path.rotation = rotation;
           if (type === 'carve') path.feeds = [feed];
         }
-        last = at;
-        path.points.push(at);
+        last = { x: at.x, y: at.y, z: at.z };
+        path.points.push(local(last));
         path.feeds?.push(feed);
       },
     });
@@ -387,6 +457,7 @@ export class GCodeBuilder {
     let operation = '';
     let feed = o.carveFeedRate;
     let last: CamPoint3 | null = null;
+    let rotation = 0;
     const add = (seconds: number) => {
       total += seconds;
       byOperation.set(operation, (byOperation.get(operation) ?? 0) + seconds);
@@ -398,6 +469,15 @@ export class GCodeBuilder {
       },
       source: (kind, id) => {
         if (kind === 'operation') operation = id;
+      },
+      rotate: (angle) => {
+        // Round the axis at the rapid speed, where the bit is.
+        if (o.rotary && last && o.rapidRate > 0) {
+          const radians = (Math.abs(angle - rotation) * Math.PI) / 180;
+          const length = distanceToAxis(o.rotary, last) * radians;
+          add((length / o.rapidRate) * 60);
+        }
+        rotation = angle;
       },
       move: (code, changed, at) => {
         if (changed.feed !== undefined) feed = changed.feed;
@@ -422,8 +502,10 @@ export class GCodeBuilder {
    */
   private walk(options: Partial<GcodeOptions>, out: GcodeSink, arcs = false) {
     const o = resolveGcodeOptions(options);
-    // Design coordinates to the G-code's (its zero on the stock, if set).
-    const off = o.offset ?? { x: 0, y: 0, z: 0 };
+    // Design coordinates to the G-code's (its zero on the stock, if set;
+    // Z up by how much higher the top of the stock is as turned).
+    const base = o.offset ?? { x: 0, y: 0, z: 0 };
+    let off = base;
     const places = Math.max(0, Math.min(6, Math.round(o.decimals)));
     const factor = 10 ** places;
     const round = (v: number) => Math.round(v * factor) / factor;
@@ -496,6 +578,26 @@ export class GCodeBuilder {
       }
     };
 
+    // The stock on a rotary axis: how far it's turned (null until it is),
+    // and safe height above its top at 0°, raised so the bit clears its
+    // corners as it turns.
+    const rotary = o.rotary ?? null;
+    let angle: number | null = null;
+    let a: number | null = null;
+    const safeHeight = o.safetyHeight + (rotary ? rotaryClearance(rotary) : 0);
+    /** Safe height in the frame of the stock as turned. */
+    const safeZ = () => safeHeight - (off.z - base.z);
+    const turnTo = (to: number) => {
+      if (!rotary || to === angle) return;
+      move('G0', { z: safeZ() });
+      angle = to;
+      // Rounded, so Z in the operation's frame stays as it was rounded.
+      const shift = round(rotaryShift(rotary, to));
+      off = { ...base, z: base.z + shift };
+      out.rotate?.(to, shift);
+      move('G0', { a: to });
+    };
+
     let cycleActive = false;
     for (const instruction of this._instructions) {
       // Canned cycles stay modal until cancelled.
@@ -506,7 +608,12 @@ export class GCodeBuilder {
       switch (instruction.type) {
         case 'safety-height':
           flushCuts();
-          move('G0', { z: o.safetyHeight });
+          move('G0', { z: safeZ() });
+          break;
+
+        case 'rotate':
+          flushCuts();
+          turnTo(instruction.angle);
           break;
 
         case 'plunge':
@@ -579,8 +686,10 @@ export class GCodeBuilder {
 
         case 'stop-program':
           stopSpindle();
+          // Turned back, ready for the next blank.
+          if (angle) turnTo(0);
           if (o.returnHome) {
-            move('G0', { z: o.safetyHeight });
+            move('G0', { z: safeZ() });
             // The G-code's own zero.
             move('G0', { x: 0, y: 0 }, undefined, true);
           }
@@ -608,7 +717,7 @@ export class GCodeBuilder {
         case 'tool':
           // Also at the start, so the right tool is loaded before cutting.
           if (emitToolChanges && instruction.toolNumber !== currentTool) {
-            move('G0', { z: o.safetyHeight });
+            move('G0', { z: safeZ() });
             stopSpindle();
             const name = `T${instruction.toolNumber} ${instruction.label}`;
             if (o.toolChange === 'm6') {
@@ -649,7 +758,7 @@ export class GCodeBuilder {
      */
     function drill(cycle: DrillCycle) {
       flushCuts();
-      const top = o.safetyHeight;
+      const top = safeZ();
       const code = !cycle.peck
         ? cycle.dwell > 0
           ? 'G82'
@@ -842,7 +951,7 @@ export class GCodeBuilder {
      */
     function move(
       code: 'G0' | 'G1',
-      to: { x?: number; y?: number; z?: number },
+      to: { x?: number; y?: number; z?: number; a?: number },
       feed?: number,
       raw = false,
     ) {
@@ -872,6 +981,13 @@ export class GCodeBuilder {
         }
       }
 
+      if (typeof to.a === 'number') {
+        const newA = round(to.a);
+        if (newA !== a) {
+          a = changed.a = newA;
+        }
+      }
+
       if (typeof feed === 'number' && feed !== feedRate) {
         feedRate = changed.feed = feed;
       }
@@ -880,6 +996,7 @@ export class GCodeBuilder {
         changed.x !== undefined ||
         changed.y !== undefined ||
         changed.z !== undefined ||
+        changed.a !== undefined ||
         changed.feed !== undefined
       ) {
         // Axes never set yet read as 0, as a G-code reader would assume.
@@ -940,6 +1057,8 @@ type MoveChange = {
   x?: number;
   y?: number;
   z?: number;
+  /** The rotary axis' angle (degrees, as the stock turns). */
+  a?: number;
   i?: number;
   j?: number;
   feed?: number;
@@ -957,6 +1076,12 @@ type GcodeSink = {
   ): void;
   /** What the following moves belong to (an empty operation id clears it). */
   source?(kind: 'shape' | 'operation', id: string): void;
+  /**
+   * The stock about to turn to `angle` on the rotary axis (the bit is at
+   * safe height), after which moves' Z is `shift` higher than in the
+   * frame of the stock as turned.
+   */
+  rotate?(angle: number, shift: number): void;
   /**
    * A canned cycle as one line. Without it, cycles are handed to `move` as
    * the moves they make (for the preview).
@@ -985,6 +1110,7 @@ export type PathInstruction =
   | { type: 'pause' }
   | { type: 'rapid-z'; z: number }
   | { type: 'dwell'; seconds: number }
+  | { type: 'rotate'; angle: number }
   | ({ type: 'drill-cycle' } & DrillCycle)
   | {
       type: 'tool';

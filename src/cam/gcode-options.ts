@@ -1,5 +1,6 @@
 import { DEFAULT_MACHINE } from './feeds-speeds';
 import { usableCurveTolerance } from './geometry';
+import type { Rotary } from './rotary';
 
 /** A corner, the middle of a side, or the middle of a box. */
 export type BoxAnchor =
@@ -88,11 +89,23 @@ export type GcodeOptions = {
   referencePoint: 'none' | BoxAnchor;
   referenceX: number;
   referenceY: number;
+  /** The rotary axis' letter in the G-code (when the stock is on one). */
+  rotaryAxis: 'A' | 'B' | 'C';
+  /**
+   * Write the rotary axis' angles negated: for a machine that turns the
+   * other way round than the right-hand rule (see `rotary.ts`).
+   */
+  rotaryReversed: boolean;
   /**
    * Added to every coordinate written (not to the preview): moves the
    * G-code's zero onto the stock. Set from the stock settings.
    */
   offset?: { x: number; y: number; z: number };
+  /**
+   * The rotary axis the stock is held on, if it is: operations' `rotate`
+   * instructions turn it (ignored without). Set from the stock settings.
+   */
+  rotary?: Rotary | null;
 };
 
 export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
@@ -117,6 +130,8 @@ export const DEFAULT_GCODE_OPTIONS: GcodeOptions = {
   referencePoint: 'none',
   referenceX: 0,
   referenceY: 0,
+  rotaryAxis: 'A',
+  rotaryReversed: false,
 };
 
 /** Complete options from a (possibly partial) stored value. */

@@ -72,4 +72,23 @@ describe('stockSolid', () => {
     // The bottom grid.
     expect(solid.colors[4 * 3]).toBe(0.5);
   });
+
+  it('colours the cuts along a depth ramp, the deepest at its end', () => {
+    const ramp = [
+      { r: 1, g: 0, b: 0 },
+      { r: 0, g: 0, b: 1 },
+    ];
+    // Cut 2 and 4 deep into a 10 thick block: 4 is the deepest there is.
+    const solid = stockSolid(heightmap(3, 1, [0, -2, -4]), {
+      ...colors,
+      depthRamp: ramp,
+    });
+    const color = (v: number) =>
+      Array.from(solid.colors.subarray(v * 3, v * 3 + 3)).map(
+        (c) => Math.round(c * 100) / 100,
+      );
+    expect(color(0)).toEqual([1, 1, 1]); // uncut: the top's colour
+    expect(color(1)).toEqual([0.5, 0, 0.5]); // half as deep
+    expect(color(2)).toEqual([0, 0, 1]); // the deepest
+  });
 });

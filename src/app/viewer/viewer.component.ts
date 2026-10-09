@@ -42,6 +42,9 @@ import {
   DirectionalLight,
   MeshLambertMaterial,
   DoubleSide,
+  Line,
+  LineDashedMaterial,
+  CylinderGeometry,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
@@ -49,6 +52,7 @@ import { pointsEqual, watchElementResize } from '../../util';
 import {
   BehaviorSubject,
   combineLatest,
+  combineLatestWith,
   debounceTime,
   distinctUntilChanged,
   fromEvent,
@@ -95,9 +99,19 @@ import {
 } from '../../cam/types';
 import { StockView, TimeSummary } from '../services/cam.service';
 import { JobWarning } from '../../cam/job-checks';
-import type { Heightmap } from '../../cam/simulate';
+import type { Simulation } from '../../cam/simulate-rotary';
 import { SIMULATION_CELLS, SimulationQuality } from '../pipeline/simulation';
-import { stockSolid } from './helpers/stock-solid';
+import { rotarySolid, stockSolid } from './helpers/stock-solid';
+import {
+  loadViewOptions,
+  PREVIEW_MATERIALS,
+  PreviewMaterial,
+  previewColors,
+  saveViewOptions,
+  ViewOptions,
+} from './helpers/view-options';
+import { DEFAULT_WOOD } from '../../cam/feeds-speeds';
+import { operationPointOnBlank, Rotary, rotaryOf } from '../../cam/rotary';
 import { shapeLook$ } from './helpers/shape-look';
 
 /** The measuring line, drawn over everything. */
@@ -193,6 +207,61 @@ const EMPTY_VIEW_SIZE = 400;
               </option>
             }
           </select>
+        }
+      </div>
+      <div class="tools_row tools_row--top">
+        <button
+          type="button"
+          title="View options: grid, its numbers, the material (G toggles the grid)"
+          aria-label="View options"
+          aria-controls="view-options"
+          [class.active]="showViewOptions"
+          [attr.aria-expanded]="showViewOptions"
+          (click)="showViewOptions = !showViewOptions"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9M14 12h0M9 2.5v3M4 6.5v3M11 10.5v3"
+            />
+          </svg>
+        </button>
+        @if (showViewOptions) {
+          <div class="view-options" id="view-options">
+            <label class="view-options_row">
+              <input
+                type="checkbox"
+                [checked]="viewOptions.grid"
+                (change)="setViewOption('grid', $any($event.target).checked)"
+              />
+              grid
+            </label>
+            <label class="view-options_row">
+              <input
+                type="checkbox"
+                [checked]="viewOptions.gridLabels"
+                (change)="
+                  setViewOption('gridLabels', $any($event.target).checked)
+                "
+              />
+              grid numbers
+            </label>
+            <label class="view-options_row view-options_row--select">
+              material
+              <select
+                aria-label="How the simulated material looks"
+                (change)="setViewOption('material', $any($event.target).value)"
+              >
+                @for (m of PREVIEW_MATERIALS; track m.id) {
+                  <option
+                    [value]="m.id"
+                    [selected]="viewOptions.material === m.id"
+                  >
+                    {{ m.name }}
+                  </option>
+                }
+              </select>
+            </label>
+          </div>
         }
       </div>
     </div>
@@ -313,6 +382,47 @@ const EMPTY_VIEW_SIZE = 400;
         display: flex;
         align-items: center;
         gap: 4px;
+      }
+
+      .tools_row--top {
+        align-items: flex-start;
+      }
+
+      .view-options {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px 10px;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        background: rgba(30, 30, 30, 0.92);
+        color: #ccc;
+        font:
+          12px/1.2 system-ui,
+          sans-serif;
+      }
+
+      .view-options_row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        cursor: pointer;
+
+        input {
+          margin: 0;
+          accent-color: #ffd54f;
+        }
+
+        select {
+          height: 26px;
+          max-width: 170px;
+          border: 1px solid #3a3a3a;
+          border-radius: 5px;
+          background: #1e1e1e;
+          color: #ddd;
+          font: inherit;
+        }
       }
 
       .tools_quality {
@@ -581,13 +691,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   /** What's left of the stock after cutting, while simulating. */
   @Input()
-  set simulation(value: Heightmap | null) {
+  set simulation(value: Simulation | null) {
     this.simulation$.next(value);
     this.qualityTitle =
       'Simulation quality' +
       (value ? `: cells of ${value.cell.toFixed(2)} mm` : '');
   }
-  private simulation$ = new BehaviorSubject<Heightmap | null>(null);
+  private simulation$ = new BehaviorSubject<Simulation | null>(null);
   /** Simulating: asks for the material left, and shows it. */
   simulating = false;
   @Output() simulateChange = new EventEmitter<boolean>();
@@ -598,11 +708,18 @@ export class ViewerComponent implements OnInit, OnDestroy {
     SIMULATION_CELLS,
   ) as SimulationQuality[];
   qualityTitle = 'Simulation quality';
+  /** Grid, grid numbers, the simulated material (kept in this browser). */
+  viewOptions: ViewOptions = loadViewOptions();
+  private viewOptions$ = new BehaviorSubject<ViewOptions>(this.viewOptions);
+  showViewOptions = false;
+  readonly PREVIEW_MATERIALS = PREVIEW_MATERIALS;
   /**
    * The toolpaths, hidden while the simulated material is shown (so are the
    * shapes).
    */
   private pathsGroup = new Group();
+  /** The stock's outline and top (and the rotary axis it's held on). */
+  private stockBox = new Group();
 
   /** Shapes marked as clamps: drawn in red. */
   @Input()
@@ -710,7 +827,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
     // The stock, as a box from its top (Z0 of the design) down, and the
     // G-code's zero, where the axes are drawn.
-    const stockBox = new Group();
+    const stockBox = this.stockBox;
     this.content.add(stockBox);
     const stockEdges = new LineBasicMaterial({
       color: '#c9a227',
@@ -723,6 +840,18 @@ export class ViewerComponent implements OnInit, OnDestroy {
       opacity: 0.06,
       depthWrite: false,
     });
+    const stockSkin = new MeshBasicMaterial({
+      color: '#c9a227',
+      transparent: true,
+      opacity: 0.06,
+      depthWrite: false,
+      side: DoubleSide,
+    });
+    const rotaryAxis = new LineDashedMaterial({
+      color: '#c9a227',
+      dashSize: 4,
+      gapSize: 3,
+    });
     this.stock$.pipe(takeUntil(this.destroy$)).subscribe((view) => {
       stockBox.children.forEach((child) => {
         (child as Mesh).geometry.dispose();
@@ -732,18 +861,65 @@ export class ViewerComponent implements OnInit, OnDestroy {
       axes.forEach((axis) => axis.position.set(zero.x, zero.y, zero.z));
       if (view?.stock.enabled) {
         const { width, height, thickness, x, y } = view.stock;
-        const box = new BoxGeometry(width, height, thickness);
-        box.translate(x + width / 2, y + height / 2, -thickness / 2);
-        const edges = new LineSegments(new EdgesGeometry(box), stockEdges);
-        box.dispose();
-        const top = new PlaneGeometry(width, height);
-        top.translate(x + width / 2, y + height / 2, 0);
-        stockBox.add(edges, new Mesh(top, stockTop));
+        const rotary = rotaryOf(view.stock);
+        if (rotary?.round) {
+          // A round blank: its ends and four lines along it, see-through.
+          const length = rotary.along === 'x' ? width : height;
+          const r = rotary.halfThickness;
+          const outline = cylinderOutline(r, length);
+          const skin = new CylinderGeometry(r, r, length, 64, 1, true);
+          for (const geometry of [outline, skin]) {
+            if (rotary.along === 'x') geometry.rotateZ(-Math.PI / 2);
+            geometry.translate(x + width / 2, y + height / 2, -thickness / 2);
+          }
+          stockBox.add(
+            new LineSegments(outline, stockEdges),
+            new Mesh(skin, stockSkin),
+          );
+        } else {
+          const box = new BoxGeometry(width, height, thickness);
+          box.translate(x + width / 2, y + height / 2, -thickness / 2);
+          const edges = new LineSegments(new EdgesGeometry(box), stockEdges);
+          box.dispose();
+          const top = new PlaneGeometry(width, height);
+          top.translate(x + width / 2, y + height / 2, 0);
+          stockBox.add(edges, new Mesh(top, stockTop));
+        }
+        // The rotary axis it's held on, a little past either end.
+        if (rotary) {
+          const z = -rotary.halfThickness;
+          const reach = 10;
+          const ends =
+            rotary.along === 'x'
+              ? [
+                  new Vector3(x - reach, rotary.across, z),
+                  new Vector3(x + width + reach, rotary.across, z),
+                ]
+              : [
+                  new Vector3(rotary.across, y - reach, z),
+                  new Vector3(rotary.across, y + height + reach, z),
+                ];
+          const axis = new Line(
+            new BufferGeometry().setFromPoints(ends),
+            rotaryAxis,
+          );
+          axis.computeLineDistances();
+          stockBox.add(axis);
+        }
       }
       this.requestRender();
     });
 
     const labels = new GridLabels(this.labelsLayer.nativeElement);
+    this.viewOptions$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(({ grid: showGrid, gridLabels }) => {
+        grid.visible = showGrid;
+        // (Their stylesheet sets `display`, which `hidden` wouldn't beat.)
+        this.labelsLayer.nativeElement.style.display = gridLabels ? '' : 'none';
+        this.gridReadout.nativeElement.style.display = showGrid ? '' : 'none';
+        this.requestRender();
+      });
     this.trackCursor(renderer.domElement);
 
     let arrowsKey = '';
@@ -964,17 +1140,29 @@ export class ViewerComponent implements OnInit, OnDestroy {
     // one line object: a pocket alone can have thousands of paths, and each
     // object is a draw call. Unchanged paths keep their identity (see
     // `reuseUnchangedPaths`), so an unchanged group keeps its drawing.
+    // Paths cut with the stock turned on a rotary axis are drawn where they
+    // cut it, with the stock back at 0°.
+    const rotary$ = this.stock$.pipe(
+      map((view) => (view ? rotaryOf(view.stock) : null)),
+      distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+    );
     this.paths$
       .pipe(
         switchMap((paths$) => paths$),
         tap((paths) => this.updateColorScales(paths)),
-        map(groupPaths),
+        combineLatestWith(rotary$),
+        map(([paths, rotary]) => ({ groups: groupPaths(paths), rotary })),
         scan(
-          (ctx, groups) =>
+          (ctx, { groups, rotary }) =>
             new Map(
               [...groups].map(([key, paths]) => {
                 const existing = ctx.get(key);
-                if (existing && sameItems(existing.paths, paths)) {
+                if (
+                  existing &&
+                  sameItems(existing.paths, paths) &&
+                  (existing.rotary === rotary ||
+                    paths.every((p) => p.rotation === undefined))
+                ) {
                   return [key, existing] as const;
                 }
 
@@ -995,8 +1183,10 @@ export class ViewerComponent implements OnInit, OnDestroy {
                   key,
                   {
                     paths,
+                    rotary,
                     draw$: this.drawPaths({
                       paths,
+                      rotary,
                       scene: this.pathsGroup,
                       material: travel ? pathTravelMaterial : pathCarveMaterial,
                       materialHighlight: travel
@@ -1016,7 +1206,14 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 ] as const;
               }),
             ),
-          new Map<string, { paths: CamPath[]; draw$: Observable<never> }>(),
+          new Map<
+            string,
+            {
+              paths: CamPath[];
+              rotary: Rotary | null;
+              draw$: Observable<never>;
+            }
+          >(),
         ),
         switchMap((all) => merge(...[...all.values()].map((g) => g.draw$))),
         takeUntil(this.destroy$),
@@ -1309,9 +1506,18 @@ export class ViewerComponent implements OnInit, OnDestroy {
       this.toggleSimulate();
     } else if (event.key === 'c' || event.key === 'C') {
       this.toggleColoring();
+    } else if (event.key === 'g' || event.key === 'G') {
+      this.setViewOption('grid', !this.viewOptions.grid);
     } else if (event.key === 'Escape' && this.measuring) {
       this.toggleMeasure();
     }
+  }
+
+  /** Changes one of the view options, and keeps it. */
+  setViewOption<K extends keyof ViewOptions>(key: K, value: ViewOptions[K]) {
+    this.viewOptions = { ...this.viewOptions, [key]: value };
+    saveViewOptions(this.viewOptions);
+    this.viewOptions$.next(this.viewOptions);
   }
 
   setSimulationQuality(quality: SimulationQuality) {
@@ -1346,33 +1552,48 @@ export class ViewerComponent implements OnInit, OnDestroy {
     });
     const surface = new Group();
     this.content.add(surface);
-    const colors = {
-      top: new Color('#e2c08f'),
-      floor: new Color('#7a4a22'),
-      side: new Color('#c9a06a'),
-    };
+    // The look picked in the view options (the stock's wood, or one that
+    // shows the details).
+    const colors$ = combineLatest([this.viewOptions$, this.stock$]).pipe(
+      map(([options, view]) => [
+        options.material,
+        view?.stock.material ?? DEFAULT_WOOD,
+      ]),
+      distinctUntilChanged((a, b) => a[0] === b[0] && a[1] === b[1]),
+      map(([material, wood]) =>
+        previewColors(material as PreviewMaterial, wood),
+      ),
+    );
 
-    this.simulation$.pipe(takeUntil(this.destroy$)).subscribe((map) => {
-      surface.children.forEach((child) => (child as Mesh).geometry.dispose());
-      surface.clear();
-      this.pathsGroup.visible = !map;
-      // The block stands on the grid, rather than the grid cutting through
-      // it at Z0.
-      grid.position.z = map ? map.bottom : 0;
-      if (map) {
-        const solid = stockSolid(map, colors);
-        const geometry = new BufferGeometry();
-        geometry.setAttribute(
-          'position',
-          new BufferAttribute(solid.positions, 3),
-        );
-        geometry.setAttribute('color', new BufferAttribute(solid.colors, 3));
-        geometry.setIndex(new BufferAttribute(solid.index, 1));
-        geometry.computeVertexNormals();
-        surface.add(new Mesh(geometry, material));
-      }
-      this.requestRender();
-    });
+    combineLatest([this.simulation$, colors$])
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(([map, colors]) => {
+        surface.children.forEach((child) => (child as Mesh).geometry.dispose());
+        surface.clear();
+        this.pathsGroup.visible = !map;
+        // A solid on a rotary axis can be cut away anywhere round: the
+        // stock's box would hide that.
+        this.stockBox.visible = !(map && 'positions' in map);
+        // The block stands on the grid, rather than the grid cutting through
+        // it at Z0.
+        grid.position.z = map ? map.bottom : 0;
+        if (map) {
+          const solid =
+            'positions' in map
+              ? rotarySolid(map, colors)
+              : stockSolid(map, colors);
+          const geometry = new BufferGeometry();
+          geometry.setAttribute(
+            'position',
+            new BufferAttribute(solid.positions, 3),
+          );
+          geometry.setAttribute('color', new BufferAttribute(solid.colors, 3));
+          geometry.setIndex(new BufferAttribute(solid.index, 1));
+          geometry.computeVertexNormals();
+          surface.add(new Mesh(geometry, material));
+        }
+        this.requestRender();
+      });
   }
 
   /** Starts or stops measuring (stopping clears the measurement). */
@@ -1514,6 +1735,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   private drawPaths(o: {
     paths: CamPath[];
+    /** The rotary axis the stock is on, for paths with it turned. */
+    rotary: Rotary | null;
     scene: Object3D;
     material: Material;
     materialHighlight: Material;
@@ -1535,15 +1758,28 @@ export class ViewerComponent implements OnInit, OnDestroy {
               0,
             );
             const positions = new Float32Array(segments * 6);
+            // Each point's depth: its Z, from the top of the stock as
+            // turned for the path.
+            const depths = new Float32Array(segments * 2);
             // Each segment's feed rate (NaN where it isn't known).
             const feeds = new Float32Array(segments);
+            // Where each path's points are drawn.
+            const drawn = o.paths.map((path) =>
+              path.rotation !== undefined && o.rotary
+                ? path.points.map((p) =>
+                    operationPointOnBlank(o.rotary!, path.rotation!, p),
+                  )
+                : path.points,
+            );
             let at = 0;
             let segment = 0;
-            for (const path of o.paths) {
-              const points = path.points;
+            o.paths.forEach((path, k) => {
+              const points = drawn[k];
               for (let i = 1; i < points.length; i++) {
                 const a = points[i - 1];
                 const b = points[i];
+                depths[segment * 2] = path.points[i - 1].z;
+                depths[segment * 2 + 1] = path.points[i].z;
                 feeds[segment++] = path.feeds?.[i] ?? NaN;
                 positions[at++] = a.x;
                 positions[at++] = a.y;
@@ -1552,7 +1788,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
                 positions[at++] = b.y;
                 positions[at++] = b.z;
               }
-            }
+            });
             const geometry = new BufferGeometry();
             geometry.setAttribute(
               'position',
@@ -1564,10 +1800,10 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
             // Arrows stay per path: each path's midpoint gets one before any
             // path gets a second (see `layoutArrows`).
-            const arrows = o.paths.map(
-              (path) =>
+            const arrows = drawn.map(
+              (points) =>
                 new DirectionArrows(
-                  path.points.map(({ x, y, z }) => new Vector3(x, y, z)),
+                  points.map(({ x, y, z }) => new Vector3(x, y, z)),
                   o.arrowMaterial,
                 ),
             );
@@ -1606,12 +1842,17 @@ export class ViewerComponent implements OnInit, OnDestroy {
                   for (let i = 0; i < positions.length; i += 3) {
                     // Both ends of a segment share its feed.
                     const feed = feeds[Math.floor(i / 6)];
-                    colorOf(feed, positions[i + 2]).toArray(colors, i);
+                    colorOf(feed, depths[i / 3]).toArray(colors, i);
                   }
                   geometry.attributes['color'].needsUpdate = true;
                   o.paths.forEach((path, k) =>
                     arrows[k].colorBy((p, segment) =>
-                      colorOf(path.feeds?.[segment] ?? NaN, p.z),
+                      colorOf(
+                        path.feeds?.[segment] ?? NaN,
+                        path.rotation === undefined
+                          ? p.z
+                          : (path.points[segment]?.z ?? 0),
+                      ),
                     ),
                   );
                   this.requestRender();
@@ -1840,6 +2081,34 @@ function tabBlock(
   );
   face.translate(0, 0, top);
   return [new LineSegments(lines, edges), new Mesh(face, faces)];
+}
+
+/**
+ * A cylinder's outline along Y, centred on the origin: its two ends and
+ * four lines along it.
+ */
+function cylinderOutline(radius: number, length: number): BufferGeometry {
+  const points: Vector3[] = [];
+  const segments = 64;
+  for (const y of [-length / 2, length / 2]) {
+    for (let k = 0; k < segments; k++) {
+      const a = (k / segments) * 2 * Math.PI;
+      const b = ((k + 1) / segments) * 2 * Math.PI;
+      points.push(
+        new Vector3(radius * Math.cos(a), y, radius * Math.sin(a)),
+        new Vector3(radius * Math.cos(b), y, radius * Math.sin(b)),
+      );
+    }
+  }
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * 2 * Math.PI;
+    const [cx, cz] = [radius * Math.cos(a), radius * Math.sin(a)];
+    points.push(
+      new Vector3(cx, -length / 2, cz),
+      new Vector3(cx, length / 2, cz),
+    );
+  }
+  return new BufferGeometry().setFromPoints(points);
 }
 
 /** Paths grouped by what's drawn together: operation, move type, shape. */

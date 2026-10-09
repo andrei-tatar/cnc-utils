@@ -1,4 +1,5 @@
 import type { Heightmap } from '../../../cam/simulate';
+import type { SimulatedSolid } from '../../../cam/simulate-rotary';
 
 /** A colour as three.js keeps it (linear components, 0 – 1). */
 export type Rgb = { r: number; g: number; b: number };
@@ -11,7 +12,41 @@ export type StockColors = {
   floor: Rgb;
   /** The sides and the bottom. */
   side: Rgb;
+  /**
+   * Instead of `top` → `floor`: the cuts coloured along these stops, from
+   * the shallowest to the deepest cut there is (uncut faces stay `top`).
+   */
+  depthRamp?: Rgb[];
 };
+
+/** Where cuts on the stock's faces are no deeper than this, they're uncut. */
+const UNCUT = 1e-6;
+
+/**
+ * The colour of a cut `t` of the way down (0 – 1) into `out`: a blend from
+ * the top's colour to the floor's, or along the depth ramp, `deepest`
+ * (the deepest `t` there is) at its end.
+ */
+function cutColor(colors: StockColors, t: number, deepest: number, out: Rgb) {
+  const ramp = colors.depthRamp;
+  if (!ramp?.length || t <= UNCUT) {
+    const { top, floor } = colors;
+    const s = ramp?.length ? 0 : t;
+    out.r = top.r + (floor.r - top.r) * s;
+    out.g = top.g + (floor.g - top.g) * s;
+    out.b = top.b + (floor.b - top.b) * s;
+    return;
+  }
+  const scaled =
+    Math.min(1, Math.max(0, t / Math.max(deepest, UNCUT))) * (ramp.length - 1);
+  const i = Math.min(ramp.length - 2, Math.floor(scaled));
+  const f = scaled - i;
+  const a = ramp[i];
+  const b = ramp[Math.min(ramp.length - 1, i + 1)];
+  out.r = a.r + (b.r - a.r) * f;
+  out.g = a.g + (b.g - a.g) * f;
+  out.b = a.b + (b.b - a.b) * f;
+}
 
 /** An indexed triangle mesh, ready for a `BufferGeometry`. */
 export type SolidMesh = {
@@ -49,6 +84,10 @@ export function stockSolid(map: Heightmap, colors: StockColors): SolidMesh {
     vertexColors[v * 3 + 2] = c.b;
   };
   const shade = { r: 0, g: 0, b: 0 };
+  let deepest = 0;
+  for (let k = 0; k < count; k++) {
+    deepest = Math.max(deepest, (heights[k] - top) / depth);
+  }
   for (let j = 0; j < ny; j++) {
     const y = minY + (j + 0.5) * cell;
     for (let i = 0; i < nx; i++) {
@@ -56,9 +95,7 @@ export function stockSolid(map: Heightmap, colors: StockColors): SolidMesh {
       const x = minX + (i + 0.5) * cell;
       const z = heights[k];
       const t = Math.min(1, Math.max(0, (z - top) / depth));
-      shade.r = colors.top.r + (colors.floor.r - colors.top.r) * t;
-      shade.g = colors.top.g + (colors.floor.g - colors.top.g) * t;
-      shade.b = colors.top.b + (colors.floor.b - colors.top.b) * t;
+      cutColor(colors, t, deepest, shade);
       set(k, x, y, z, shade);
       set(count + k, x, y, bottom, colors.side);
     }
@@ -111,4 +148,30 @@ export function edgeLoop(nx: number, ny: number): number[] {
   for (let i = nx - 1; i > 0; i--) loop.push((ny - 1) * nx + i);
   for (let j = ny - 1; j > 0; j--) loop.push(j * nx);
   return loop;
+}
+
+/**
+ * The material left on a rotary axis (already a closed surface), its cuts
+ * coloured by how deep they are (see `cutColor`).
+ */
+export function rotarySolid(
+  solid: SimulatedSolid,
+  colors: StockColors,
+): SolidMesh {
+  const count = solid.shade.length;
+  const vertexColors = new Float32Array(count * 3);
+  let deepest = 0;
+  for (let v = 0; v < count; v++) deepest = Math.max(deepest, solid.shade[v]);
+  const shade = { r: 0, g: 0, b: 0 };
+  for (let v = 0; v < count; v++) {
+    cutColor(colors, solid.shade[v], deepest, shade);
+    vertexColors[v * 3] = shade.r;
+    vertexColors[v * 3 + 1] = shade.g;
+    vertexColors[v * 3 + 2] = shade.b;
+  }
+  return {
+    positions: solid.positions,
+    colors: vertexColors,
+    index: solid.index,
+  };
 }

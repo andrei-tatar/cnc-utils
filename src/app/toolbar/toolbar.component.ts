@@ -17,8 +17,15 @@ import {
   NgbDropdownToggle,
 } from '@ng-bootstrap/ng-bootstrap';
 import { DatePipe } from '@angular/common';
-import { listTemplates, Template } from '../templates';
+import { groupTemplates, listTemplates, Template } from '../templates';
 import { Project } from '../projects';
+
+/**
+ * The narrowest window (px) where a group's templates show beside the
+ * Templates menu; in narrower ones they take its place (the stylesheet's
+ * `max-width` query agrees).
+ */
+const FLYOUT_WIDTH = 800;
 
 /** An entry in the G-code button's menu. */
 export type JobAction = { id: string; label: string; description: string };
@@ -201,8 +208,11 @@ export type JobAction = { id: string; label: string; description: string };
       @if (templates().length) {
         <div
           ngbDropdown
+          #templatesDropdown="ngbDropdown"
           placement="bottom-end bottom-start"
+          autoClose="outside"
           class="d-inline-block"
+          (openChange)="!$event && openGroup.set(null)"
         >
           <button
             ngbDropdownToggle
@@ -218,23 +228,82 @@ export type JobAction = { id: string; label: string; description: string };
             </svg>
             <span class="label secondary-label">Templates</span>
           </button>
-          <div ngbDropdownMenu class="menu">
+          <div
+            ngbDropdownMenu
+            class="menu templates-menu"
+            [class.templates-menu--open]="openGroup()"
+          >
             <h6 class="dropdown-header menu_header">
               Opens in place of the current project
             </h6>
-            @for (template of templates(); track template.file) {
-              <button
-                ngbDropdownItem
-                type="button"
-                (click)="openTemplate.emit(template)"
+            <div class="menu_groups">
+              @for (group of templateGroups(); track group.group) {
+                <button
+                  ngbDropdownItem
+                  type="button"
+                  class="menu_group"
+                  aria-haspopup="menu"
+                  [attr.aria-expanded]="openGroup() === group.group"
+                  [class.menu_group--open]="openGroup() === group.group"
+                  (mouseenter)="hoverGroup(group.group)"
+                  (click)="showGroup(group.group, $event.detail === 0)"
+                  (keydown.arrowleft)="
+                    showGroup(group.group, true); $event.preventDefault()
+                  "
+                >
+                  <span class="menu_group_text">
+                    <span class="menu_name">{{ group.group }}</span>
+                    <span class="menu_description">{{
+                      groupSummary(group.templates)
+                    }}</span>
+                  </span>
+                  <svg
+                    class="icon menu_group_chevron"
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                  >
+                    <path d="M10 3.5 5.5 8l4.5 4.5" />
+                  </svg>
+                </button>
+              }
+            </div>
+            @if (openTemplates(); as open) {
+              <div
+                #submenu
+                class="submenu"
+                role="menu"
+                [attr.aria-label]="open.group"
               >
-                <span class="menu_name">{{ template.name }}</span>
-                @if (template.description) {
-                  <span class="menu_description">{{
-                    template.description
-                  }}</span>
+                <button
+                  type="button"
+                  class="dropdown-item submenu_back"
+                  (click)="backToGroups()"
+                >
+                  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M10 3.5 5.5 8l4.5 4.5" />
+                  </svg>
+                  All templates
+                </button>
+                <div class="submenu_title">{{ open.group }}</div>
+                @for (template of open.templates; track template.file) {
+                  <button
+                    ngbDropdownItem
+                    type="button"
+                    class="submenu_item"
+                    (click)="
+                      templatesDropdown.close(); openTemplate.emit(template)
+                    "
+                    (keydown.arrowright)="backToGroup(open.group, $event)"
+                  >
+                    <span class="menu_name">{{ template.name }}</span>
+                    @if (template.description) {
+                      <span class="menu_description">{{
+                        template.description
+                      }}</span>
+                    }
+                  </button>
                 }
-              </button>
+              </div>
             }
           </div>
         </div>
@@ -496,6 +565,101 @@ export type JobAction = { id: string; label: string; description: string };
       border-top: 1px solid var(--bs-border-color-translucent);
     }
 
+    // Templates: a group per item, its templates in a submenu to the
+    // left (the menu opens at the window's right edge); in a narrow window
+    // the submenu takes the menu's place instead.
+    .templates-menu {
+      overflow: visible;
+    }
+
+    .menu .menu_group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .menu_group_text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .menu_group .menu_description {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .menu_group_chevron {
+      flex: none;
+      color: var(--bs-secondary-color);
+    }
+
+    .menu .menu_group--open {
+      background: var(--bs-tertiary-bg);
+    }
+
+    .submenu {
+      position: absolute;
+      top: -1px;
+      right: calc(100% + 2px);
+      width: min(360px, calc(100vw - 24px));
+      max-height: calc(100vh - 64px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0 0 4px;
+      background: var(--bs-dropdown-bg);
+      border: var(--bs-dropdown-border-width) solid
+        var(--bs-dropdown-border-color);
+      border-radius: var(--bs-dropdown-border-radius);
+      box-shadow: var(--bs-dropdown-box-shadow);
+    }
+
+    .submenu_title {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--bs-dropdown-bg);
+      padding: 10px 14px 8px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--bs-secondary-color);
+    }
+
+    .menu .submenu_back {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      border-top: none;
+    }
+
+    @media (max-width: 799.98px) {
+      .templates-menu {
+        overflow-y: auto;
+      }
+
+      .templates-menu--open .menu_groups {
+        display: none;
+      }
+
+      .submenu {
+        position: static;
+        width: auto;
+        max-height: none;
+        overflow: visible;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .menu .submenu_back {
+        display: flex;
+      }
+    }
+
     .menu_name {
       display: block;
       font-size: 0.875rem;
@@ -570,6 +734,14 @@ export type JobAction = { id: string; label: string; description: string };
 export class ToolbarComponent implements AfterViewInit, OnDestroy {
   /** The template projects (`templates/index.json`); fetched once. */
   readonly templates = signal<Template[]>([]);
+  readonly templateGroups = computed(() => groupTemplates(this.templates()));
+  /** The group whose templates the Templates menu shows, if any. */
+  readonly openGroup = signal<string | null>(null);
+  readonly openTemplates = computed(
+    () =>
+      this.templateGroups().find((g) => g.group === this.openGroup()) ?? null,
+  );
+  private readonly submenu = viewChild<ElementRef<HTMLElement>>('submenu');
   /** A computation is running: shows the spinner, blocks the download. */
   readonly working = input(false);
   /** The saved projects, most recent first. */
@@ -624,6 +796,56 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
 
   constructor() {
     listTemplates().then((templates) => this.templates.set(templates));
+  }
+
+  /** What a group holds, for its item: its templates' names. */
+  groupSummary(templates: readonly Template[]): string {
+    return templates.map((t) => t.name).join(' · ');
+  }
+
+  /**
+   * Shows a group's templates; from the keyboard, moves to the first of
+   * them.
+   */
+  showGroup(group: string, focus: boolean) {
+    this.openGroup.set(group);
+    if (focus) {
+      requestAnimationFrame(() =>
+        this.submenu()
+          ?.nativeElement.querySelector<HTMLElement>('.submenu_item')
+          ?.focus(),
+      );
+    }
+  }
+
+  /**
+   * Pointing at a group shows its templates beside the menu; not where they
+   * take the menu's place (narrow windows) or there's no hovering (touch).
+   */
+  hoverGroup(group: string) {
+    if (
+      matchMedia(`(min-width: ${FLYOUT_WIDTH}px) and (hover: hover)`).matches
+    ) {
+      this.openGroup.set(group);
+    }
+  }
+
+  /**
+   * Back to the groups (narrow windows). Once the click is handled: it
+   * removes the submenu, and a click on something no longer in the menu
+   * reads as one outside it, closing the menu.
+   */
+  backToGroups() {
+    setTimeout(() => this.openGroup.set(null));
+  }
+
+  /** From a template back to its group's item (it's to the right). */
+  backToGroup(group: string, event: Event) {
+    event.preventDefault();
+    const menu = (event.target as HTMLElement).closest('.templates-menu');
+    const items = menu?.querySelectorAll<HTMLElement>('.menu_group') ?? [];
+    const index = this.templateGroups().findIndex((g) => g.group === group);
+    items[index]?.focus();
   }
 
   ngAfterViewInit() {

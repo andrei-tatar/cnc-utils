@@ -56,6 +56,12 @@ export type CamPath = {
   points: CamPoint3[];
   type: 'travel' | 'carve';
   /**
+   * How far the stock on a rotary axis is turned for this path (degrees;
+   * left out when it isn't): its points are then in that frame, Z from the
+   * top as turned (see `operationPointOnBlank` in rotary.ts).
+   */
+  rotation?: number;
+  /**
    * Cuts only: the feed rate (mm/min) of the move to each point, one per
    * point (the first point's is the rate in effect where the path starts).
    */

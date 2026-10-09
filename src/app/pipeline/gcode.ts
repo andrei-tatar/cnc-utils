@@ -15,6 +15,17 @@ import { programOffset, resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
 import { CamPath, CamShape, CamTab } from '../../cam/types';
+import { rotaryOf } from '../../cam/rotary';
+import {
+  flatOperations,
+  NO_TOOL,
+  ROTARY_REPEAT,
+} from '../model-editor/operations/flatten';
+import { repeatAngles } from '../model-editor/operations/operation-rotary-repeat';
+import {
+  operationFrame,
+  operationRotation,
+} from '../model-editor/operations/rotation';
 import { tabsNear, tabsOf } from '../../cam/tabs';
 import worker from '../../worker';
 import { ModelType } from '../model-editor/model';
@@ -25,14 +36,69 @@ import { OperationInputs, operationInputs } from './operation-inputs';
 import { distinctItems, distinctJson, shareLatest } from './operators';
 import { routeOperation } from './route-operation';
 
+/** What an operation's pipeline is fed on each model emission. */
+type EntryInputs = OperationInputs & {
+  /**
+   * Which way up the stock is for its cuts (see `operationFrame`): it keeps
+   * out of the tabs of shapes cut the same way up.
+   */
+  frame: string;
+};
+
 /** A long-lived pipeline for one operation, kept across model emissions. */
 type OperationEntry = {
   id: string;
-  inputs$: BehaviorSubject<OperationInputs>;
+  inputs$: BehaviorSubject<EntryInputs>;
   /** The shape it cuts. */
   shape$: Observable<CamShape[]>;
+  frame$: Observable<string>;
+  /** Routed and tagged with its tool; turning the stock comes later. */
   result$: Observable<GCodeBuilder>;
 };
+
+/**
+ * One cut of the program: an operation, with the stock turned to
+ * `rotation` (null: not on a rotary axis). An operation inside a rotary
+ * repeat is cut once per angle.
+ */
+export type ProgramStep = { id: string; rotation: number | null };
+
+/**
+ * What the program cuts, in order: each operation of the list, with the
+ * angle the rotate steps above it turn the stock to; for a rotary repeat,
+ * its operations at each of its angles (angle by angle, or operation by
+ * operation). Without a rotary axis, a repeat's operations are cut once.
+ */
+export function programSteps(
+  operations: ModelType['operations'],
+  rotary: boolean,
+): ProgramStep[] {
+  return (operations ?? []).flatMap((op: any): ProgramStep[] => {
+    if (op.disabled || op.type === 'rotate') {
+      return [];
+    }
+    if (op.type === ROTARY_REPEAT) {
+      const inner: any[] = op.operations ?? [];
+      if (!rotary) {
+        return inner.map((o) => ({ id: o.id, rotation: null }));
+      }
+      const angles = repeatAngles(op);
+      return op.order === 'operation'
+        ? inner.flatMap((o) =>
+            angles.map((rotation) => ({ id: o.id, rotation })),
+          )
+        : angles.flatMap((rotation) =>
+            inner.map((o) => ({ id: o.id, rotation })),
+          );
+    }
+    return [
+      {
+        id: op.id,
+        rotation: rotary ? operationRotation(op, operations) : null,
+      },
+    ];
+  });
+}
 
 /** The routed operations, in order, and how to write them out. */
 export type Program = {
@@ -58,11 +124,19 @@ export function generateGcodeFromOperations(
     distinctUntilChanged(),
     shareLatest(),
   );
+  // One pipeline per operation that cuts (those inside rotary repeats too),
+  // however many times it's cut.
   const entries$: Observable<OperationEntry[]> = model$.pipe(
-    scan(
-      (ctx, model) =>
-        (model.operations ?? []).map((operation) => {
-          const inputs = operationInputs(operation, model);
+    scan((ctx, model) => {
+      const all = flatOperations(model.operations);
+      const onRotary = !!rotaryOf(resolveStock(model.stock));
+      return all
+        .filter((operation) => !NO_TOOL.has(operation.type!))
+        .map((operation) => {
+          const inputs: EntryInputs = {
+            ...operationInputs(operation, { ...model, operations: all }),
+            frame: onRotary ? operationFrame(operation, model.operations) : '',
+          };
           const existing = ctx.find((e) => e.id === operation.id);
           if (existing) {
             existing.inputs$.next(inputs);
@@ -77,27 +151,47 @@ export function generateGcodeFromOperations(
             optimizeTravel$,
             working$,
           );
-        }),
-      [] as OperationEntry[],
-    ),
+        });
+    }, [] as OperationEntry[]),
     shareLatest(),
   );
-  // The tabs on the shapes the operations cut: every operation keeps out
-  // of all of them.
-  const tabs$: Observable<CamTab[]> = entries$.pipe(
+  // The tabs on the shapes the operations cut, with which way up the stock
+  // is for each: every operation keeps out of all of them cut the same way
+  // up.
+  const tabs$: Observable<FramedTabs[]> = entries$.pipe(
     switchMap((s) =>
-      s.length ? combineLatest(s.map((i) => i.shape$)) : of([]),
+      s.length
+        ? combineLatest(
+            s.map((i) => combineLatest({ shape: i.shape$, frame: i.frame$ })),
+          )
+        : of([]),
     ),
-    map((s) => tabsOf(s.flat())),
+    map((cuts) =>
+      cuts.map(({ shape, frame }) => ({ frame, tabs: tabsOf(shape) })),
+    ),
     distinctJson(),
     shareLatest(),
   );
-  return entries$.pipe(
-    // Incomplete operations (no tool, shape or type yet) emit an empty
-    // builder rather than nothing, so they don't stall the whole G-code.
-    switchMap((s) =>
-      s.length ? combineLatest(s.map((i) => i.result$)) : of([]),
+  const steps$ = model$.pipe(
+    map((model) =>
+      programSteps(model.operations, !!rotaryOf(resolveStock(model.stock))),
     ),
+    distinctJson(),
+  );
+  return combineLatest([entries$, steps$]).pipe(
+    // Each step's operation, turned for it. Incomplete operations (no tool,
+    // shape or type yet) emit an empty builder rather than nothing, so they
+    // don't stall the whole G-code.
+    switchMap(([entries, steps]) => {
+      const byId = new Map(entries.map((e) => [e.id, e]));
+      const cuts = steps.flatMap(({ id, rotation }) => {
+        const entry = byId.get(id);
+        return entry
+          ? [entry.result$.pipe(map((b) => turned(b, id, rotation)))]
+          : [];
+      });
+      return cuts.length ? combineLatest(cuts) : of([]);
+    }),
     distinctItems(),
     // G-code options only affect how the program is written out: rebuild
     // the text when they change, without re-running any routing.
@@ -109,6 +203,7 @@ export function generateGcodeFromOperations(
             ...resolveGcodeOptions(model.gcode),
             // The G-code's zero, on the stock.
             offset: stockOffset(resolveStock(model.stock)),
+            rotary: rotaryOf(resolveStock(model.stock)),
           })),
           distinctJson(),
         ),
@@ -127,17 +222,51 @@ export function generateGcodeFromOperations(
   );
 }
 
+/** The tabs on what an operation cuts, and which way up the stock is. */
+type FramedTabs = { frame: string; tabs: CamTab[] };
+
+/** Builders with the stock turned first, by builder and angle. */
+const turnedBuilders = new WeakMap<GCodeBuilder, Map<number, GCodeBuilder>>();
+
+/**
+ * `builder` (operation `id`'s) with the stock turned to `rotation` first;
+ * as it is without a rotary axis or anything cut. The same builder for the
+ * same angle each time, so unchanged steps stay unchanged.
+ */
+function turned(
+  builder: GCodeBuilder,
+  id: string,
+  rotation: number | null,
+): GCodeBuilder {
+  if (rotation === null || !builder.cutBounds()) {
+    return builder;
+  }
+  let byAngle = turnedBuilders.get(builder);
+  if (!byAngle) {
+    turnedBuilders.set(builder, (byAngle = new Map()));
+  }
+  let result = byAngle.get(rotation);
+  if (!result) {
+    result = new GCodeBuilder()
+      .sourceOperationId(id)
+      .rotate(rotation)
+      .concat(builder);
+    byAngle.set(rotation, result);
+  }
+  return result;
+}
+
 function createOperationEntry(
   id: string,
-  inputs: OperationInputs,
+  inputs: EntryInputs,
   shapes: ShapeResults,
-  tabs$: Observable<CamTab[]>,
+  framedTabs$: Observable<FramedTabs[]>,
   geometry$: Observable<GeometrySettings>,
   optimizeTravel$: Observable<boolean>,
   working$: Observable<never>,
 ): OperationEntry {
   const inputs$ = new BehaviorSubject(inputs);
-  const input = <K extends keyof OperationInputs>(key: K) =>
+  const input = <K extends keyof EntryInputs>(key: K) =>
     inputs$.pipe(map((i) => i[key]));
 
   // Only this operation's shape: other shapes changing don't wake it.
@@ -161,6 +290,14 @@ function createOperationEntry(
     geometry: geometry$,
     optimizeTravel: optimizeTravel$,
   }).pipe(switchMap((routing) => routeOperation(id, routing, working$)));
+
+  const frame$ = input('frame').pipe(distinctUntilChanged());
+  const tabs$ = combineLatest([framedTabs$, frame$]).pipe(
+    map(([all, frame]) =>
+      all.filter((t) => t.frame === frame).flatMap((t) => t.tabs),
+    ),
+    distinctJson(),
+  );
 
   // Then over the tabs the tool would cut into: changing tabs doesn't
   // re-route.
@@ -195,7 +332,8 @@ function createOperationEntry(
   );
 
   // Tag the routed G-code with its tool afterwards, so renumbering tools
-  // (reordering the list) doesn't re-run the routing.
+  // (reordering the list) doesn't re-run the routing (nor does turning the
+  // stock: see `turned`).
   const tagged$ = combineLatest([
     kept$,
     input('toolInfo').pipe(distinctJson()),
@@ -220,7 +358,7 @@ function createOperationEntry(
     shareLatest(),
   );
 
-  return { id, inputs$, shape$, result$ };
+  return { id, inputs$, shape$, frame$, result$ };
 }
 
 /**
@@ -235,20 +373,27 @@ export type OperationDescriptions = Record<string, string>;
  * pocket 5 mm · circle Ø20 · T1 Ø6 mm end mill".
  */
 export function operationDescriptions(model: ModelType): OperationDescriptions {
-  const operations = model.operations ?? [];
+  const operations = flatOperations(model.operations);
+  const describe = (op: any, number: string) => {
+    const what = describeOperation(
+      op,
+      model.shapes ?? [],
+      model.tools ?? [],
+      operations,
+    );
+    return [
+      op.id,
+      `Operation ${number}: ${op.name ? `${op.name} (${what})` : what}`,
+    ];
+  };
+  // Inside a rotary repeat: its number, then theirs (3.1, 3.2, …).
   return Object.fromEntries(
-    operations.map((op, i) => {
-      const what = describeOperation(
-        op,
-        model.shapes ?? [],
-        model.tools ?? [],
-        operations,
-      );
-      return [
-        op.id,
-        `Operation ${i + 1}: ${op.name ? `${op.name} (${what})` : what}`,
-      ];
-    }),
+    (model.operations ?? []).flatMap((op: any, i) => [
+      describe(op, `${i + 1}`),
+      ...(op.type === ROTARY_REPEAT ? (op.operations ?? []) : []).map(
+        (inner: any, j: number) => describe(inner, `${i + 1}.${j + 1}`),
+      ),
+    ]),
   );
 }
 
