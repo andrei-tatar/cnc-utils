@@ -1,5 +1,5 @@
 import { BoxAnchor, GcodeOptions } from '../cam/gcode-options';
-import { StockOptions } from '../cam/stock';
+import { axisEndLabel, StockOptions } from '../cam/stock';
 import { rotaryOf, sideUp } from '../cam/rotary';
 import { arcOf, forEachSegment, polygonsBounds } from '../cam/arcs';
 import { CamPath, CamPoint, CamPolygon, CamShape } from '../cam/types';
@@ -63,10 +63,15 @@ export function setupSheetHtml(data: SetupSheetData): string {
   const { stock, options } = data;
   const mm = (v: number) => `${round(v)} mm`;
 
-  const xy =
-    stock.enabled && stock.xyZero !== 'design'
-      ? `the stock’s ${ANCHORS[stock.xyZero]}`
-      : 'the design’s origin';
+  const xy = !stock.enabled
+    ? 'the design’s origin'
+    : stock.xyZero === 'axis-start' || stock.xyZero === 'axis-end'
+      ? stock.mount === 'rotary'
+        ? `on the rotary axis, at the stock’s ${axisEndLabel(stock.rotaryAlong, stock.xyZero).replace('the ', '')} (the chuck’s)`
+        : 'the design’s origin'
+      : stock.xyZero !== 'design'
+        ? `the stock’s ${ANCHORS[stock.xyZero]}`
+        : 'the design’s origin';
   const rotary = rotaryOf(stock);
   const z =
     !stock.enabled || stock.zZero === 'top'

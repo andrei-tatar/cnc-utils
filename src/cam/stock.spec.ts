@@ -1,5 +1,5 @@
 import { GCodeBuilder } from './gcode-builder';
-import { DEFAULT_STOCK, stockAround, stockOffset } from './stock';
+import { DEFAULT_STOCK, resolveStock, stockAround, stockOffset } from './stock';
 
 describe('stockOffset', () => {
   const stock = {
@@ -167,5 +167,65 @@ describe('stockAround', () => {
   it('is null with nothing cut', () => {
     expect(stockAround([])).toBeNull();
     expect(stockAround([{ polygons: [], margin: 3 }])).toBeNull();
+  });
+});
+
+describe('X0 Y0 on the rotary axis', () => {
+  // 100 long along Y from Y−20, Ø40 across from X10: the axis at X30.
+  const alongY = resolveStock({
+    enabled: true,
+    mount: 'rotary',
+    rotaryAlong: 'y',
+    shape: 'cylinder',
+    diameter: 40,
+    height: 100,
+    x: 10,
+    y: -20,
+  });
+
+  it('puts X0 on the axis and Y0 at the chuck’s end', () => {
+    expect(stockOffset({ ...alongY, xyZero: 'axis-start' })).toEqual({
+      x: -30,
+      y: 20,
+      z: 0,
+    });
+    expect(stockOffset({ ...alongY, xyZero: 'axis-end' })).toEqual({
+      x: -30,
+      y: -80,
+      z: 0,
+    });
+  });
+
+  it('works the same way round along X', () => {
+    const alongX = resolveStock({
+      enabled: true,
+      mount: 'rotary',
+      rotaryAlong: 'x',
+      width: 120,
+      height: 40,
+      thickness: 40,
+      x: 5,
+      y: -20,
+      zZero: 'axis',
+    });
+    expect(stockOffset({ ...alongX, xyZero: 'axis-start' })).toEqual({
+      x: -5,
+      y: 0,
+      z: 20,
+    });
+    expect(stockOffset({ ...alongX, xyZero: 'axis-end' })).toEqual({
+      x: -125,
+      y: 0,
+      z: 20,
+    });
+  });
+
+  it('reads as the design’s origin on the table', () => {
+    const table = { ...alongY, mount: 'table' as const };
+    expect(stockOffset({ ...table, xyZero: 'axis-start' })).toEqual({
+      x: 0,
+      y: 0,
+      z: 0,
+    });
   });
 });

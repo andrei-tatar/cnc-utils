@@ -24,6 +24,10 @@ import { emptyModel, ModelType, ModelFieldConfig } from './model';
 import { CamService } from '../services/cam.service';
 import { ModelStore } from '../services/model-store.service';
 import { EditorState } from './editor-state';
+import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
+import { ConfirmDialogComponent } from './components/confirm-dialog.component';
+import { turnProject } from './stock/turn-project';
+import { generateId } from '../../util';
 
 @Component({
   selector: 'app-model-editor',
@@ -47,6 +51,7 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
   fields: FormlyFieldConfig[] = ModelFieldConfig;
   private readonly cam = inject(CamService);
   private readonly store = inject(ModelStore);
+  private readonly modals = inject(NgbModal);
   readonly options: FormlyFormOptions = {
     formState: {
       fitStock: async () => {
@@ -70,6 +75,30 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
         if (model.stock?.enabled) {
           this.store.set({ ...model, stock: { ...model.stock, ...fit } });
         }
+      },
+      turnProject: async (from, to) => {
+        const ref = this.modals.open(ConfirmDialogComponent, {
+          size: 'sm',
+          centered: true,
+          ariaLabelledBy: 'confirm-title',
+        });
+        Object.assign(ref.componentInstance, {
+          kind: 'question',
+          title: 'Turn the project too?',
+          message: `The rotary axis now lies along ${to.toUpperCase()}. Turn the shapes, the stock and the settings that have a direction a quarter turn with it, so everything stays where it was on the blank?`,
+          confirmLabel: 'Turn the project',
+          cancelLabel: 'Leave it as it is',
+        });
+        const confirmed = await ref.result.catch(() => false);
+        if (!confirmed) return;
+        // The axis change reaches the store first (the form follows it).
+        await firstValueFrom(
+          this.store.model$.pipe(filter((m) => m.stock?.rotaryAlong === to)),
+        );
+        await new Promise((resolve) => setTimeout(resolve));
+        this.store.set(
+          await turnProject(this.store.value, from, to, generateId),
+        );
       },
     } satisfies EditorState,
   };

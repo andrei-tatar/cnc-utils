@@ -34,6 +34,10 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
       stroke-linejoin: round;
     }
 
+    .icon--question {
+      stroke: var(--bs-primary);
+    }
+
     .modal-body {
       font-size: 0.875rem;
     }
@@ -60,10 +64,21 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
   template: `
     <div class="modal-header">
       <h2 class="modal-title" id="confirm-title">
-        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
-          />
+        <svg
+          class="icon"
+          [class.icon--question]="kind === 'question'"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+        >
+          @if (kind === 'question') {
+            <path
+              d="M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM6.2 6.2a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4M8 11.3v.2"
+            />
+          } @else {
+            <path
+              d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
+            />
+          }
         </svg>
         {{ title }}
       </h2>
@@ -84,11 +99,13 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
         class="btn btn-sm btn-outline-secondary"
         (click)="modal.dismiss()"
       >
-        Cancel
+        {{ cancelLabel }}
       </button>
       <button
         type="button"
-        class="btn btn-sm btn-danger"
+        class="btn btn-sm"
+        [class.btn-danger]="kind === 'danger'"
+        [class.btn-primary]="kind === 'question'"
         ngbAutofocus
         (click)="modal.close(true)"
       >
@@ -104,4 +121,7 @@ export class ConfirmDialogComponent {
   @Input() message = '';
   @Input() details: string[] = [];
   @Input() confirmLabel = 'Delete';
+  @Input() cancelLabel = 'Cancel';
+  /** `danger`: deleting (red); `question`: a choice between two ways. */
+  @Input() kind: 'danger' | 'question' = 'danger';
 }

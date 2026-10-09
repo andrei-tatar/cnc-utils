@@ -1,4 +1,6 @@
 import {
+  quarterTurns,
+  rotateBrightness,
   Brightness,
   depthAt,
   EngraveOptions,
@@ -186,5 +188,37 @@ describe('image engraving', () => {
     // A dip is kept.
     points[2].z = -1;
     expect(simplifyDepths(points, 0.01)).toContain(points[2]);
+  });
+});
+
+describe('rotateBrightness', () => {
+  // 3 wide, 2 high, rows from the top: a b c / d e f.
+  const image = {
+    width: 3,
+    height: 2,
+    data: Float32Array.from([1, 2, 3, 4, 5, 6]),
+  };
+  const rows = (b: { width: number; height: number; data: Float32Array }) =>
+    Array.from({ length: b.height }, (_, y) =>
+      Array.from(b.data.subarray(y * b.width, (y + 1) * b.width)),
+    );
+
+  it('turns it clockwise by quarter turns', () => {
+    expect(rows(rotateBrightness(image, 1))).toEqual([
+      [4, 1],
+      [5, 2],
+      [6, 3],
+    ]);
+    expect(rows(rotateBrightness(image, 2))).toEqual([
+      [6, 5, 4],
+      [3, 2, 1],
+    ]);
+    expect(rows(rotateBrightness(image, 3))).toEqual([
+      [3, 6],
+      [2, 5],
+      [1, 4],
+    ]);
+    expect(rotateBrightness(image, 4)).toBe(image);
+    expect(quarterTurns(-90)).toBe(3);
   });
 });
