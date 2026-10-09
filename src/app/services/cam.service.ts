@@ -74,7 +74,10 @@ import { collapsedSections$ } from '../model-editor/components/collapsed-section
 import { ModelStore } from './model-store.service';
 import { WorkTracker } from './work-tracker.service';
 import { rotaryOf } from '../../cam/rotary';
-import { operationAngles } from '../model-editor/operations/rotation';
+import {
+  operationAngles,
+  operationWrap,
+} from '../model-editor/operations/rotation';
 import {
   cutOperations,
   flatOperations,
@@ -376,7 +379,7 @@ export class CamService implements ShapeExporter {
           angles: rotaryOf(view.stock)
             ? operationAngles(o, model.operations)
             : null,
-          wrapped: !!rotaryOf(view.stock)?.round && !!o.wrap,
+          wrapped: !!rotaryOf(view.stock)?.round && operationWrap(o, all),
           seconds: time.byOperation.get(o.id)!,
         };
       });

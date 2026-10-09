@@ -1,6 +1,7 @@
 import {
   operationAngles,
   operationRotation,
+  operationWrap,
   rotationMismatch,
 } from './rotation';
 import { repeatAngles } from './operation-rotary-repeat';
@@ -129,6 +130,26 @@ describe('rotary repeats', () => {
     ).toBeNull();
     expect(rotationMismatch(operations[2], operations)).toEqual(
       jasmine.objectContaining({ angles: [0], otherAngles: [0, 90] }),
+    );
+  });
+
+  it('wrap clearings and rest machining as what they belong to', () => {
+    const list: any[] = [
+      { id: 'e', type: 'image-engrave', wrap: true },
+      { id: 'c', type: 'image-engrave-clear', engraveOperationId: 'e' },
+      { id: 'p', type: 'pocket' },
+      { id: 'r', type: 'rest', pocketOperationId: 'p', wrap: true },
+    ];
+    expect(operationWrap(list[1], list)).toBeTrue();
+    // Ticked or not, rest machining follows its (unwrapped) pocket.
+    expect(operationWrap(list[3], list)).toBeFalse();
+    expect(programSteps(list, true, true).map((s) => [s.id, !!s.wrap])).toEqual(
+      [
+        ['e', true],
+        ['c', true],
+        ['p', false],
+        ['r', false],
+      ],
     );
   });
 });

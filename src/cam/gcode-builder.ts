@@ -487,10 +487,14 @@ export class GCodeBuilder {
         const to = local(last);
         // Wrapped, a move is straight in the unrolled surface, not in
         // space: points along it, for the preview to wrap.
+        // (At least one: a move straight up or down is a move too.)
         const pieces = wrapping
-          ? Math.min(
-              1000,
-              Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / wrapStep),
+          ? Math.max(
+              1,
+              Math.min(
+                1000,
+                Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / wrapStep),
+              ),
             )
           : 1;
         for (let k = 1; k <= pieces; k++) {
@@ -676,6 +680,8 @@ export class GCodeBuilder {
     // feed mode (G93) its cuts are written in, if asked.
     let wrap = false;
     let inverseTime = false;
+    /** Where the tool is in the drawing (design coordinates). */
+    let drawn: CamPoint3 | null = null;
     const leaveInverseTime = () => {
       if (inverseTime) {
         gcode.push('G94');
@@ -934,13 +940,19 @@ export class GCodeBuilder {
      * else the lines standing in for it (within the curve tolerance).
      */
     function carveArc(to: CamPoint, toZ: number | undefined, bulge: number) {
-      // Where the tool is, in design coordinates (held-back cuts included).
+      // Where the tool is, in design coordinates (held-back cuts included;
+      // wrapped, where it is in the unrolled drawing: the machine's
+      // position across the axis is the axis').
       const last = pendingCuts[pendingCuts.length - 1];
-      const from: CamPoint3 = last ?? {
-        x: x! - off.x,
-        y: y! - off.y,
-        z: z! - off.z,
-      };
+      const from: CamPoint3 =
+        last ??
+        (wrap && drawn
+          ? { ...drawn }
+          : {
+              x: x! - off.x,
+              y: y! - off.y,
+              z: z! - off.z,
+            });
       const endZ = toZ ?? from.z;
       if (arcs && !wrap) {
         flushCuts();
@@ -1078,6 +1090,15 @@ export class GCodeBuilder {
       const changed: MoveChange = {};
       const shift = raw ? { x: 0, y: 0, z: 0 } : off;
       const from = { x, y, z, a };
+      // Where it goes in the drawing (before wrapping turns it into an
+      // angle).
+      if (!raw) {
+        drawn = {
+          x: to.x ?? drawn?.x ?? (x ?? 0) - off.x,
+          y: to.y ?? drawn?.y ?? (y ?? 0) - off.y,
+          z: to.z ?? drawn?.z ?? (z ?? 0) - off.z,
+        };
+      }
 
       // Wrapped: across the axis is round it, the tool over the axis.
       if (wrap && !raw && rotary) {

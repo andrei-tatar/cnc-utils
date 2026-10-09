@@ -15,7 +15,7 @@ import {
   ToolOverrides,
 } from '../tools/feeds-and-speeds';
 import { autoFeedsField, calculatedFeedExpressions } from './feeds-calculator';
-import { onRotary, operationRotation } from './rotation';
+import { belongsToAnother, onRotary, operationRotation } from './rotation';
 import { isTurned } from '../../../cam/rotary';
 
 import {
@@ -398,8 +398,11 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
         label: 'wrap round the cylinder',
       },
       expressions: {
+        // A clearing (or rest machining) is wrapped as what it clears for.
         hide: (field: FormlyFieldConfig) =>
-          cutsNothing(field) || !onRoundStock(field),
+          cutsNothing(field) ||
+          !onRoundStock(field) ||
+          belongsToAnother(field.model?.type),
         'props.description': (field: FormlyFieldConfig) => {
           const stock = rootModel(field)?.stock;
           const across = stock?.rotaryAlong === 'y' ? 'X' : 'Y';
