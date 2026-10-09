@@ -14,6 +14,31 @@ const FOLLOWS: Record<string, string> = {
   'image-engrave-clear': 'engraveOperationId',
 };
 
+/**
+ * Whether an operation of `type` cuts where another one does (clearings,
+ * rest machining), so is turned and wrapped as that one is.
+ */
+export function belongsToAnother(type: string | undefined): boolean {
+  return !!type && type in FOLLOWS;
+}
+
+/**
+ * Whether an operation is wrapped round a round stock: its own `wrap`, or,
+ * for one that cuts where another does, that one's (a clearing always cuts
+ * where its engraving or v-carve does). `operations` as `flatOperations`
+ * gives them.
+ */
+export function operationWrap(
+  operation: any,
+  operations: readonly any[],
+  depth = 0,
+): boolean {
+  const key = FOLLOWS[operation?.type];
+  if (!key) return !!operation?.wrap;
+  const other = operations.find((o) => o?.id === operation[key]);
+  return depth < 3 && !!other && operationWrap(other, operations, depth + 1);
+}
+
 /** A number, or undefined (to work out expressions in the editor). */
 type NumberOf = (value: unknown) => number | undefined;
 const plainNumber: NumberOf = (value) =>

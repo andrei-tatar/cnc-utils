@@ -347,6 +347,47 @@ describe('G-code wrapped round a round stock', () => {
     expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(0.01);
   });
 
+  it('keeps arcs where they’re drawn, away from the axis line', () => {
+    // Half a circle of radius 5 round (10, 35): 15 off the axis line (Y20).
+    const cut = new GCodeBuilder()
+      .rotate(0, true)
+      .travelTo(10, 30)
+      .plunge(-1)
+      .arcTo(10, 40, 1)
+      .toPaths(options)
+      .find((p) => p.type === 'carve')!;
+    const off = cut.points
+      .slice(1)
+      .map((p) => Math.abs(Math.hypot(p.x - 10, p.y - 35) - 5));
+    expect(Math.max(...off)).toBeLessThan(0.05);
+  });
+
+  it('keeps moves straight up and down in the preview', () => {
+    const cut = new GCodeBuilder()
+      .rotate(0, true)
+      .travelTo(10, 30)
+      .plunge(-2)
+      .carveTo(10, 32)
+      .carveTo(10, 32, 0)
+      .carveTo(12, 32, 0)
+      .carveTo(12, 32, -2)
+      .toPaths(options)
+      .find((p) => p.type === 'carve')!;
+    const at = (x: number, y: number, z: number) =>
+      cut.points.some(
+        (p) =>
+          // (Back from the angle, written to 0.001°.)
+          Math.abs(p.x - x) < 1e-3 &&
+          Math.abs(p.y - y) < 1e-3 &&
+          Math.abs(p.z - z) < 1e-3,
+      );
+    // Up to the surface before stepping over, down after.
+    expect(at(10, 32, -2)).toBeTrue();
+    expect(at(10, 32, 0)).toBeTrue();
+    expect(at(12, 32, 0)).toBeTrue();
+    expect(at(12, 32, -2)).toBeTrue();
+  });
+
   it('counts the time going round', () => {
     const time = job().estimateTime(options);
     // About 28 mm cut at 1200 mm/min, at least.

@@ -25,6 +25,7 @@ import { repeatAngles } from '../model-editor/operations/operation-rotary-repeat
 import {
   operationFrame,
   operationRotation,
+  operationWrap,
 } from '../model-editor/operations/rotation';
 import { tabsNear, tabsOf } from '../../cam/tabs';
 import worker from '../../worker';
@@ -80,8 +81,9 @@ export function programSteps(
   /** The stock is round: operations can be wrapped round it. */
   round = false,
 ): ProgramStep[] {
+  const all = flatOperations(operations);
   const step = (op: any, rotation: number | null): ProgramStep =>
-    round && op.wrap
+    round && operationWrap(op, all)
       ? { id: op.id, rotation, wrap: true }
       : { id: op.id, rotation };
   return (operations ?? []).flatMap((op: any): ProgramStep[] => {

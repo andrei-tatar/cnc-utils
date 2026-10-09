@@ -1,4 +1,5 @@
 import { Fixture, project } from './fixture';
+import { resolveStock } from '../../../src/cam/stock';
 import { RING_PNG } from './shapes-imported';
 import {
   circle,
@@ -479,6 +480,37 @@ export default [
           lineSpacing: 0.6,
         }),
       ],
+    }),
+  },
+  {
+    name: 'image-engrave-clearing-wrapped',
+    covers:
+      'image engraving (as image-engrave-clearing) wrapped round a Ø60 cylinder on a rotary axis along Y, the disc on the axis line; its clearing (not ticked itself) wrapped as the engraving is',
+    model: project({
+      shapes: [circle('s-disc', 40)],
+      tools: [v60, { ...em3, ramp: true, rampAngle: 5 }],
+      operations: [
+        imageEngraveClear('o-clear', 't-em3', 'o-engrave'),
+        {
+          ...imageEngrave('o-engrave', 't-v60', 's-disc', RING_PNG, {
+            imageFit: 'cover',
+            darkDepth: 2.5,
+            lineSpacing: 0.6,
+          }),
+          wrap: true,
+        },
+      ],
+      stock: resolveStock({
+        enabled: true,
+        mount: 'rotary',
+        rotaryAlong: 'y',
+        shape: 'cylinder',
+        diameter: 60,
+        height: 80,
+        x: -30,
+        y: -40,
+        zZero: 'axis',
+      }),
     }),
   },
 ] satisfies Fixture[];
