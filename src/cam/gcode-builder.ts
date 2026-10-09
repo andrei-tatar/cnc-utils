@@ -8,6 +8,8 @@ import {
   onBlank,
   rotaryClearance,
   rotaryShift,
+  wrapRadius,
+  wrapShift,
 } from './rotary';
 import { CamPath, CamPoint, CamPoint3 } from './types';
 
@@ -287,10 +289,11 @@ export class GCodeBuilder {
    * follows, at safe height: what follows is in its frame (see
    * `rotary.ts`). Nothing without a rotary axis (`GcodeOptions.rotary`).
    *
-   * With `wrap` (round stock only), what follows is wrapped round it: drawn
-   * unrolled, its position across the axis (Y along X, X along Y) runs
-   * round the circumference from `angle`, the axis line at `angle`, and Z
-   * is the depth below the surface. Each move turns the axis as it goes.
+   * With `wrap`, what follows is wrapped round the stock: drawn unrolled,
+   * its position across the axis (Y along X, X along Y) runs round the
+   * wrap circle (`wrapRadius`: a cylinder's, or the one a box's corners
+   * turn in) from `angle`, the axis line at `angle`, and Z is the depth
+   * below that circle. Each move turns the axis as it goes.
    */
   rotate(angle: number, wrap = false) {
     this._instructions.push(
@@ -386,6 +389,9 @@ export class GCodeBuilder {
     let rotation = 0;
     let shift = 0;
     let wrapping = false;
+    // The move after `rotate`: the turn itself (others turning the axis
+    // alone are wrapped cuts round the stock).
+    let turned = false;
     const rotary = o.rotary;
     /** A point the machine reaches, in the operation's frame. */
     const local = (
@@ -398,10 +404,12 @@ export class GCodeBuilder {
           wrapDirection(rotary) *
             ((p.a ?? 0) - (p.turns ?? 0) - rotation) *
             (Math.PI / 180) *
-            rotary.halfThickness;
+            wrapRadius(rotary);
+        // Z below the wrap circle (what the turn raised it by off).
+        const z = p.z - shift;
         return rotary.along === 'x'
-          ? { x: p.x, y: across, z: p.z }
-          : { x: across, y: p.y, z: p.z };
+          ? { x: p.x, y: across, z }
+          : { x: across, y: p.y, z };
       }
       return shift
         ? { x: p.x, y: p.y, z: p.z - shift }
@@ -409,7 +417,7 @@ export class GCodeBuilder {
     };
     /** Wrapped moves split so their lines follow the surface. */
     const wrapStep = rotary
-      ? Math.max(0.5, rotary.halfThickness * ((3 * Math.PI) / 180))
+      ? Math.max(0.5, wrapRadius(rotary) * ((3 * Math.PI) / 180))
       : Infinity;
 
     this.walk(options, {
@@ -439,15 +447,20 @@ export class GCodeBuilder {
         rotation = angle;
         shift = newShift;
         wrapping = wrap;
+        turned = true;
       },
       move: (code, changed, at) => {
+        const turn = turned;
+        turned = false;
         if (
+          turn &&
           changed.x === undefined &&
           changed.y === undefined &&
           changed.z === undefined &&
           changed.feed === undefined
         ) {
-          // Only turning (drawn by `rotate`).
+          // The turn itself (drawn by `rotate`): only where the axis is now.
+          last = { ...last, a: at.a, turns: at.turns };
           return;
         }
         if (changed.speed !== undefined) feed = changed.speed;
@@ -530,6 +543,7 @@ export class GCodeBuilder {
     let feed = o.carveFeedRate;
     let last: (CamPoint3 & { a?: number }) | null = null;
     let rotation = 0;
+    let justTurned = false;
     const add = (seconds: number) => {
       total += seconds;
       byOperation.set(operation, (byOperation.get(operation) ?? 0) + seconds);
@@ -550,16 +564,20 @@ export class GCodeBuilder {
           add((length / o.rapidRate) * 60);
         }
         rotation = angle;
+        justTurned = true;
       },
       move: (code, changed, at) => {
         if (changed.speed !== undefined) feed = changed.speed;
         else if (changed.feed !== undefined) feed = changed.feed;
+        const turn = justTurned;
+        justTurned = false;
         const turningOnly =
           changed.x === undefined &&
           changed.y === undefined &&
           changed.z === undefined;
-        // Turning alone is counted by `rotate`.
-        if (last && !turningOnly) {
+        // The turn after `rotate` is counted there; wrapped cuts round the
+        // stock turn the axis alone too, and count here.
+        if (last && !(turn && turningOnly)) {
           // Round the axis too, where the bit is (wrapped cuts).
           const da = ((at.a ?? 0) - (last.a ?? 0)) * (Math.PI / 180);
           const round =
@@ -702,7 +720,7 @@ export class GCodeBuilder {
     /** Turns the stock to `to`; `exactly` there, not a whole turn off. */
     const turnTo = (to: number, wrapping = false, exactly = false) => {
       if (!rotary) return;
-      const wrapNow = wrapping && rotary.round;
+      const wrapNow = wrapping;
       const target = exactly ? to : nearest(to);
       if (to === angle && round(target) === a && wrapNow === wrap) return;
       leaveInverseTime();
@@ -712,7 +730,10 @@ export class GCodeBuilder {
       wrap = wrapNow;
       turns = target - to;
       // Rounded, so Z in the operation's frame stays as it was rounded.
-      const shift = round(rotaryShift(rotary, to));
+      // Wrapped, Z is below the wrap circle whichever way it's turned.
+      const shift = round(
+        wrapNow ? wrapShift(rotary) : rotaryShift(rotary, to),
+      );
       off = { ...base, z: base.z + shift };
       out.rotate?.(to, shift, wrap, from, target);
       move('G0', { a: target });
@@ -1108,7 +1129,7 @@ export class GCodeBuilder {
           const unrolled =
             angle! +
             wrapDirection(rotary) *
-              ((across - rotary.across) / rotary.halfThickness) *
+              ((across - rotary.across) / wrapRadius(rotary)) *
               (180 / Math.PI);
           // A rapid between cuts goes the short way round; a cut carries on
           // from where the last one was, however far round it goes.
@@ -1156,7 +1177,7 @@ export class GCodeBuilder {
         const dz = (z ?? 0) - (from.z ?? 0);
         const da = (a ?? 0) - (from.a ?? 0);
         const radius =
-          rotary.halfThickness + ((z ?? 0) + (from.z ?? 0)) / 2 - off.z;
+          wrapRadius(rotary) + ((z ?? 0) + (from.z ?? 0)) / 2 - off.z;
         const along = Math.hypot(
           dx,
           dy,

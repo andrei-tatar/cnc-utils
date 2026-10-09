@@ -9,6 +9,7 @@ import {
   rotaryShift,
   sideUp,
   wrappedPointOnBlank,
+  wrapRadius,
 } from './rotary';
 import {
   DEFAULT_STOCK,
@@ -430,5 +431,78 @@ describe('wrapping round a round stock along Y', () => {
       .build({ ...DEFAULT_GCODE_OPTIONS, rotary });
     // −90° brings the +X side up (along Y, +90° brings −X up).
     expect(gcode).toContain('G0 X20 Y50 A-90');
+  });
+});
+
+describe('wrapping round a box', () => {
+  // 40 × 40, 100 long, along X: its corners turn in a circle of radius
+  // 20√2 round the axis (Y20, 20 below the top).
+  const rotary: Rotary = rotaryOf(
+    resolveStock({
+      enabled: true,
+      mount: 'rotary',
+      rotaryAlong: 'x',
+      width: 100,
+      height: 40,
+      thickness: 40,
+      x: 0,
+      y: 0,
+    }),
+  )!;
+  const r = Math.hypot(20, 20);
+
+  it('wraps on the circle its corners turn in, depth below that', () => {
+    expect(wrapRadius(rotary)).toBeCloseTo(r, 9);
+    const lines = new GCodeBuilder()
+      .rotate(0, true)
+      .travelTo(10, 20)
+      .plunge(-2)
+      .carveTo(10, 20 + (Math.PI * r) / 2)
+      .build({
+        ...DEFAULT_GCODE_OPTIONS,
+        header: false,
+        spindle: false,
+        toolChange: 'none',
+        rotary,
+      })
+      .split('\n');
+    // Z0 on the top at 0°: 2 below the circle is r − 2 − 20 above it.
+    expect(lines).toContain(
+      `G1 Z${Math.round((r - 2 - 20) * 1000) / 1000} F300`,
+    );
+    // A quarter of the way round the circle.
+    expect(lines.some((l) => /^G1 A90 F/.test(l))).toBeTrue();
+  });
+
+  it('keeps a ring (the axis turning alone) as a cut, and its time', () => {
+    const ring = () =>
+      new GCodeBuilder()
+        .rotate(0, true)
+        .travelTo(10, 20)
+        .plunge(-2)
+        .carveTo(10, 20 + 2 * Math.PI * r);
+    const options = {
+      ...DEFAULT_GCODE_OPTIONS,
+      header: false,
+      spindle: false,
+      toolChange: 'none' as const,
+      rotary,
+    };
+    const cut = ring()
+      .toPaths(options)
+      .find((p) => p.type === 'carve')!;
+    const ys = cut.points.map((p) => p.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(2 * Math.PI * r, 1);
+    // In the operation's frame: 2 below the circle.
+    expect(Math.min(...cut.points.map((p) => p.z))).toBeCloseTo(-2, 6);
+    // All the way round, 2 below the circle, at 1200 mm/min.
+    const seconds = ((2 * Math.PI * (r - 2)) / 1200) * 60;
+    expect(ring().estimateTime(options).total).toBeGreaterThan(seconds * 0.95);
+  });
+
+  it('puts the cut on the blank as wrapped', () => {
+    // At the top (the axis line), 2 below the circle: r − 2 above the axis.
+    const p = wrappedPointOnBlank(rotary, 0, { x: 10, y: 20, z: -2 });
+    expect(p.z + 20).toBeCloseTo(r - 2, 6);
   });
 });
