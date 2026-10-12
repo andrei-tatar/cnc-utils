@@ -197,6 +197,55 @@ export default [
     }),
   },
   {
+    name: 'shape-panel-tenons-mortises',
+    covers:
+      'panel with tenons on its bottom edge (2, 20 wide, 15 in) and dovetail tails on its right; the mortises for those tenons (6 mm stock, 0.2 play) and a through dado for an 18 mm panel; profiles and pockets',
+    model: project({
+      shapes: [
+        shape('panel', {
+          type: 'box-panel',
+          boxWidth: 120,
+          boxHeight: 80,
+          boxThickness: 6,
+          boxFingerWidth: 12,
+          boxPlay: 0.2,
+          boxBottom: 'tenons',
+          boxRight: 'tails',
+          boxTop: 'flat',
+          boxLeft: 'sockets',
+          boxTenonCount: 2,
+          boxTenonWidth: 20,
+          boxTenonMargin: 15,
+          boxDovetailCount: 3,
+          boxDovetailAngle: 12,
+        }),
+        shape('mortises', {
+          type: 'mortises',
+          mortiseLength: 120,
+          mortiseThickness: 6,
+          mortiseCount: 2,
+          mortiseWidth: 20,
+          mortiseMargin: 15,
+          mortisePlay: 0.2,
+        }),
+        shape('dado', {
+          type: 'dado',
+          dadoLength: 150,
+          dadoThickness: 18,
+          dadoPlay: 0.2,
+          dadoEnds: 'both',
+          dadoOverrun: 5,
+        }),
+      ],
+      tools: [endMill6],
+      operations: [
+        profile('op-profile', 'panel'),
+        pocket('op-mortises', 'mortises'),
+        pocket('op-dado', 'dado'),
+      ],
+    }),
+  },
+  {
     name: 'shape-hinge-cup',
     covers:
       'hinge-cup shape, both parts, Blum system, screw holes as points: cup pocket (end mill) and drilling (drill)',

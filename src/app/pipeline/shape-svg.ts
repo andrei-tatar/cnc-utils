@@ -1,4 +1,4 @@
-import { boxPanelOutline } from '../../cam/box-joints';
+import { boxPanelOutline, mortiseRects } from '../../cam/box-joints';
 import { bowtieOutline } from '../../cam/hinge-cup';
 import { pathCommandsData } from '../../cam/path-commands';
 import { finitePoints, pathData } from '../../cam/point-patterns';
@@ -51,6 +51,30 @@ export function createSvgFromShape(t: SvgShapeParameters) {
         bowtieOutline(t.bowtieLength, t.bowtieEndWidth, t.bowtieWaist),
         true,
       )}" /></svg>`;
+    case 'mortises':
+      return `<svg>${mortiseRects(
+        t.mortiseLength,
+        {
+          count: t.mortiseCount,
+          width: t.mortiseWidth,
+          margin: t.mortiseMargin,
+        },
+        t.mortiseThickness,
+        t.mortisePlay ?? 0,
+      )
+        .map((rect) => `<path d="${pathData(rect, true)}" />`)
+        .join('')}</svg>`;
+    case 'dado': {
+      const open = t.dadoEnds ?? 'both';
+      const run = Math.max(0, t.dadoOverrun ?? 0);
+      const from = open === 'start' || open === 'both' ? -run : 0;
+      const to =
+        Math.max(0, t.dadoLength) +
+        (open === 'end' || open === 'both' ? run : 0);
+      const half =
+        (Math.max(0, t.dadoThickness) + Math.max(0, t.dadoPlay ?? 0)) / 2;
+      return `<svg><rect x="${from}" y="${-half}" width="${to - from}" height="${2 * half}"/></svg>`;
+    }
     case 'box-panel':
       return `<svg><path d="${pathData(
         boxPanelOutline({
@@ -60,6 +84,15 @@ export function createSvgFromShape(t: SvgShapeParameters) {
           fingerWidth: t.boxFingerWidth,
           play: t.boxPlay,
           edges: [t.boxBottom, t.boxRight, t.boxTop, t.boxLeft],
+          tenons: {
+            count: t.boxTenonCount ?? 2,
+            width: t.boxTenonWidth ?? 20,
+            margin: t.boxTenonMargin ?? 15,
+          },
+          dovetails: {
+            count: t.boxDovetailCount ?? 3,
+            angle: t.boxDovetailAngle ?? 10,
+          },
         }),
         true,
       )}" /></svg>`;
