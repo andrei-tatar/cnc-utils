@@ -2,12 +2,14 @@ import {
   ApplicationConfig,
   importProvidersFrom,
   ErrorHandler,
+  isDevMode,
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
   provideZonelessChangeDetection,
   provideZoneChangeDetection,
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
+import { provideServiceWorker } from '@angular/service-worker';
 
 import { routes } from './app.routes';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
@@ -62,6 +64,12 @@ export const appConfig: ApplicationConfig = {
     provideAppInitializer(preloadModel),
     { provide: ShapeExporter, useExisting: CamService },
     provideRouter(routes),
+    // Works offline: the service worker keeps the app, its templates and
+    // the fonts used (ngsw-config.json). Production builds only.
+    provideServiceWorker('ngsw-worker.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000',
+    }),
     provideAnimationsAsync(),
     importProvidersFrom(ReactiveFormsModule),
     importProvidersFrom(
