@@ -25,6 +25,53 @@ const em3 = tool('t-em3', 2, 'end-mill', 3);
 
 export default [
   {
+    name: 'pocket-adaptive-frame',
+    covers:
+      'pocket, adaptive strategy, a frame (an island in it), 6 mm end mill, engagement 0.15, two 4 mm steps, ramp 3°: a helix at the widest part, the cleared area grown a stepover at a time round the island',
+    model: project({
+      shapes: [pathData('s-frame', FRAME)],
+      tools: [em6],
+      operations: [
+        pocket('op-pocket', 't-em6', 's-frame', {
+          strategy: 'adaptive',
+          toolEngagement: 0.15,
+          depth: 4,
+          steps: 2,
+        }),
+      ],
+    }),
+  },
+  {
+    name: 'pocket-adaptive-dumbbell',
+    covers:
+      'pocket, adaptive strategy, a dumbbell (two areas joined by a neck), 3 mm end mill, engagement 0.2, one 3 mm step',
+    model: project({
+      shapes: [polyline('s-dumbbell', DUMBBELL, true)],
+      tools: [em3],
+      operations: [
+        pocket('op-pocket', 't-em3', 's-dumbbell', {
+          strategy: 'adaptive',
+          toolEngagement: 0.2,
+        }),
+      ],
+    }),
+  },
+  {
+    name: 'pocket-adaptive-large',
+    covers:
+      'pocket, adaptive strategy, a 300 × 200 rectangle with a 6 mm end mill at 0.12 (many rings): how long it takes',
+    model: project({
+      shapes: [rect('s-big', 300, 200)],
+      tools: [em6],
+      operations: [
+        pocket('op-pocket', 't-em6', 's-big', {
+          strategy: 'adaptive',
+          toolEngagement: 0.12,
+        }),
+      ],
+    }),
+  },
+  {
     name: 'pocket-offset-rectangle',
     covers:
       'pocket, offset strategy, 40×30 rectangle, 6 mm end mill, one 3 mm step',
