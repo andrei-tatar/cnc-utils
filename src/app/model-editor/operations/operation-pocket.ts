@@ -5,7 +5,7 @@ export interface ModelType extends DepthSteps {
   type?: 'pocket';
   leaveStock: number;
   toolEngagement: number;
-  strategy?: 'offset' | 'raster';
+  strategy?: 'offset' | 'raster' | 'adaptive';
   alongAxis?: 'x' | 'y';
   allPassesInSameDirection?: boolean;
 }
@@ -25,7 +25,14 @@ const field: FormlyFieldConfig = {
         options: [
           { value: 'offset', label: 'offset' },
           { value: 'raster', label: 'raster' },
+          { value: 'adaptive', label: 'adaptive (steady engagement)' },
         ],
+      },
+      expressions: {
+        'props.description': (field: FormlyFieldConfig) =>
+          field.model?.strategy === 'adaptive'
+            ? 'from a helix, the cleared area grows a stepover at a time: the bit never takes more, in corners and slots too. Use a small engagement (0.1–0.25) and deep steps'
+            : '',
       },
     },
     ...depthStepsFields(),

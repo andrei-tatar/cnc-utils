@@ -8,6 +8,7 @@ import {
   useGeometry,
 } from '../../cam/geometry';
 import { getCentroid } from './utils';
+import { adaptivePlans, cutAdaptive } from './route-adaptive';
 import { orderPoints } from '../../cam/travel-order';
 import { enterCut } from '../../cam/ramp';
 import { rasterLines, rasterPaths, staysInside } from '../../cam/raster';
@@ -32,8 +33,10 @@ export async function routePocketHole(
     /**
      * offset: rings following the outline, inwards.
      * raster: parallel lines `alongAxis`, then a pass round the outline.
+     * adaptive: from a helix, the cleared area grows outwards a stepover at
+     * a time, so the bit never takes more (see `adaptivePlans`).
      */
-    strategy?: 'offset' | 'raster';
+    strategy?: 'offset' | 'raster' | 'adaptive';
     alongAxis?: 'x' | 'y';
     /** Raster: cut every line of the last level the same way. */
     allPassesInSameDirection?: boolean;
@@ -58,6 +61,32 @@ export async function routePocketHole(
   if (options.strategy === 'raster') {
     for (const shape of sorted) {
       start = await routeRaster(builder, shape, { ...options, start });
+    }
+    return builder;
+  }
+
+  if (options.strategy === 'adaptive') {
+    for (const shape of sorted) {
+      const area = await toolCenterArea(shape, options);
+      const plans = await adaptivePlans(
+        area,
+        options.toolSize * options.toolEngagement,
+        options.toolSize / 2,
+      );
+      // Level by level, the whole area each.
+      for (let step = 0; step < options.steps; step++) {
+        const depth = options.startDepth + options.depthPerStep * (step + 1);
+        start = cutAdaptive(
+          builder,
+          plans,
+          area,
+          -(depth - options.depthPerStep),
+          -depth,
+          options.rampAngle ?? null,
+          start,
+        );
+      }
+      builder.goToSafeHeight();
     }
     return builder;
   }

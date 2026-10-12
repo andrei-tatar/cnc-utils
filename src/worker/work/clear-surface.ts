@@ -226,7 +226,7 @@ function startingNear(vertices: CamVertex[], p: CamPoint): CamVertex[] {
 }
 
 /** A region's islands: each outline with the holes in it. */
-function islands(region: CamPolygon[]): CamPolygon[][] {
+export function islands(region: CamPolygon[]): CamPolygon[][] {
   const outlines = region.filter((p) => signedArea(p) > 0);
   const groups = outlines.map((outline) => [outline]);
   for (const hole of region.filter((p) => signedArea(p) <= 0)) {
