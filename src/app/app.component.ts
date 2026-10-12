@@ -19,6 +19,18 @@ import { CamService } from './services/cam.service';
 import { WorkTracker } from './services/work-tracker.service';
 import { ProjectCommands } from './projects/project-commands.service';
 import { ModelHistory } from './services/model-history.service';
+import {
+  EditHandle,
+  movePoint,
+  moveShape,
+  selectShape,
+} from './model-editor/shape-editing';
+import {
+  readCollapsedSections,
+  writeCollapsedSections,
+} from './model-editor/components/collapsed-sections';
+import { CamPoint } from '../cam/types';
+import { generateId } from '../util';
 
 @Component({
   selector: 'app-root',
@@ -71,6 +83,40 @@ export class AppComponent {
     this.store.replaced$
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.viewer().refit());
+  }
+
+  /**
+   * A shape clicked in the preview: open it in the editor (its section too)
+   * and bring it into view there; null closes the shapes.
+   */
+  onShapeSelect(shapeId: string | null) {
+    this.store.set(selectShape(this.store.value, shapeId));
+    if (!shapeId) return;
+    const collapsed = readCollapsedSections();
+    if (collapsed.includes('shapes')) {
+      writeCollapsedSections(collapsed.filter((k) => k !== 'shapes'));
+    }
+    // Once the editor shows it open.
+    setTimeout(() =>
+      document
+        .querySelector(`[data-item-id="${CSS.escape(shapeId)}"]`)
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+    );
+  }
+
+  /** The shape being edited dragged in the preview. */
+  async onShapeMove(move: { shapeId: string; dx: number; dy: number }) {
+    const id = await generateId();
+    this.store.set(
+      moveShape(this.store.value, move.shapeId, move.dx, move.dy, id),
+    );
+  }
+
+  /** One of its points dragged in the preview. */
+  onPointMove(move: { shapeId: string; handle: EditHandle; to: CamPoint }) {
+    this.store.set(
+      movePoint(this.store.value, move.shapeId, move.handle, move.to),
+    );
   }
 
   onJobAction(id: string) {

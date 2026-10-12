@@ -119,6 +119,8 @@ import {
   wrappedPointOnBlank,
 } from '../../cam/rotary';
 import { shapeLook$ } from './helpers/shape-look';
+import { ShapeEditor } from './helpers/shape-editor';
+import type { EditHandle, ShapeEditing } from '../model-editor/shape-editing';
 
 /** The measuring line, drawn over everything. */
 const MEASURE_MATERIAL = new LineBasicMaterial({
@@ -334,6 +336,7 @@ type PathFrames = {
       </button>
       <span #cursorReadout class="hud_cursor"></span>
       <span #measureReadout class="hud_measure"></span>
+      <span #editReadout class="hud_edit"></span>
       @if (timeText) {
         <span class="hud_time" [title]="timeDetails">≈ {{ timeText }}</span>
       }
@@ -545,6 +548,10 @@ type PathFrames = {
       color: #ffd54f;
     }
 
+    .hud_edit {
+      color: #4fc3f7;
+    }
+
     .hud_legend {
       display: inline-flex;
       align-items: center;
@@ -612,6 +619,33 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   @ViewChild('gridReadout', { static: true })
   private gridReadout!: ElementRef<HTMLElement>;
+
+  @ViewChild('editReadout', { static: true })
+  private editReadout!: ElementRef<HTMLElement>;
+
+  /** Clicking shapes to edit them, dragging them and their points. */
+  private shapeEditor!: ShapeEditor;
+
+  /** The shape being edited (open in the editor) and its points. */
+  @Input()
+  set editing(value: ShapeEditing | null) {
+    this.editing$.next(value);
+  }
+  private editing$ = new BehaviorSubject<ShapeEditing | null>(null);
+  /** A shape clicked in the preview (null: clicked off every shape). */
+  @Output() shapeSelect = new EventEmitter<string | null>();
+  /** The shape being edited dragged by (`dx`, `dy`). */
+  @Output() shapeMove = new EventEmitter<{
+    shapeId: string;
+    dx: number;
+    dy: number;
+  }>();
+  /** One of its points dragged to `to`. */
+  @Output() pointMove = new EventEmitter<{
+    shapeId: string;
+    handle: EditHandle;
+    to: CamPoint;
+  }>();
 
   @ViewChild('pathLegend', { static: true })
   private pathLegend!: ElementRef<HTMLElement>;
@@ -830,6 +864,25 @@ export class ViewerComponent implements OnInit, OnDestroy {
     scene.add(this.content);
     scene.add(this.measureGroup);
     this.content.add(this.pathsGroup);
+    this.shapeEditor = new ShapeEditor({
+      canvas: renderer.domElement,
+      camera: () => this.camera,
+      controls: this.controls,
+      pixelsPerUnit: () => this.pixelsPerUnit,
+      active: () => !this.measuring && !this.simulation$.value,
+      requestRender: () => this.requestRender(),
+      hint: (text) => {
+        this.editReadout.nativeElement.textContent = this.measuring ? '' : text;
+      },
+      select: (id) => this.shapeSelect.emit(id),
+      moveShape: (shapeId, dx, dy) => this.shapeMove.emit({ shapeId, dx, dy }),
+      movePoint: (shapeId, handle, to) =>
+        this.pointMove.emit({ shapeId, handle, to }),
+    });
+    scene.add(this.shapeEditor.handles);
+    this.editing$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((editing) => this.shapeEditor.setEditing(editing));
     this.drawSimulation(scene, grid);
 
     // Axis arrows of a constant on-screen size (scaled per frame below).
@@ -1115,6 +1168,19 @@ export class ViewerComponent implements OnInit, OnDestroy {
           ),
         );
       });
+
+    // What can be clicked to edit: the shapes drawn.
+    this.shapes$
+      .pipe(
+        switchMap((shapes$) => shapes$),
+        combineLatestWith(this.hiddenShapes$),
+        takeUntil(this.destroy$),
+      )
+      .subscribe(([shapes, hidden]) =>
+        this.shapeEditor.setShapes(
+          shapes.filter((s) => !hidden.includes(s.sourceShapeId)),
+        ),
+      );
 
     this.shapes$
       .pipe(
@@ -1625,6 +1691,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
         surface.children.forEach((child) => (child as Mesh).geometry.dispose());
         surface.clear();
         this.pathsGroup.visible = !map;
+        this.shapeEditor.setVisible(!map);
         // A solid on a rotary axis can be cut away anywhere round: the
         // stock's box would hide that.
         this.stockBox.visible = !(map && 'positions' in map);
@@ -2004,6 +2071,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
               const mesh = new Mesh(geometry, o.material);
               sceneItems.push(mesh);
               o.scene.add(mesh);
+              clean.add(this.shapeEditor.register(o.shape.sourceShapeId, mesh));
 
               clean.add(() => {
                 o.scene.remove(mesh);
@@ -2047,6 +2115,9 @@ export class ViewerComponent implements OnInit, OnDestroy {
               const outline = new LineSegments(geometry, o.material);
               sceneItems.push(outline);
               o.scene.add(outline);
+              clean.add(
+                this.shapeEditor.register(o.shape.sourceShapeId, outline),
+              );
               clean.add(() => {
                 o.scene.remove(outline);
                 geometry.dispose();
@@ -2061,6 +2132,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             if (o.shape.tabs?.length) {
               o.scene.add(tabs);
               clean.add(() => o.scene.remove(tabs));
+              clean.add(this.shapeEditor.register(o.shape.sourceShapeId, tabs));
               const bottom$ = combineLatest([this.stock$, this.deepest$]).pipe(
                 map(([view, deepest]) =>
                   view?.stock.enabled ? -view.stock.thickness : deepest,
