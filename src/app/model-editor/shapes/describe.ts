@@ -69,7 +69,11 @@ export function describeShape(
     case 'bowtie':
       return `bowtie ${shape['bowtieLength']}×${shape['bowtieEndWidth']}`;
     case 'box-panel':
-      return `box panel ${shape['boxWidth']}×${shape['boxHeight']}`;
+      return `panel ${shape['boxWidth']}×${shape['boxHeight']}`;
+    case 'mortises':
+      return `${shape['mortiseCount']} mortises for ${shape['mortiseThickness']} mm`;
+    case 'dado':
+      return `dado ${shape['dadoLength']} for ${shape['dadoThickness']} mm`;
     case 'trace':
       return shape['fileName'] ? `trace ${shape['fileName']}` : 'image trace';
     case 'svg':

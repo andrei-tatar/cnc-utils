@@ -57,6 +57,14 @@ import {
   ModelType as PolylineModelType,
 } from './shape-polyline';
 import {
+  Definition as MortisesDefinition,
+  ModelType as MortisesModelType,
+} from './shape-mortises';
+import {
+  Definition as DadoDefinition,
+  ModelType as DadoModelType,
+} from './shape-dado';
+import {
   Definition as BoxPanelDefinition,
   ModelType as BoxPanelModelType,
 } from './shape-box-panel';
@@ -107,6 +115,8 @@ type ShapeType =
   | SlotModelType
   | PolylineModelType
   | BoxPanelModelType
+  | MortisesModelType
+  | DadoModelType
   | TraceModelType
   | HingeCupModelType
   | BowtieModelType
@@ -129,6 +139,8 @@ const shapes = [
   TraceDefinition,
   TextDefinition,
   BoxPanelDefinition,
+  MortisesDefinition,
+  DadoDefinition,
   HingeCupDefinition,
   BowtieDefinition,
   BooleanDefinition,
