@@ -41,8 +41,10 @@ export async function loadModelFromMetadata(
 
   const cs = new DecompressionStream('gzip');
   const writer = cs.writable.getWriter();
-  writer.write(bytes);
-  writer.close();
+  // Damaged data (a link cut short) fails reading below: no need to hear
+  // it from the writer as well.
+  writer.write(bytes).catch(() => {});
+  writer.close().catch(() => {});
 
   const arrayBuffer = await new Response(cs.readable).arrayBuffer();
   const decoded = new TextDecoder().decode(arrayBuffer);
