@@ -25,6 +25,11 @@ export type SetupSheetData = {
     angles?: number[] | null;
     /** Wrapped round the round stock, from each angle. */
     wrapped?: boolean;
+    /**
+     * In a two-sided job, the side it's cut on (null: the board isn't
+     * turned over).
+     */
+    side?: 'front' | 'back' | null;
     seconds: number;
   }[];
   total: number;
@@ -73,6 +78,8 @@ export function setupSheetHtml(data: SetupSheetData): string {
         ? `the stock’s ${ANCHORS[stock.xyZero]}`
         : 'the design’s origin';
   const rotary = rotaryOf(stock);
+  // A two-sided job: which side each operation is cut on.
+  const sides = data.operations.some((op) => op.side);
   const z =
     !stock.enabled || stock.zZero === 'top'
       ? rotary
@@ -204,15 +211,15 @@ export function setupSheetHtml(data: SetupSheetData): string {
 
 <h2>Operations</h2>
 <table>
-  <thead><tr><th class="check"></th><th>#</th><th>Operation</th><th>Tool</th>${rotary ? '<th>Turned to</th>' : ''}<th class="num">Time</th></tr></thead>
+  <thead><tr><th class="check"></th><th>#</th><th>Operation</th><th>Tool</th>${rotary ? '<th>Turned to</th>' : ''}${sides ? '<th>Side</th>' : ''}<th class="num">Time</th></tr></thead>
   <tbody>
   ${data.operations
     .map(
       (op, i) =>
-        `<tr><td class="check"><span class="box"></span></td><td>${i + 1}</td><td><span class="swatch" style="background:${color.get(op.id)}"></span>${esc(op.name)}</td><td>${esc(op.tool ?? '—')}</td>${rotary ? `<td>${esc(`${op.wrapped ? 'wrapped round from ' : ''}${turn(op.angles ?? [0])}`)}</td>` : ''}<td class="num">${duration(op.seconds)}</td></tr>`,
+        `<tr><td class="check"><span class="box"></span></td><td>${i + 1}</td><td><span class="swatch" style="background:${color.get(op.id)}"></span>${esc(op.name)}</td><td>${esc(op.tool ?? '—')}</td>${rotary ? `<td>${esc(`${op.wrapped ? 'wrapped round from ' : ''}${turn(op.angles ?? [0])}`)}</td>` : ''}${sides ? `<td>${op.side ?? ''}</td>` : ''}<td class="num">${duration(op.seconds)}</td></tr>`,
     )
     .join('\n  ')}
-  <tr><td></td><td></td><td><strong>Total</strong></td><td></td>${rotary ? '<td></td>' : ''}<td class="num"><strong>${duration(data.total)}</strong></td></tr>
+  <tr><td></td><td></td><td><strong>Total</strong></td><td></td>${rotary ? '<td></td>' : ''}${sides ? '<td></td>' : ''}<td class="num"><strong>${duration(data.total)}</strong></td></tr>
   </tbody>
 </table>
 

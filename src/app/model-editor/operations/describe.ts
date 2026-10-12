@@ -88,6 +88,14 @@ export function describeOperation(
     case 'flat-plug':
       what = `flat inlay plug ${stepped(operation)}`;
       break;
+    case 'flip': {
+      const along = operation.flipAlong === 'y' ? 'Y' : 'X';
+      if (!operation.dowels) {
+        return `turn the board over along ${along}`;
+      }
+      what = `turn the board over along ${along}, dowel holes first`;
+      break;
+    }
     case 'rotate':
       return `rotate to ${Math.round((+operation.angle || 0) * 1000) / 1000}°`;
     case 'rotary-repeat': {

@@ -112,6 +112,7 @@ import {
 } from './helpers/view-options';
 import { DEFAULT_WOOD } from '../../cam/feeds-speeds';
 import {
+  flipAxis,
   operationPointOnBlank,
   Rotary,
   rotaryOf,
@@ -137,6 +138,16 @@ const ARC_TOLERANCE = 0.01;
  * project's program makes), or there's none: ±200 mm.
  */
 const EMPTY_VIEW_SIZE = 400;
+
+/**
+ * Where paths cut with the stock turned are drawn: round the rotary axis
+ * it's on, or, cut on the back of a board turned over, round the line it
+ * turns over along (X or Y).
+ */
+type PathFrames = {
+  rotary: Rotary | null;
+  flips: Record<'x' | 'y', Rotary> | null;
+};
 
 @Component({
   selector: 'app-viewer',
@@ -1175,8 +1186,18 @@ export class ViewerComponent implements OnInit, OnDestroy {
     // `reuseUnchangedPaths`), so an unchanged group keeps its drawing.
     // Paths cut with the stock turned on a rotary axis are drawn where they
     // cut it, with the stock back at 0°.
+    // Paths cut on the back of a board turned over (a two-sided job) are
+    // drawn there too, as cuts with it turned half a turn (`flipAxis`).
     const rotary$ = this.stock$.pipe(
-      map((view) => (view ? rotaryOf(view.stock) : null)),
+      map(
+        (view): PathFrames | null =>
+          view && {
+            rotary: rotaryOf(view.stock),
+            flips: view.stock.enabled
+              ? { x: flipAxis(view.stock, 'x'), y: flipAxis(view.stock, 'y') }
+              : null,
+          },
+      ),
       distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
     this.paths$
@@ -1243,7 +1264,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             string,
             {
               paths: CamPath[];
-              rotary: Rotary | null;
+              rotary: PathFrames | null;
               draw$: Observable<never>;
             }
           >(),
@@ -1768,8 +1789,11 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
   private drawPaths(o: {
     paths: CamPath[];
-    /** The rotary axis the stock is on, for paths with it turned. */
-    rotary: Rotary | null;
+    /**
+     * The rotary axis the stock is on, for paths with it turned; the lines
+     * it turns over along, for paths cut on its back.
+     */
+    rotary: PathFrames | null;
     scene: Object3D;
     material: Material;
     materialHighlight: Material;
@@ -1797,19 +1821,26 @@ export class ViewerComponent implements OnInit, OnDestroy {
             // Each segment's feed rate (NaN where it isn't known).
             const feeds = new Float32Array(segments);
             // Where each path's points are drawn.
-            const drawn = o.paths.map((path) =>
-              !o.rotary
+            const drawn = o.paths.map((path) => {
+              const rotary = o.rotary?.rotary;
+              const flipped = path.flip && o.rotary?.flips?.[path.flip];
+              if (flipped) {
+                return path.points.map((p) =>
+                  operationPointOnBlank(flipped, 180, p),
+                );
+              }
+              return !rotary
                 ? path.points
                 : path.wrapped
                   ? path.points.map((p) =>
-                      wrappedPointOnBlank(o.rotary!, path.rotation ?? 0, p),
+                      wrappedPointOnBlank(rotary, path.rotation ?? 0, p),
                     )
                   : path.rotation !== undefined
                     ? path.points.map((p) =>
-                        operationPointOnBlank(o.rotary!, path.rotation!, p),
+                        operationPointOnBlank(rotary, path.rotation!, p),
                       )
-                    : path.points,
-            );
+                    : path.points;
+            });
             let at = 0;
             let segment = 0;
             o.paths.forEach((path, k) => {

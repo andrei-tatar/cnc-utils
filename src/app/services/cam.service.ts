@@ -75,6 +75,8 @@ import { ModelStore } from './model-store.service';
 import { WorkTracker } from './work-tracker.service';
 import { rotaryOf } from '../../cam/rotary';
 import {
+  jobFlip,
+  onBack,
   operationAngles,
   operationWrap,
 } from '../model-editor/operations/rotation';
@@ -380,6 +382,11 @@ export class CamService implements ShapeExporter {
             ? operationAngles(o, model.operations)
             : null,
           wrapped: !!rotaryOf(view.stock) && operationWrap(o, all),
+          side: jobFlip(model.operations, view.stock)
+            ? onBack(o, model.operations)
+              ? ('back' as const)
+              : ('front' as const)
+            : null,
           seconds: time.byOperation.get(o.id)!,
         };
       });

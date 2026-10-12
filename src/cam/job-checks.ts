@@ -40,6 +40,8 @@ export type CheckedOperation = {
   cutsOut: boolean;
   /** Leaves an onion skin, holding parts until the last pass. */
   onionSkin: boolean;
+  /** Meant to go into the spoilboard (dowel holes): not flagged for it. */
+  intoSpoilboard?: boolean;
 };
 
 /** A clamp or other zone the bit must keep away from. */
@@ -93,7 +95,11 @@ export function checkJob(input: JobCheckInput): JobWarning[] {
       warnings.push({ level, text: `${op.name}: ${text}`, operationId: op.id });
 
     // On a rotary axis, there's no spoilboard under the stock.
-    if (input.stock.enabled && input.stock.mount !== 'rotary') {
+    if (
+      input.stock.enabled &&
+      input.stock.mount !== 'rotary' &&
+      !op.intoSpoilboard
+    ) {
       const below = depth - input.stock.thickness;
       if (below > SPOILBOARD_TOLERANCE + 1e-6) {
         add('warning', `cuts ${mm(below)} into the spoilboard`);

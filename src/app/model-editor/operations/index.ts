@@ -15,7 +15,13 @@ import {
   ToolOverrides,
 } from '../tools/feeds-and-speeds';
 import { autoFeedsField, calculatedFeedExpressions } from './feeds-calculator';
-import { belongsToAnother, onRotary, operationRotation } from './rotation';
+import {
+  belongsToAnother,
+  onBack,
+  onRotary,
+  onTable,
+  operationRotation,
+} from './rotation';
 import { isTurned } from '../../../cam/rotary';
 
 import {
@@ -104,6 +110,11 @@ import {
 } from './operation-rotate';
 
 import {
+  Definition as FlipDefinition,
+  ModelType as FlipModelType,
+} from './operation-flip';
+
+import {
   ModelType as RotaryRepeatModelType,
   repeatAngles,
   rotaryRepeatDefinition,
@@ -128,11 +139,18 @@ const operations = [
   ReliefDefinition,
   ReliefRoughDefinition,
   RotateDefinition,
+  FlipDefinition,
 ];
 
 /** Rotate steps and rotary repeats: no tool, no shape, nothing cut. */
 const cutsNothing = (field: FormlyFieldConfig) =>
   NO_TOOL.has(field.model?.type);
+
+/** A flip step only uses a tool for its dowel holes, and never a shape. */
+const isFlip = (field: FormlyFieldConfig) =>
+  field.model?.type === FlipDefinition.type;
+const noTool = (field: FormlyFieldConfig) =>
+  cutsNothing(field) || (isFlip(field) && !field.model?.dowels);
 
 /** What an operation of `type` is called in the editor. */
 export function operationLabel(type: string | undefined): string {
@@ -173,6 +191,10 @@ const allowedBits: Record<
     needs: 'a ball nose (or another cutter, not a drill)',
   },
   [ReliefRoughDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
+  [FlipDefinition.type]: {
+    bits: [...ROUND_CUTTERS, 'drill'],
+    needs: 'a drill or an end mill for the dowel holes',
+  },
 };
 
 function allowsBit(type: string, bit: BitType) {
@@ -222,6 +244,7 @@ export type ModelType = {
         | ImageEngraveClearModelType
         | ReliefModelType
         | ReliefRoughModelType
+        | FlipModelType
         | RotateModelType
         | RotaryRepeatModelType
       )
@@ -245,6 +268,13 @@ function listProps(inner: boolean): FormlyFieldConfig['props'] {
     // operation (by the rotate steps above it), or how many angles a
     // rotary repeat cuts at.
     itemTag: (operation: any, field: FormlyFieldConfig) => {
+      // A two-sided job: what's cut on the back.
+      if (onTable(field) && !inner) {
+        return operation?.type !== FlipDefinition.type &&
+          onBack(operation, rootModel(field)?.operations ?? [])
+          ? 'back'
+          : null;
+      }
       if (!onRotary(field) || inner || operation?.type === 'rotate') {
         return null;
       }
@@ -325,7 +355,7 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
         },
       },
       expressions: {
-        hide: cutsNothing,
+        hide: noTool,
         'props.options': (field: FormlyFieldConfig) =>
           allTools(field).map((tool) => ({
             value: tool.id,
@@ -352,7 +382,9 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
         // Clearing, inlay plugs and rest machining use the shape of the
         // operation they belong to.
         hide: (field: FormlyFieldConfig) =>
-          borrowsShape.has(field.model?.type) || cutsNothing(field),
+          borrowsShape.has(field.model?.type) ||
+          cutsNothing(field) ||
+          isFlip(field),
         'props.options': (field: FormlyFieldConfig) => {
           const shapes = allShapes(field);
           return shapes.map((shape) => ({
@@ -376,7 +408,9 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
               (t) => t.id === field.model?.toolId,
             );
             return (
-              !tool || allowsBit(control.value, tool.bitType ?? 'end-mill')
+              !tool ||
+              noTool(field) ||
+              allowsBit(control.value, tool.bitType ?? 'end-mill')
             );
           },
           message: (_: unknown, field: FormlyFieldConfig) => {
@@ -397,10 +431,13 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
               (t) =>
                 t.type === field.model?.type ||
                 // Rotating only with the stock on a rotary axis, and not
-                // inside a rotary repeat.
+                // inside a rotary repeat; turning the board over only with
+                // it on the table.
                 (NO_TOOL.has(t.type)
                   ? !inner && onRotary(field)
-                  : allowsBit(t.type, bitType)),
+                  : t.type === FlipDefinition.type
+                    ? !inner && onTable(field)
+                    : allowsBit(t.type, bitType)),
             )
             .map((t) => ({ value: t.type, label: t.label }));
         },
@@ -444,7 +481,7 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
     ...types.map((t) => t.fieldGroup),
     // Only these ramp into their cuts.
     withHide(
-      cutsNothing,
+      noTool,
       operationFeedsAndSpeeds(
         { field: autoFeedsField, expressions: calculatedFeedExpressions },
         [

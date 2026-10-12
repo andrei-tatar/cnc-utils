@@ -76,6 +76,15 @@ describe('templates', () => {
             .toBeGreaterThan(0);
           continue;
         }
+        // A flip step: a tool for its dowel holes, no shape.
+        if (op.type === 'flip') {
+          if (op.dowels) {
+            expect(has(model.tools, op.toolId))
+              .withContext(`${where} tool`)
+              .toBeTrue();
+          }
+          continue;
+        }
         expect(has(model.tools, op.toolId))
           .withContext(`${where} tool`)
           .toBeTrue();
@@ -83,7 +92,12 @@ describe('templates', () => {
         expect(has(model.shapes, borrowedShapeId(op, operations)!))
           .withContext(`${where} shape`)
           .toBeTrue();
-        for (const key of ['vcarveOperationId', 'pocketOperationId']) {
+        for (const key of [
+          'vcarveOperationId',
+          'pocketOperationId',
+          'engraveOperationId',
+          'reliefOperationId',
+        ]) {
           if (op[key] !== undefined) {
             expect(has(operations, op[key]))
               .withContext(`${where} ${key}`)

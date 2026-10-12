@@ -535,6 +535,23 @@ export function imageEngraveClear(
   };
 }
 
+/** Turns the board over, drilling dowel holes with `toolId` first. */
+export function flip(
+  id: string,
+  toolId: string,
+  f: Fields<'flip'> = {},
+): Operation {
+  return {
+    ...base(id, toolId, ''),
+    type: 'flip',
+    flipAlong: 'x',
+    dowels: true,
+    dowelInset: 15,
+    dowelDepth: 6,
+    ...f,
+  };
+}
+
 /** A 3D relief from `file` (an image or STL data URL) on `shapeId`. */
 export function relief(
   id: string,

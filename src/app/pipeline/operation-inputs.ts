@@ -22,6 +22,9 @@ import {
   VCarveSource,
   vCarveSource,
 } from './vcarve-source';
+import { DowelHoles, dowelHoles } from './flip';
+import { jobFlip } from '../model-editor/operations/rotation';
+import { resolveStock } from '../../cam/stock';
 
 /** How an operation's tool appears in the G-code. */
 export type ToolInfo = {
@@ -52,6 +55,8 @@ export type OperationInputs = {
   imageEngrave: ImageEngraveSource | null;
   /** For a relief's roughing: the relief. */
   relief: ReliefSource | null;
+  /** For a flip step: the dowel holes it drills first, if it does. */
+  dowels: DowelHoles | null;
   /**
    * For a v-carve or inlay plug: the end mills clearing for it first (see
    * clearingsBefore).
@@ -78,7 +83,13 @@ export function operationInputs(
     wrap: ____,
     ...operationParameters
   }: OperationType,
-  { tools, operations }: Pick<ModelType, 'tools' | 'operations'>,
+  {
+    tools,
+    operations,
+    stock,
+  }: Pick<ModelType, 'tools' | 'operations'> & {
+    stock?: ModelType['stock'];
+  },
 ): OperationInputs {
   // The operation's own feeds and speeds win over its tool's.
   const found = tools.find((t) => t.id === toolId);
@@ -124,6 +135,7 @@ export function operationInputs(
     tools,
   );
   const relief = reliefSource(operationParameters, operations);
+  const dowels = flipDowels(operationParameters, operations, stock);
 
   const toolInfo: ToolInfo | null = tool
     ? {
@@ -147,6 +159,7 @@ export function operationInputs(
     flatPlug,
     imageEngrave,
     relief,
+    dowels,
     clearings:
       operationParameters.type === 'v-carve' ||
       operationParameters.type === 'inlay-plug'
@@ -155,4 +168,20 @@ export function operationInputs(
     toolInfo,
     enabled: !disabled,
   };
+}
+
+/** A flip step's dowel holes (see `dowelHoles`): null when it drills none. */
+function flipDowels(
+  operation: OperationParameters,
+  operations: ModelType['operations'],
+  stock: ModelType['stock'] | undefined,
+): DowelHoles | null {
+  if (operation.type !== 'flip' || !operation.dowels || !stock) {
+    return null;
+  }
+  const resolved = resolveStock(stock);
+  const along = jobFlip(operations, resolved);
+  return along
+    ? dowelHoles(resolved, along, operation.dowelInset, operation.dowelDepth)
+    : null;
 }

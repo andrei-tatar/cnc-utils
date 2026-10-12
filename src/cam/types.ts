@@ -68,6 +68,13 @@ export type CamPath = {
    */
   wrapped?: boolean;
   /**
+   * Cut with the board turned over along this axis (a two-sided job): its
+   * points are in the frame of the back, as the machine moves, and
+   * `rotation` is 180 — turning the board over is half a turn round its
+   * middle (see `flipAxis` in rotary.ts).
+   */
+  flip?: 'x' | 'y';
+  /**
    * Cuts only: the feed rate (mm/min) of the move to each point, one per
    * point (the first point's is the rate in effect where the path starts).
    */
