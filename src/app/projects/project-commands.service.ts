@@ -5,6 +5,8 @@ import { ConfirmDialogComponent } from '../model-editor/components/confirm-dialo
 import { Template } from '../templates';
 import { Project } from '.';
 import { ProjectNameDialogComponent } from './project-name-dialog.component';
+import { ShareLinkDialogComponent } from './share-link-dialog.component';
+import { shareLink, sharedProject, sharedProjectData } from '../share-link';
 
 /**
  * What the toolbar does to the project, with the dialogs it takes: saving,
@@ -40,6 +42,45 @@ export class ProjectCommands {
     ) {
       await this.store.openTemplate(template);
     }
+  }
+
+  /** Shows a link that opens a copy of the work, to send or keep. */
+  async share() {
+    const base = location.href.split('#')[0];
+    const link = await shareLink(this.store.value, base);
+    const ref = this.modals.open(ShareLinkDialogComponent, {
+      centered: true,
+      ariaLabelledBy: 'share-link-title',
+    });
+    ref.componentInstance.link = link;
+    await ref.result.catch(() => {});
+  }
+
+  /**
+   * Opens the project a share link brought (the page's address has it in
+   * its fragment), asking first if there's unsaved work; then takes it out
+   * of the address, so reloading doesn't open it again.
+   */
+  async openLinked() {
+    const data = sharedProjectData(location.hash);
+    if (!data) {
+      return;
+    }
+    history.replaceState(null, '', location.href.split('#')[0]);
+    await this.attempt('Couldn’t open the shared project', async () => {
+      const model = await sharedProject(data);
+      // Whether there's unsaved work is only known once that's settled.
+      await this.store.ready;
+      if (
+        await this.confirmReplace(
+          'Open the shared project?',
+          'The link’s project replaces the current one.',
+          'Open it',
+        )
+      ) {
+        this.store.openShared(model);
+      }
+    });
   }
 
   /** Opens a saved project, asking first if there's unsaved work. */

@@ -112,9 +112,15 @@ export class ModelStore {
       .pipe(switchMap(() => readModelFromNcFile()))
       .subscribe((model) => this.replace(model, null));
 
-    this.restoreProject(loadProjectId());
+    this.ready = this.restoreProject(loadProjectId());
     this.refreshProjects();
   }
+
+  /**
+   * Settles once the work is linked again to the saved project it belonged
+   * to (on start): until then, whether it has unsaved changes isn't known.
+   */
+  readonly ready: Promise<void>;
 
   get value(): ModelType {
     return this.model$.value;
@@ -140,6 +146,11 @@ export class ModelStore {
   /** Replaces the project with an empty one (as on a first visit). */
   clear() {
     this.replace(emptyModel(), null);
+  }
+
+  /** Replaces the project with one from a share link. */
+  openShared(model: ModelType) {
+    this.replace(model, null);
   }
 
   /** Replaces the project with a template one. */

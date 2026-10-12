@@ -7,6 +7,7 @@ import {
 } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { fromEvent } from 'rxjs';
 import { Highlight } from '../cam/types';
 import { ViewerComponent } from './viewer/viewer.component';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
@@ -65,6 +66,12 @@ export class AppComponent {
         'A page to print for the machine: stock, zero, tools in order, times and a drawing.',
     },
     {
+      id: 'share-link',
+      label: 'Share link',
+      description:
+        'A link that opens a copy of this project, to send or bookmark (nothing is uploaded).',
+    },
+    {
       id: 'cut-list',
       label: 'Cut list (.csv)',
       description:
@@ -83,6 +90,11 @@ export class AppComponent {
     this.store.replaced$
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.viewer().refit());
+    // Opened from a share link, or one pasted into this tab's address.
+    this.projects.openLinked();
+    fromEvent(window, 'hashchange')
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.projects.openLinked());
   }
 
   /**
@@ -123,6 +135,9 @@ export class AppComponent {
     switch (id) {
       case 'setup-sheet':
         this.cam.openSetupSheet();
+        break;
+      case 'share-link':
+        this.projects.share();
         break;
       case 'cut-list':
         this.cam.downloadCutList();
