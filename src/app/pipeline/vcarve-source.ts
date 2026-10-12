@@ -5,6 +5,10 @@ import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
 import type { ClearingTool } from '../../worker/work/route-vcarve-clearing';
 import type { ImageEngraveOptions } from '../../worker/work/route-image-engrave';
 import type { ModelType as ImageEngraveType } from '../model-editor/operations/operation-image-engrave';
+import type { ImagePlacementModel } from '../model-editor/operations/image-placement';
+import type { ModelType as ReliefType } from '../model-editor/operations/operation-relief';
+import type { ImageLayout } from '../../cam/image-engrave';
+import type { ReliefSourceOptions } from '../../worker/work/route-relief';
 
 /**
  * What a v-carve clearing borrows from the v-carve (or inlay plug) it
@@ -247,15 +251,7 @@ export function imageEngraveOptions(
 ): ImageEngraveOptions {
   return {
     image: op.image,
-    layout: {
-      fit: op.imageFit ?? 'contain',
-      scale: op.imageScale ?? 100,
-      alignX: op.imageAlignX ?? 'center',
-      alignY: op.imageAlignY ?? 'middle',
-      offsetX: op.imageOffsetX ?? 0,
-      offsetY: op.imageOffsetY ?? 0,
-      rotation: op.imageRotation ?? 0,
-    },
+    layout: imageLayoutOf(op),
     invert: !!op.invertImage,
     lightDepth: op.lightDepth ?? 0,
     darkDepth: op.darkDepth,
@@ -293,4 +289,54 @@ export function imageEngraveSource(
     shapeId: engraving.shapeId,
     engrave: imageEngraveOptions(engraving, tool),
   };
+}
+
+/** Where an operation's image (or relief) goes on its shape. */
+export function imageLayoutOf(op: Partial<ImagePlacementModel>): ImageLayout {
+  return {
+    fit: op.imageFit ?? 'contain',
+    scale: op.imageScale ?? 100,
+    alignX: op.imageAlignX ?? 'center',
+    alignY: op.imageAlignY ?? 'middle',
+    offsetX: op.imageOffsetX ?? 0,
+    offsetY: op.imageOffsetY ?? 0,
+    rotation: op.imageRotation ?? 0,
+  };
+}
+
+/** The relief a 3D relief operation carves, for routing. */
+export function reliefOptions(
+  op: Omit<ReliefType, 'type'>,
+): ReliefSourceOptions {
+  return {
+    file: op.reliefFile,
+    layout: imageLayoutOf(op),
+    invert: !!op.invertRelief,
+    depth: op.reliefDepth,
+    gamma: op.gamma ?? 1,
+    smoothing: op.smoothing ?? 0,
+    around: op.reliefAround ?? 'floor',
+    resolution: op.sampleStep,
+  };
+}
+
+/** What a relief's roughing takes from the relief. */
+export type ReliefSource = {
+  shapeId: string;
+  relief: ReliefSourceOptions;
+};
+
+/** For a relief's roughing: the relief (shape and surface). */
+export function reliefSource(
+  operation: OperationParameters,
+  operations: Operations,
+): ReliefSource | null {
+  if (operation.type !== 'relief-rough') {
+    return null;
+  }
+  const relief = operations.find((o) => o.id === operation.reliefOperationId);
+  if (relief?.type !== 'relief') {
+    return null;
+  }
+  return { shapeId: relief.shapeId, relief: reliefOptions(relief) };
 }

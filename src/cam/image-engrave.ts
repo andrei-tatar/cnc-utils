@@ -202,12 +202,37 @@ export function engraveRuns(
   image: Brightness,
   options: EngraveOptions,
 ): EngraveRun[] {
-  if (
-    !loops.length ||
-    !(options.spacing > 0) ||
-    !(options.sampleStep > 0) ||
-    !(options.darkDepth >= 0 && options.lightDepth >= 0)
-  ) {
+  if (!(options.darkDepth >= 0 && options.lightDepth >= 0)) {
+    return [];
+  }
+  return rasterRuns(loops, (p) => depthAt(image, p, options), {
+    ...options,
+    start: { x: options.placement.minX, y: options.placement.minY },
+  });
+}
+
+/** How `rasterRuns` lays its lines and samples them. */
+export type RasterRunOptions = Pick<
+  EngraveOptions,
+  'spacing' | 'angle' | 'sampleStep' | 'oneWay' | 'tolerance'
+> & {
+  /** The lines start from the end nearest this. */
+  start: CamPoint;
+};
+
+/**
+ * Raster lines over the area inside `loops` (closed, even-odd), each cut as
+ * deep as `depth` (mm, positive below the surface) says where it passes:
+ * sampled every `sampleStep`, then points the depth runs straight through
+ * (within `tolerance`) dropped. Stretches left at the surface are crossed
+ * in the air when long (`LIFT_OVER`).
+ */
+export function rasterRuns(
+  loops: CamPoint[][],
+  depth: (p: CamPoint) => number,
+  options: RasterRunOptions,
+): EngraveRun[] {
+  if (!loops.length || !(options.spacing > 0) || !(options.sampleStep > 0)) {
     return [];
   }
 
@@ -226,10 +251,7 @@ export function engraveRuns(
 
   const frameLoops = loops.map((loop) => loop.map(toFrame));
   const lines = rasterLines(frameLoops, 'x', options.spacing);
-  const start = toFrame({
-    x: options.placement.minX,
-    y: options.placement.minY,
-  });
+  const start = toFrame(options.start);
   const paths = rasterPaths(lines, frameLoops, 'x', start, options.oneWay);
 
   const runs: CamPoint3[][] = [];
@@ -268,7 +290,7 @@ export function engraveRuns(
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
       });
-      samples.push({ ...p, z: -depthAt(image, p, options) });
+      samples.push({ ...p, z: -depth(p) });
     }
 
     // Split off what's at the surface: always at the ends, inside a stretch

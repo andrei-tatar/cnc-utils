@@ -19,3 +19,4 @@ export * from './route-image-engrave';
 export * from './route-image-engrave-clearing';
 export * from './simulate-stock';
 export * from './simulate-rotary-stock';
+export * from './route-relief';

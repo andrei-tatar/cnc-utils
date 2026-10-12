@@ -10,6 +10,8 @@ import {
   ImageEngraveSource,
   imageEngraveOptions,
   PlugSource,
+  ReliefSource,
+  reliefOptions,
   RestSource,
   VCarveSource,
 } from './vcarve-source';
@@ -28,6 +30,7 @@ export type RoutingInputs = {
   rest: RestSource | null;
   flatPlug: FlatPlugSource | null;
   imageEngrave: ImageEngraveSource | null;
+  relief: ReliefSource | null;
   /** End mills clearing for a v-carve (or inlay plug) before it. */
   clearings: Clearing[];
   geometry: GeometrySettings;
@@ -71,6 +74,7 @@ function route({
   rest,
   flatPlug,
   imageEngrave,
+  relief,
   clearings,
   geometry,
   optimizeTravel,
@@ -308,6 +312,41 @@ function route({
         geometry,
         optimizeTravel,
         engrave: imageEngrave.engrave,
+        toolSize: diameter,
+        toolEngagement: op.toolEngagement,
+        depthPerStep: op.depthPerStep,
+        leaveStock: op.leaveStock ?? 0,
+        rampAngle,
+      });
+
+    case 'relief':
+      if (bitType === 'drill' || bitType === 'keyhole') {
+        return null;
+      }
+      return worker.routeRelief(shape, {
+        geometry,
+        relief: reliefOptions(op),
+        tool: {
+          bitType: bitType ?? 'end-mill',
+          diameter,
+          vAngle,
+          tipDiameter,
+          cornerRadius: tool.cornerRadius,
+        },
+        spacing: op.toolEngagement * diameter,
+        angle: op.rasterAngle ?? 0,
+        oneWay: !!op.allPassesInSameDirection,
+        crossPass: !!op.crossPass,
+      });
+
+    case 'relief-rough':
+      if (!relief || bitType === 'v-bit' || bitType === 'drill') {
+        return null;
+      }
+      return worker.routeReliefRough(shape, {
+        geometry,
+        optimizeTravel,
+        relief: relief.relief,
         toolSize: diameter,
         toolEngagement: op.toolEngagement,
         depthPerStep: op.depthPerStep,

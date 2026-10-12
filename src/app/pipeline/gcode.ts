@@ -282,6 +282,7 @@ function createOperationEntry(
     rest: input('rest').pipe(distinctJson()),
     flatPlug: input('flatPlug').pipe(distinctJson()),
     imageEngrave: input('imageEngrave').pipe(distinctJson()),
+    relief: input('relief').pipe(distinctJson()),
     clearings: input('clearings').pipe(distinctJson()),
     geometry: geometry$,
     optimizeTravel: optimizeTravel$,

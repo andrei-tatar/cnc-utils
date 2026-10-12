@@ -12,6 +12,7 @@ const FOLLOWS: Record<string, string> = {
   'v-carve-clear': 'vcarveOperationId',
   rest: 'pocketOperationId',
   'image-engrave-clear': 'engraveOperationId',
+  'relief-rough': 'reliefOperationId',
 };
 
 /**
