@@ -119,6 +119,7 @@ const field: FormlyFieldConfig = {
         label: 'commands',
         itemLabel: 'command',
         inline: true,
+        foldable: true,
         description:
           'SVG path commands, in order: upper case to a point, lower case by an offset from the last one.',
         headerActions: [importPathData],

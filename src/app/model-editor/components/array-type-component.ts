@@ -134,6 +134,12 @@ export type ItemAction = {
       }
     }
 
+    // props.foldable: a list inside an item that folds away.
+    .list_header--toggle {
+      cursor: pointer;
+      user-select: none;
+    }
+
     .list_title {
       font-size: 0.75rem;
       font-weight: 600;
@@ -485,11 +491,12 @@ export type ItemAction = {
       <div
         #header
         class="list_header"
-        (click)="collapsible && toggleCollapsed()"
-        [attr.role]="collapsible ? 'button' : null"
-        [attr.aria-expanded]="collapsible ? !collapsed : null"
+        [class.list_header--toggle]="foldable && !collapsible"
+        (click)="foldable && toggleCollapsed()"
+        [attr.role]="foldable ? 'button' : null"
+        [attr.aria-expanded]="foldable ? !collapsed : null"
       >
-        @if (collapsible) {
+        @if (foldable) {
           <span class="chevron" [class.open]="!collapsed"
             ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M6 3.5 10.5 8 6 12.5" /></svg
@@ -563,7 +570,7 @@ export type ItemAction = {
 
       <div
         class="list_items"
-        [class.collapsed]="collapsible && collapsed"
+        [class.collapsed]="foldable && collapsed"
         cdkDropList
         cdkDropListLockAxis="y"
         (cdkDropListDropped)="drop($event)"
@@ -799,7 +806,7 @@ export class ArrayTypeComponent
       field: this.field,
       items: this.model ?? [],
       add: async (item) => {
-        this.collapsed = this.collapsible ? false : this.collapsed;
+        this.collapsed = this.foldable ? false : this.collapsed;
         const id = await generateId();
         this.add(undefined, { ...item, id, expanded: false });
       },
@@ -835,8 +842,18 @@ export class ArrayTypeComponent
     });
   }
 
+  /** `props.collapsible`: a section of the editor, its state remembered. */
   get collapsible() {
     return this.props['collapsible'] === true;
+  }
+
+  /**
+   * Whether the header folds the items away: sections, and lists inside an
+   * item with `props.foldable` (a shape's points), open at first and not
+   * remembered.
+   */
+  get foldable() {
+    return this.collapsible || this.props['foldable'] === true;
   }
 
   /** `props.inline`: items are edited in place, one row each (variables). */
@@ -994,6 +1011,7 @@ export class ArrayTypeComponent
 
   toggleCollapsed() {
     this.collapsed = !this.collapsed;
+    if (!this.collapsible) return;
     const others = readCollapsedSections().filter((k) => k !== this.storageKey);
     writeCollapsedSections(
       this.collapsed ? [...others, this.storageKey] : others,
@@ -1002,7 +1020,7 @@ export class ArrayTypeComponent
 
   async addNewItem() {
     this.collapseAllItems();
-    this.collapsed = this.collapsible ? false : this.collapsed;
+    this.collapsed = this.foldable ? false : this.collapsed;
     const id = await generateId();
     this.add(undefined, this.inline ? { id } : { id, expanded: true });
   }

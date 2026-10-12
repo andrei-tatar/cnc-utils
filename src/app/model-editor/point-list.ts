@@ -9,7 +9,7 @@ export interface PointItem {
 
 /**
  * A list of points edited inline, one row per point: x and y as number
- * fields, so each can use variables. A list's own model is the list, so
+ * fields, so each can use variables. Its header folds it away. A list's own model is the list, so
  * hide expressions on it read its parent's (`field.parent.model`).
  */
 export function pointListField(
@@ -25,6 +25,7 @@ export function pointListField(
       label: 'points',
       itemLabel: 'point',
       inline: true,
+      foldable: true,
       ...props,
     },
     fieldArray: {

@@ -67,6 +67,7 @@ const field: FormlyFieldConfig = {
         label: 'with',
         itemLabel: 'shape',
         inline: true,
+        foldable: true,
         description:
           'For each part, the shape that goes with it, placed wherever the part is.',
       },

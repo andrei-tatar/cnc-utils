@@ -90,6 +90,7 @@ const field: FormlyFieldConfig = {
         label: 'parts',
         itemLabel: 'part',
         inline: true,
+        foldable: true,
         description:
           'Each a shape (after its transforms), how many, and whether it may turn 90° (leave off to keep the grain).',
       },

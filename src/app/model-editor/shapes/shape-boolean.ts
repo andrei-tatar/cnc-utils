@@ -47,6 +47,7 @@ const field: FormlyFieldConfig = {
         label: 'shapes',
         itemLabel: 'shape',
         inline: true,
+        foldable: true,
         description:
           'Combined in order: each shape with the result of the ones above it.',
       },
