@@ -1,5 +1,9 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
-import type { ItemAction } from '../components/array-type-component';
+import type {
+  HeaderAction,
+  ItemAction,
+} from '../components/array-type-component';
+import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { ShapeExporter } from './shape-export';
 import { resolvedModelOf } from '../variables/field';
 import { allShapes, describeShape } from './describe';
@@ -151,6 +155,23 @@ export const field: FormlyFieldConfig = {
       onTitle: 'Hide in the preview',
       offTitle: 'Hidden in the preview — click to show',
     },
+    headerActions: [
+      {
+        label: 'Import',
+        title:
+          'Import shapes from a saved project, with the operations that cut them',
+        icon: 'M8 2.5v7M5 6.5 8 9.5l3-3M2.5 10.5v3h11v-3',
+        async run({ injector }) {
+          const { ImportPartsDialogComponent } =
+            await import('../components/import-parts-dialog.component');
+          injector.get(NgbModal).open(ImportPartsDialogComponent, {
+            centered: true,
+            scrollable: true,
+            ariaLabelledBy: 'import-parts-title',
+          });
+        },
+      } satisfies HeaderAction,
+    ],
     itemActions: [
       {
         title: 'Export as SVG (mm), e.g. for a laser cutter',
