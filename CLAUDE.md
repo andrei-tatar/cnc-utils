@@ -15,6 +15,8 @@ A browser-based CAM tool (Angular 22, standalone components, zoneless change det
 - `npm run regression:check` — the regression harness (`scripts/regression/`, see its README): runs ~190 projects through the real pipelines in Node on the default branch and on the working tree, and compares shapes, toolpaths, tabs, the simulated material left, warnings and G-code. Differences known to be intended are listed with their reasons in `scripts/regression/accepted.json` (they show as notes). Rotary jobs are compared angle by angle (a heightmap per angle the stock is turned to).
 - Formatting via Prettier (`.prettierrc`); HTML uses the `angular` parser.
 
+**Works offline**: production builds register Angular's service worker (`provideServiceWorker` in `app.config.ts`, `ngsw-config.json`): the app's files — the kernel's `.wasm` too, matched without its `?v=` (`ignoreSearch`) — and the templates are fetched ahead, the fonts (Google Fonts, Fontsource on jsDelivr) kept once used. `UpdateNoticeComponent` offers to reload when a newer version has been fetched, and reloads when the kept copy can't be used. `firebase.json` keeps the service worker's own files (and the manifest) from being cached. The web app manifest (`public/manifest.webmanifest`, icons `icon-192.png` / `icon-512.png`) lets it be installed.
+
 Deployment is automated by GitHub Actions (`.github/workflows/firebase-hosting-*.yml`): PRs get preview channels, merges to the default branch deploy live.
 
 ## Architecture
