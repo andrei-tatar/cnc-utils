@@ -108,6 +108,6 @@ const field: FormlyFieldConfig = {
 
 export const Definition = {
   type: 'v-carve-clear',
-  label: 'v-carve clearing',
+  label: 'v-carve roughing',
   fieldGroup: field,
 } as const;

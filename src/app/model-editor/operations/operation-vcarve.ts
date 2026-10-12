@@ -109,7 +109,7 @@ const field: FormlyFieldConfig = {
           hideIfUnlimited(field) || singlePass(field),
         'props.description': (field: FormlyFieldConfig) =>
           clearedFirst(field)
-            ? 'only what the v-carve clearing before it leaves'
+            ? 'only what the v-carve roughing before it leaves'
             : '',
       },
     },
@@ -203,12 +203,12 @@ function maxDepthHint(field: FormlyFieldConfig): string {
   if (op?.unlimitedDepth) {
     return cleared
       ? `cleared first, so it carves the full V however deep the shape needs`
-      : `stops at the Ø${tool.diameter} mm bit's ${cone} mm cone where the shape is wider than the bit — add a v-carve clearing before this operation to carve the full V`;
+      : `stops at the Ø${tool.diameter} mm bit's ${cone} mm cone where the shape is wider than the bit — add a v-carve roughing before this operation to carve the full V`;
   }
   if (cleared) {
     return `cleared first, so it can go below the bit's ${cone} mm cone`;
   }
   return +op?.maxDepth > cone
-    ? `limited to ${cone} mm by the Ø${tool.diameter} mm bit — add a v-carve clearing before this operation to go deeper`
-    : `the bit can reach ${cone} mm; deeper needs a v-carve clearing first`;
+    ? `limited to ${cone} mm by the Ø${tool.diameter} mm bit — add a v-carve roughing before this operation to go deeper`
+    : `the bit can reach ${cone} mm; deeper needs a v-carve roughing first`;
 }

@@ -51,7 +51,7 @@ export function describeOperation(
       }`;
       break;
     case 'v-carve-clear':
-      what = 'v-carve clearing';
+      what = 'v-carve roughing';
       break;
     case 'drill':
       what = `drill ${total(operation.startDepth, operation.depth)}${

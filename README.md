@@ -59,7 +59,7 @@ End mills, ball noses, bull noses, V-bits, drills and keyhole cutters, each with
 | keyhole slot | keyhole cutter | plunge, run the slot, come back |
 | chamfer | V-bit | bevel the edges of a part or the rim of a hole |
 | v-carve | V-bit | depth following the shape's width, with sharp corners, a max depth and flat-bottom clearing — or a full V, or one pass along the centre line |
-| v-carve clearing | end mill | rough out a v-carve so the V-bit only finishes the walls |
+| v-carve roughing | end mill | rough out a v-carve so the V-bit only finishes the walls |
 | v-carve inlay plug, flat inlay plug | V-bit / end mill | the plug for a v-carved or flat-bottomed inlay |
 | image engraving, and its clearing | V-bit / end mill | engrave a picture, each line as deep as the image is dark |
 | rotate, rotary repeat | — | with the stock on a rotary axis: turn it, or cut a list of operations at several angles |

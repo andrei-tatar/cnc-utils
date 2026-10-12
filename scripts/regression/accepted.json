@@ -276,7 +276,8 @@
     "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
   },
   "vcarve-clear-depth-engagement": {
-    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+    "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none.",
+    "warnings": "The operation is called v-carve roughing now (was v-carve clearing): the same note under the new name."
   },
   "vcarve-clear-ramp": {
     "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
