@@ -1,6 +1,6 @@
 # CNC Utils
 
-A browser-based CAM tool for CNC routers: draw 2D shapes, define your bits and the operations that cut them, check the toolpaths and the simulated material in 3D, and download G-code. Everything runs locally in the browser — there's no backend and no account.
+A browser-based CAM tool for CNC routers: draw 2D shapes, define your bits and the operations that cut them, check the toolpaths and the simulated material in 3D, and download G-code. Everything runs locally in the browser — there's no backend and no account — and once loaded it works offline (it can be installed as an app).
 
 **Live:** https://cnc-utils.web.app
 
@@ -15,9 +15,9 @@ The editor is worked top to bottom:
 5. **Stock** — the material: its size, where the G-code's zero is, the wood, and whether it lies on the table or is held on a rotary axis.
 6. **G-code** — how the program is written.
 
-The 3D preview updates as you edit: shape outlines, toolpaths with arrows for the direction of travel, coloured by depth or by feed rate (click the legend, or C), the stock and the G-code's zero. Expand a shape or an operation to highlight it and its toolpaths. **Simulate** (S) shows the material left after every cut as a solid, at a quality you pick; the view options set the grid, its numbers and how the material looks (the stock's wood, grey clay, or the cuts coloured by depth). **Measure** (M) measures between two points. The preview also lists **checks before cutting**: cuts into the spoilboard, deeper than a bit's flutes or too heavy, corners a round bit leaves rounded, parts cut free without tabs, toolpaths near a clamp, and more.
+The 3D preview updates as you edit: shape outlines, toolpaths with arrows for the direction of travel, coloured by depth or by feed rate (click the legend, or C), the stock and the G-code's zero. Expand a shape or an operation to highlight it and its toolpaths. **Click a shape** in the preview to open it in the editor; drag it to move it, and drag its points (a polyline's, a point list's, path data's points and curve handles) to reshape it. **Simulate** (S) shows the material left after every cut as a solid, at a quality you pick; the view options set the grid, its numbers and how the material looks (the stock's wood, grey clay, or the cuts coloured by depth). **Measure** (M) measures between two points. The preview also lists **checks before cutting**: cuts into the spoilboard, deeper than a bit's flutes or too heavy, rapids into material not cut yet, the collet nut coming down onto the stock, uncut material above the flutes, corners a round bit leaves rounded, parts cut free without tabs, toolpaths near a clamp, and more.
 
-**Download G-code** saves a `.nc` file with the whole project embedded as a comment, so **Load .nc** restores it exactly. The G-code menu can also split the program into one file per tool, write a cut list, and open a printable setup sheet. Work is autosaved in the browser, can be saved as named projects (the project menu), and has undo / redo (Ctrl+Z, Ctrl+Shift+Z). **Templates** opens example projects, grouped by kind: boxes & casework, kitchen & gifts, signs & inlays, shop & machine, rotary axis.
+**Download G-code** saves a `.nc` file with the whole project embedded as a comment, so **Load .nc** restores it exactly. The G-code menu can also split the program into one file per tool, write a cut list, and open a printable setup sheet. Work is autosaved in the browser, can be saved as named projects (the project menu), and has undo / redo (Ctrl+Z, Ctrl+Shift+Z). **Share link** (in the G-code menu) gives a link that opens a copy of the project — the project travels in the link itself, never through a server. The shapes list's **Import** copies shapes from another saved project, optionally with the operations that cut them and their tools. **Templates** opens example projects, grouped by kind: boxes & casework, kitchen & gifts, signs & inlays, shop & machine, rotary axis.
 
 ### Variables and expressions
 
@@ -34,7 +34,8 @@ Every number field takes an expression: `width / 2 + 3`, `sqrt(2) * side`, `1/4i
 | text | any [Google Font](https://fonts.google.com/); size by cap height, spacing, alignment |
 | image trace | the outline of a picture's dark areas |
 | points / hole pattern | drill points in a grid, on a circle or listed |
-| box panel | a panel with finger joints |
+| panel with joints | a panel with finger joints, tenons or dovetails on its edges |
+| mortises, dado / groove | through slots for a panel's tenons; a groove as wide as a panel, for shelves and backs |
 | European hinge cup, bowtie | a 35 mm hinge cup with its screw holes; a butterfly key |
 | boolean | union, intersection, difference or xor of other shapes |
 | copy of a shape | another shape's result, for transforms of its own |
@@ -51,7 +52,7 @@ End mills, ball noses, bull noses, V-bits, drills and keyhole cutters, each with
 | Operation | Bit | |
 | --- | --- | --- |
 | profile | cutter | along the outline — outside, inside or on the line; climb or conventional; finishing pass, onion skin, arc lead-ins |
-| pocket | cutter | clear the inside, offset or raster, in depth steps |
+| pocket | cutter | clear the inside in depth steps: offset rings, raster lines, or adaptive (the bit never takes more than the stepover) |
 | rest machining | end mill | what a pocket's bigger bit couldn't reach |
 | flat | cutter | surface an area with parallel passes |
 | drill | any | holes at points or shape centres, with pecks, dwell, or canned cycles |
@@ -62,6 +63,8 @@ End mills, ball noses, bull noses, V-bits, drills and keyhole cutters, each with
 | v-carve roughing | end mill | rough out a v-carve so the V-bit only finishes the walls |
 | v-carve inlay plug, flat inlay plug | V-bit / end mill | the plug for a v-carved or flat-bottomed inlay |
 | image engraving, and its clearing | V-bit / end mill | engrave a picture, each line as deep as the image is dark |
+| 3D relief, and its roughing | ball nose / end mill | carve a relief from a height map (light high, dark deep) or an STL model, roughed out first with an end mill |
+| turn the board over | — | two-sided jobs: what's below it is cut on the back, with dowel holes to line the board up |
 | rotate, rotary repeat | — | with the stock on a rotary axis: turn it, or cut a list of operations at several angles |
 
 Items with problems (a missing value, a deleted tool or shape, the wrong bit…) are outlined in red, with a "to fix" count on their section.
