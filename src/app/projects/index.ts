@@ -6,6 +6,7 @@ import {
   transactionDone,
 } from '../services/app-db';
 import type { ModelType } from '../model-editor/model';
+import { migrateModel, storedModel } from '../model-editor/migrations';
 
 /**
  * Projects the user saved by name, kept in this browser (the app database).
@@ -39,17 +40,19 @@ export async function getProject(id: string): Promise<Project | null> {
 }
 
 /**
- * A saved project's model; undefined when there's no such project.
+ * A saved project's model, in the current format; undefined when there's no
+ * such project. Throws when it can't be read (`migrateModel()`).
  */
-export async function loadProject(id: string): Promise<unknown> {
+export async function loadProject(id: string): Promise<ModelType | undefined> {
   const db = await openAppDb();
   if (!db) return undefined;
-  return requestResult(
+  const stored = await requestResult(
     db
       .transaction(PROJECT_MODELS_STORE)
       .objectStore(PROJECT_MODELS_STORE)
       .get(id),
   );
+  return stored === undefined ? undefined : migrateModel(stored);
 }
 
 /** Saves (or replaces) a project and its model. */
@@ -63,7 +66,7 @@ export async function putProject(project: Project, model: ModelType) {
     'readwrite',
   );
   tx.objectStore(PROJECTS_STORE).put(project, project.id);
-  tx.objectStore(PROJECT_MODELS_STORE).put(model, project.id);
+  tx.objectStore(PROJECT_MODELS_STORE).put(storedModel(model), project.id);
   await transactionDone(tx);
 }
 

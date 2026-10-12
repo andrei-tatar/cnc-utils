@@ -1,5 +1,6 @@
 import { ModelType } from './model-editor/model';
 import { getModelMetadata, loadModelFromMetadata } from './store';
+import { migrateModel } from './model-editor/migrations';
 
 /** Where in a link's fragment the project is: `#project=…`. */
 const PREFIX = 'project=';
@@ -37,22 +38,24 @@ export function sharedProjectData(hash: string): string | null {
     : null;
 }
 
-/** The project a link's data holds. Throws when it holds none. */
+/**
+ * The project a link's data holds, in the current format. Throws when it
+ * holds none, or one this version of the app can't read.
+ */
 export async function sharedProject(data: string): Promise<ModelType> {
   const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-  let model: any;
+  let stored: unknown;
   try {
-    model = await loadModelFromMetadata(padded);
+    stored = await loadModelFromMetadata(padded);
   } catch {
     throw new Error('the link is cut short or damaged');
   }
-  if (
-    !model ||
-    typeof model !== 'object' ||
-    !Array.isArray(model.shapes) ||
-    !Array.isArray(model.operations)
-  ) {
+  if (!stored || typeof stored !== 'object') {
+    throw new Error('the link holds no project');
+  }
+  const model = migrateModel(stored);
+  if (!Array.isArray(model.shapes) || !Array.isArray(model.operations)) {
     throw new Error('the link holds no project');
   }
   return model;

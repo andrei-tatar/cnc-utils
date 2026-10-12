@@ -1,4 +1,6 @@
 import { emptyModel, ModelType } from '../model-editor/model';
+import { migrateModel, storedModel } from '../model-editor/migrations';
+import { reportError } from '../pipeline/errors';
 import {
   openAppDb,
   openedAppDb,
@@ -41,14 +43,24 @@ export async function preloadModel(): Promise<void> {
   }
 }
 
-/** The saved project, or an empty one. */
+/**
+ * The saved project, in the current format, or an empty one. One that can't
+ * be read (saved by a newer version of the app, in a tab not yet updated) is
+ * reported and opened as it is: an empty project would be saved over it.
+ */
 export function loadModel(): ModelType {
   const fallback = readFallback();
   const newest =
     preloaded && (!fallback || preloaded.savedAt >= fallback.savedAt)
       ? preloaded
       : fallback;
-  return (newest?.model as ModelType | undefined) ?? emptyModel();
+  if (!newest) return emptyModel();
+  try {
+    return migrateModel(newest.model);
+  } catch (error) {
+    reportError('opening the project', error);
+    return newest.model as ModelType;
+  }
 }
 
 /**
@@ -65,7 +77,7 @@ export function loadProjectId(): string | null {
 /** Saves the project; starts at once if the database is already open. */
 export async function saveModel(model: ModelType, projectId: string | null) {
   const saved: Saved = {
-    model,
+    model: storedModel(model),
     savedAt: Date.now(),
     ...(projectId ? { projectId } : {}),
   };
@@ -85,7 +97,7 @@ export async function saveModel(model: ModelType, projectId: string | null) {
     }
   }
   try {
-    localStorage.setItem(FALLBACK_KEY, JSON.stringify(model));
+    localStorage.setItem(FALLBACK_KEY, JSON.stringify(saved.model));
     localStorage.setItem(FALLBACK_SAVED_AT_KEY, String(saved.savedAt));
   } catch (error) {
     console.error('[model] could not save the project', error);

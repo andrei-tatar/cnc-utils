@@ -1,4 +1,6 @@
 import { loadModelFromGcode } from '../store';
+import type { ModelType } from '../model-editor/model';
+import { migrateModel } from '../model-editor/migrations';
 
 /**
  * Example projects offered in the toolbar's Templates menu: the .nc files in
@@ -41,16 +43,16 @@ export async function listTemplates(): Promise<Template[]> {
 }
 
 /** The project in a template's file. */
-export async function loadTemplate(template: Template): Promise<unknown> {
+export async function loadTemplate(template: Template): Promise<ModelType> {
   const response = await fetch(`templates/${template.file}`);
   if (!response.ok) {
     throw new Error(
       `Could not fetch template ${template.file}: ${response.status}`,
     );
   }
-  const model = await loadModelFromGcode(await response.text());
-  if (!model) {
+  const stored = await loadModelFromGcode(await response.text());
+  if (!stored) {
     throw new Error(`Template ${template.file} has no embedded project`);
   }
-  return model;
+  return migrateModel(stored);
 }

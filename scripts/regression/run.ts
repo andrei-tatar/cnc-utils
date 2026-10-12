@@ -31,8 +31,9 @@ import { checkClearances } from '../../src/cam/clearance';
 import { simulationInput } from '../../src/app/pipeline/simulation';
 import { simulateStock } from '../../src/worker/work/simulate-stock';
 import { resolveModel } from '../../src/app/model-editor/variables/resolve';
-import { ModelFieldConfig, ModelType } from '../../src/app/model-editor/model';
+import { ModelFieldConfig } from '../../src/app/model-editor/model';
 import { loadModelFromGcode } from '../../src/app/store';
+import { migrateModel } from '../../src/app/model-editor/migrations';
 import { CamPath, CamShape } from '../../src/cam/types';
 import { outlinePoints } from './outline';
 
@@ -124,14 +125,14 @@ async function allFixtures(): Promise<Fixture[]> {
     .readdirSync(dir)
     .filter((f) => f.endsWith('.nc'))
     .sort()) {
-    const model = (await loadModelFromGcode(
+    const stored = await loadModelFromGcode(
       fs.readFileSync(path.join(dir, file), 'utf8'),
-    )) as ModelType | null;
-    if (model) {
+    );
+    if (stored) {
       templates.push({
         name: `template-${file.replace(/\.nc$/, '')}`,
         covers: `template ${file}`,
-        model,
+        model: migrateModel(stored),
       });
     }
   }

@@ -1,8 +1,10 @@
 import { Injectable } from '@angular/core';
 import {
   BehaviorSubject,
+  catchError,
   combineLatest,
   debounceTime,
+  EMPTY,
   distinctUntilChanged,
   filter,
   fromEvent,
@@ -29,6 +31,7 @@ import { deepEqual, generateId } from '../../util';
 import { resolveStock } from '../../cam/stock';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
 import { loadModel, loadProjectId, saveModel } from './model-persistence';
+import { reportError } from '../pipeline/errors';
 /** Saving waits for a pause in editing (and happens when leaving). */
 const SAVE_DELAY = 500;
 
@@ -107,9 +110,19 @@ export class ModelStore {
       ),
     ).subscribe(() => this.persist());
 
-    // A new request cancels one still waiting for its file.
+    // A new request cancels one still waiting for its file. A file that
+    // can't be read is reported; the next request tries again.
     this.open$
-      .pipe(switchMap(() => readModelFromNcFile()))
+      .pipe(
+        switchMap(() =>
+          readModelFromNcFile().pipe(
+            catchError((error) => {
+              reportError('opening the .nc file', error);
+              return EMPTY;
+            }),
+          ),
+        ),
+      )
       .subscribe((model) => this.replace(model, null));
 
     this.ready = this.restoreProject(loadProjectId());
@@ -155,7 +168,7 @@ export class ModelStore {
 
   /** Replaces the project with a template one. */
   async openTemplate(template: Template) {
-    this.replace((await loadTemplate(template)) as ModelType, null);
+    this.replace(await loadTemplate(template), null);
   }
 
   /** The saved project the work belongs to, if any. */
@@ -205,7 +218,7 @@ export class ModelStore {
       await this.refreshProjects();
       throw new Error(`“${project.name}” is no longer saved.`);
     }
-    this.replace(stored as ModelType, project);
+    this.replace(stored, project);
   }
 
   /**
@@ -250,7 +263,7 @@ export class ModelStore {
     if (this.saved$.value !== placeholder) return;
     this.saved$.next(
       project && stored !== undefined
-        ? { project, model: snapshot(stored as ModelType) }
+        ? { project, model: snapshot(stored) }
         : null,
     );
   }

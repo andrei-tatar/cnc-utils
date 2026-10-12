@@ -40,7 +40,9 @@ export class ProjectCommands {
         'Replace project',
       )
     ) {
-      await this.store.openTemplate(template);
+      await this.attempt('Couldn’t open the template', () =>
+        this.store.openTemplate(template),
+      );
     }
   }
 

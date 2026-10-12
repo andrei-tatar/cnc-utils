@@ -198,11 +198,20 @@ export class ImportPartsDialogComponent implements OnInit {
     this.source.set(null);
     this.error.set('');
     if (!id) return;
-    const model = (await loadProject(id).catch(() => undefined)) as
-      ModelType | undefined;
+    let model: ModelType | undefined;
+    let problem = '';
+    try {
+      model = await loadProject(id);
+    } catch (error) {
+      problem = (error as Error)?.message ?? '';
+    }
     if (this.projectId() !== id) return;
     if (!model || !Array.isArray(model.shapes)) {
-      this.error.set('That project couldn’t be read.');
+      this.error.set(
+        problem
+          ? `That project couldn’t be read: ${problem}.`
+          : 'That project couldn’t be read.',
+      );
       return;
     }
     this.source.set(model);

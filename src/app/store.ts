@@ -1,9 +1,10 @@
 import { ModelType } from './model-editor/model';
+import { storedModel } from './model-editor/migrations';
 
 const MODEL_PREFIX = '; model=';
 
 export async function getModelMetadata(model: ModelType) {
-  const json = JSON.stringify(model);
+  const json = JSON.stringify(storedModel(model));
   const byteArray = new TextEncoder().encode(json);
   const cs = new CompressionStream('gzip');
 
@@ -27,9 +28,10 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** The project as stored: to read through `migrateModel()`. */
 export async function loadModelFromMetadata(
   metadata: string,
-): Promise<ModelType> {
+): Promise<unknown> {
   const binaryString = atob(metadata);
 
   const length = binaryString.length;
@@ -52,7 +54,8 @@ export async function loadModelFromMetadata(
 }
 
 /**
- * The project embedded in a .nc file's text, or null when it has none.
+ * The project embedded in a .nc file's text, as stored (to read through
+ * `migrateModel()`), or null when it has none.
  */
 export async function loadModelFromGcode(
   content: string,

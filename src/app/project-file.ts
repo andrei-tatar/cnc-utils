@@ -1,6 +1,7 @@
-import { EMPTY, from, Observable, switchMap } from 'rxjs';
+import { EMPTY, map, Observable, of, switchMap } from 'rxjs';
 import { readFile } from '../util';
 import { ModelType } from './model-editor/model';
+import { migrateModel } from './model-editor/migrations';
 import { loadModelFromGcode } from './store';
 
 /** Saves `data` as a file through the browser's download. */
@@ -38,6 +39,7 @@ export function readModelFromNcFile(): Observable<ModelType> {
   return readFile().pipe(
     switchMap((file) => file.text()),
     switchMap((content) => loadModelFromGcode(content)),
-    switchMap((model) => (model ? from([model as ModelType]) : EMPTY)),
+    switchMap((stored) => (stored ? of(stored) : EMPTY)),
+    map(migrateModel),
   );
 }
