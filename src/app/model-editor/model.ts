@@ -56,6 +56,7 @@ export type ToolParameters = OmitUnion<
   | 'feedRate'
   | 'plungeFeedRate'
   | 'fluteLength'
+  | 'stickout'
   | 'flutes'
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [

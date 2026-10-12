@@ -58,6 +58,11 @@ export type ToolType = {
   flutes?: number;
   /** How long its cutting edge is (mm): deeper cuts are flagged. */
   fluteLength?: number | null;
+  /**
+   * How far it sticks out of the collet nut (mm): where the nut would come
+   * down onto the material is flagged.
+   */
+  stickout?: number | null;
   /** Keyhole: the diameter of the neck above its head (mm). */
   neckDiameter?: number;
   /** Keyhole: how tall its head is (mm). */
@@ -371,6 +376,16 @@ export const field: FormlyFieldConfig = {
           label: 'flute length',
           description:
             'mm of cutting edge; deeper cuts are flagged (blank: not checked)',
+        },
+      },
+      {
+        key: 'stickout',
+        type: 'number',
+        props: {
+          min: 0,
+          label: 'sticks out',
+          description:
+            'mm from the collet nut to the tip; where the nut would meet the material is flagged (blank: not checked)',
         },
       },
       {

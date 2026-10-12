@@ -55,23 +55,7 @@ export function simulateStock(
   stock: SimulatedStock,
   maxCells = 400_000,
 ): Heightmap {
-  const width = Math.max(stock.maxX - stock.minX, 1e-6);
-  const height = Math.max(stock.maxY - stock.minY, 1e-6);
-  const cell = Math.max(MIN_CELL, Math.sqrt((width * height) / maxCells));
-  const nx = Math.max(1, Math.ceil(width / cell));
-  const ny = Math.max(1, Math.ceil(height / cell));
-  const heights = new Float32Array(nx * ny).fill(stock.top);
-  const map: Heightmap = {
-    minX: stock.minX,
-    minY: stock.minY,
-    cell,
-    nx,
-    ny,
-    heights,
-    top: stock.top,
-    bottom: stock.bottom,
-  };
-
+  const map = blankHeightmap(stock, maxCells);
   for (const path of paths) {
     if (path.type !== 'carve' || !path.sourceOperationId) continue;
     const tool = tools[path.sourceOperationId];
@@ -82,11 +66,38 @@ export function simulateStock(
       sweep(map, points[i - 1], points[i], tool.diameter / 2, profile);
     }
   }
-
-  for (let i = 0; i < heights.length; i++) {
-    if (heights[i] < stock.bottom) heights[i] = stock.bottom;
-  }
+  floorAt(map, stock.bottom);
   return map;
+}
+
+/** `stock` uncut, on about `maxCells` square cells. */
+export function blankHeightmap(
+  stock: SimulatedStock,
+  maxCells = 400_000,
+): Heightmap {
+  const width = Math.max(stock.maxX - stock.minX, 1e-6);
+  const height = Math.max(stock.maxY - stock.minY, 1e-6);
+  const cell = Math.max(MIN_CELL, Math.sqrt((width * height) / maxCells));
+  const nx = Math.max(1, Math.ceil(width / cell));
+  const ny = Math.max(1, Math.ceil(height / cell));
+  return {
+    minX: stock.minX,
+    minY: stock.minY,
+    cell,
+    nx,
+    ny,
+    heights: new Float32Array(nx * ny).fill(stock.top),
+    top: stock.top,
+    bottom: stock.bottom,
+  };
+}
+
+/** Nothing below `bottom`: the stock ends there. */
+function floorAt(map: Heightmap, bottom: number) {
+  const { heights } = map;
+  for (let i = 0; i < heights.length; i++) {
+    if (heights[i] < bottom) heights[i] = bottom;
+  }
 }
 
 /** How far above the tip the bit's surface is, `d` from its axis. */
@@ -118,7 +129,7 @@ export function toolProfile(tool: SimulatedTool): (d: number) => number {
 }
 
 /** Lowers the material where the bit passes from `a` to `b`. */
-function sweep(
+export function sweep(
   map: Heightmap,
   a: CamPoint3,
   b: CamPoint3,
@@ -149,7 +160,13 @@ function sweep(
     const row = j * nx;
     for (let i = i0; i <= i1; i++) {
       const x = minX + (i + 0.5) * cell;
-      let t = lengthSq > 0 ? ((x - a.x) * dx + (y - a.y) * dy) / lengthSq : 0;
+      // Straight up or down, the bit is lowest at the bottom of the move.
+      let t =
+        lengthSq > 0
+          ? ((x - a.x) * dx + (y - a.y) * dy) / lengthSq
+          : dz < 0
+            ? 1
+            : 0;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       const px = a.x + dx * t - x;
       const py = a.y + dy * t - y;

@@ -114,6 +114,7 @@ export function operationInputs(
         feedRate: _____,
         plungeFeedRate: ______,
         fluteLength: ________,
+        stickout: __________,
         flutes: _________,
         ...parameters
       }) => parameters)(tool)

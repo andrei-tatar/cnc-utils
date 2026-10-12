@@ -199,7 +199,8 @@
     "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
   },
   "transform-centers": {
-    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords."
+    "warnings": "Rounded-corner counts changed: master's check missed corners lying on a part's own outline (a rectangle pocket reported 1 of its 4), and curves now come in as arcs, not chords.",
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
   },
   "transform-chain": {
     "shape": "Fillets and dogbones are made on exact arcs: master's, on chorded circles, came out tiny and differed between copies.",
@@ -318,5 +319,50 @@
   },
   "vcarve-two-clearings": {
     "material left": "V-carve passes follow exact offsets of arcs rather than chords: walls differ by up to ~0.3 mm. Against an ideal V (vcarve-sharp-corner-angle-175) both are as close on average (RMS 0.086 mm), but master gouged 381 cells and the new paths none."
+  },
+  "drill-centers-circles": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "drill-cycles": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "drill-full-diameter": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "drill-peck-chip-break": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "drill-peck-full-retract": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "drill-points-grid": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "drill-points-skips-centers": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "gcode-optimize-travel-off": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "gcode-optimize-travel-on": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "operation-disabled": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "shape-hinge-cup": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "shape-hinge-cup-custom": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "shape-points-grid": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "shape-points-list": {
+    "material left": "The simulation cut a move straight up or down at its start, so plunges were never cut: drilled holes (and other straight plunges) left the material uncut. It now cuts them down to the bottom of the move: the holes are there."
+  },
+  "template-scorpion-medallion": {
+    "material left": "The simulation now cuts a move straight down to its bottom (it stopped at its top): where the engraving steps down into a groove, the V-bit's plunge is cut too, a few hundredths of a millimetre deeper at a few cells."
   }
 }

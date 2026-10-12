@@ -15,6 +15,7 @@ import {
   ReplaySubject,
   share,
   shareReplay,
+  startWith,
   Subject,
   withLatestFrom,
 } from 'rxjs';
@@ -64,15 +65,17 @@ import {
   simulationInput,
 } from '../pipeline/simulation';
 import worker from '../../worker';
-import { jobChecks } from '../pipeline/job-checks';
+import {
+  clearanceInput,
+  jobChecks,
+  withClearances,
+} from '../pipeline/job-checks';
+import type { ClearanceReport } from '../../cam/clearance';
 import { numberedToolLabel } from '../model-editor/tools';
 import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { resolveModel } from '../model-editor/variables/resolve';
-import {
-  ShapeEditing,
-  shapeEditing,
-} from '../model-editor/shape-editing';
+import { ShapeEditing, shapeEditing } from '../model-editor/shape-editing';
 import { ShapeExporter } from '../model-editor/shapes/shape-export';
 import { collapsedSections$ } from '../model-editor/components/collapsed-sections';
 import { ModelStore } from './model-store.service';
@@ -147,15 +150,59 @@ export class CamService implements ShapeExporter {
     shareReplay({ bufferSize: 1, refCount: true }),
   );
 
+  /**
+   * What the job's moves run into, checked against the material in the
+   * worker (see `checkClearances`): null until it's done, and when it
+   * can't be checked.
+   */
+  private readonly clearances$: Observable<ClearanceReport | null> =
+    combineLatest([this.paths$, this.model$]).pipe(
+      debounceTime(500),
+      map(([paths, model]) => ({ paths, input: clearanceInput(paths, model) })),
+      // Edits that change neither the moves, their bits nor the stock
+      // don't check again.
+      distinctUntilChanged(
+        (a, b) =>
+          a.paths.length === b.paths.length &&
+          a.paths.every((path, i) => path === b.paths[i]) &&
+          JSON.stringify(a.input) === JSON.stringify(b.input),
+      ),
+      switchMap(({ paths, input }) =>
+        input
+          ? worker
+              .jobClearances(
+                paths,
+                input.tools,
+                input.stock,
+                input.holderDiameter,
+              )
+              .pipe(
+                recover<ClearanceReport | null>(
+                  'checking the moves against the material',
+                  () => null,
+                ),
+                startWith(null),
+              )
+          : of(null),
+      ),
+      shareReplay({ bufferSize: 1, refCount: true }),
+    );
+
   /** What to look at before cutting (see `checkJob`), warnings first. */
   readonly warnings$: Observable<JobWarning[]> = combineLatest([
-    this.model$,
-    this.paths$,
-    this.shapes$,
+    combineLatest([this.model$, this.paths$, this.shapes$]).pipe(
+      // Shapes and paths settle one after the other: check once they have.
+      debounceTime(150),
+      map(([model, paths, shapes]) => ({
+        model,
+        warnings: jobChecks(model, paths, shapes),
+      })),
+    ),
+    this.clearances$,
   ]).pipe(
-    // Shapes and paths settle one after the other: check once they have.
-    debounceTime(150),
-    map(([model, paths, shapes]) => jobChecks(model, paths, shapes)),
+    map(([{ model, warnings }, clearances]) =>
+      withClearances(warnings, clearances, model),
+    ),
     distinctJson(),
     shareReplay({ bufferSize: 1, refCount: true }),
   );

@@ -65,3 +65,31 @@ describe('simulateStock', () => {
     expect(ball(3)).toBeCloseTo(3);
   });
 });
+
+describe('simulating a plunge', () => {
+  it('cuts down to the bottom of a move straight down', () => {
+    const map = simulateStock(
+      [
+        {
+          type: 'carve',
+          sourceShapeId: 's',
+          sourceOperationId: 'o',
+          points: [
+            { x: 30, y: 30, z: 0 },
+            { x: 30, y: 30, z: -10 },
+          ],
+        },
+      ],
+      { o: { bitType: 'end-mill', diameter: 6 } },
+      { minX: 0, minY: 0, maxX: 60, maxY: 60, top: 0, bottom: -20 },
+      10_000,
+    );
+    const at = (x: number, y: number) =>
+      map.heights[
+        Math.floor((y - map.minY) / map.cell) * map.nx +
+          Math.floor((x - map.minX) / map.cell)
+      ];
+    expect(at(30, 30)).toBeCloseTo(-10, 6);
+    expect(at(40, 30)).toBe(0);
+  });
+});

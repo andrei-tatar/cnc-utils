@@ -1,5 +1,9 @@
 import { hasArcs } from '../../cam/arcs';
 import { CheckedOperation, checkJob, JobWarning } from '../../cam/job-checks';
+import type { ClearanceReport, ClearanceTool } from '../../cam/clearance';
+import { machineById } from '../../cam/feeds-speeds';
+import { SimulatedStock } from '../../cam/simulate';
+import { simulationInput } from './simulation';
 import { resolveStock } from '../../cam/stock';
 import { CamPath, CamShape } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
@@ -145,4 +149,120 @@ export function jobChecks(
         })),
     }),
   ];
+}
+
+/** What `checkClearances` needs, or null when there's nothing it can check. */
+export type ClearanceInput = {
+  tools: Record<string, ClearanceTool>;
+  stock: SimulatedStock;
+  holderDiameter: number;
+};
+
+/**
+ * What checking the moves against the material needs (see
+ * `checkClearances`): each operation's bit with its flute length and how
+ * far it sticks out, the block of material, and the machine's collet nut.
+ * Null on a rotary axis or with the board turned over (cut from more than
+ * one side), or with nothing to cut.
+ */
+export function clearanceInput(
+  paths: CamPath[],
+  model: ModelType,
+): ClearanceInput | null {
+  const input = simulationInput(paths, model);
+  if (!input || input.rotary) {
+    return null;
+  }
+  const tools: Record<string, ClearanceTool> = {};
+  for (const op of cutOperations(model.operations)) {
+    const bit = input.tools[op.id];
+    const tool = model.tools.find((t) => t.id === op.toolId);
+    if (!bit || !tool) continue;
+    tools[op.id] = {
+      ...bit,
+      fluteLength: tool.fluteLength ?? null,
+      stickout: tool.stickout ?? null,
+    };
+  }
+  return {
+    tools,
+    stock: input.stock,
+    holderDiameter: machineById(model.gcode?.machine).nutDiameter,
+  };
+}
+
+/**
+ * The job checks with what checking the moves against the material found
+ * (`report`, null while it's not done): rapids into uncut material and the
+ * collet nut on the material as warnings; a cut past the flutes kept as a
+ * warning where uncut material rises above them, a note where earlier cuts
+ * had cleared it.
+ */
+export function withClearances(
+  warnings: JobWarning[],
+  report: ClearanceReport | null,
+  model: ModelType,
+): JobWarning[] {
+  if (!report) {
+    return warnings;
+  }
+  const operations = flatOperations(model.operations);
+  const name = (id: string) => {
+    const op: any = operations.find((o: any) => o.id === id);
+    return op
+      ? op.name || describeOperation(op, model.shapes, model.tools, operations)
+      : 'An operation';
+  };
+  const mm = (value: number) => `${Math.round(value * 10) / 10} mm`;
+  const near = (p: { x: number; y: number }) =>
+    `near X ${Math.round(p.x)} Y ${Math.round(p.y)}`;
+  const shank = new Map(
+    report.problems
+      .filter((p) => p.kind === 'shank')
+      .map((p) => [p.operationId, p]),
+  );
+  const checked = new Set(report.shankChecked);
+  const refined = warnings.map((w) => {
+    if (w.kind !== 'flutes' || !w.operationId || !checked.has(w.operationId)) {
+      return w;
+    }
+    const problem = shank.get(w.operationId);
+    return problem
+      ? {
+          ...w,
+          text: `${w.text}: uncut material rises ${mm(problem.depth)} above them (${near(problem.at)})`,
+        }
+      : {
+          ...w,
+          level: 'note' as const,
+          text: `${w.text}, only where earlier cuts cleared the way above them`,
+        };
+  });
+  const found: JobWarning[] = report.problems.flatMap((p) => {
+    const times = p.count > 1 ? ` (${p.count} times)` : '';
+    switch (p.kind) {
+      case 'rapid':
+        return [
+          {
+            level: 'warning' as const,
+            text: `${name(p.operationId)}: a rapid move goes ${mm(p.depth)} into material that isn’t cut yet${times}, ${near(p.at)}`,
+            operationId: p.operationId,
+          },
+        ];
+      case 'holder':
+        return [
+          {
+            level: 'warning' as const,
+            text: `${name(p.operationId)}: the collet nut comes ${mm(p.depth)} down onto the material${times}, ${near(p.at)}: let the bit stick out further`,
+            operationId: p.operationId,
+          },
+        ];
+      default:
+        return [];
+    }
+  });
+  // Warnings first.
+  return [...found, ...refined].sort(
+    (a, b) => (a.level === 'warning' ? 0 : 1) - (b.level === 'warning' ? 0 : 1),
+  );
 }
