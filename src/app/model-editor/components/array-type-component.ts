@@ -1,5 +1,6 @@
 import {
   AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   inject,
@@ -20,9 +21,11 @@ import { rootModel } from '../shapes/describe';
 import { resolvedItem } from '../variables/field';
 import { ConfirmDialogComponent } from './confirm-dialog.component';
 import {
+  collapsedSections$,
   readCollapsedSections,
   writeCollapsedSections,
 } from './collapsed-sections';
+import { Subscription } from 'rxjs';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 
 /**
@@ -609,6 +612,7 @@ export type ItemAction = {
           } @else {
             <div
               class="item"
+              [attr.data-item-id]="field.model.id"
               [class.item--expanded]="field.model.expanded"
               [class.item--invalid]="problems.length"
               [class.item--off]="isOff(field.model)"
@@ -772,6 +776,9 @@ export class ArrayTypeComponent
 {
   private modals = inject(NgbModal);
   private injector = inject(Injector);
+  private changes = inject(ChangeDetectorRef);
+  /** Following the collapsed sections, opened from elsewhere too. */
+  private collapsedSync?: Subscription;
   collapsed = false;
 
   @ViewChild('header', { static: true })
@@ -891,6 +898,7 @@ export class ArrayTypeComponent
 
   ngOnDestroy() {
     this.headerObservers.forEach((o) => o.disconnect());
+    this.collapsedSync?.unsubscribe();
   }
 
   /**
@@ -911,6 +919,14 @@ export class ArrayTypeComponent
   ngOnInit() {
     if (this.collapsible) {
       this.collapsed = readCollapsedSections().includes(this.storageKey);
+      // The preview opens the shapes when a shape is clicked there.
+      this.collapsedSync = collapsedSections$.subscribe((keys) => {
+        const collapsed = keys.includes(this.storageKey);
+        if (collapsed !== this.collapsed) {
+          this.collapsed = collapsed;
+          this.changes.markForCheck();
+        }
+      });
     }
   }
 

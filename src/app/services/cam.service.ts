@@ -69,6 +69,10 @@ import { numberedToolLabel } from '../model-editor/tools';
 import { getModelMetadata } from '../store';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { resolveModel } from '../model-editor/variables/resolve';
+import {
+  ShapeEditing,
+  shapeEditing,
+} from '../model-editor/shape-editing';
 import { ShapeExporter } from '../model-editor/shapes/shape-export';
 import { collapsedSections$ } from '../model-editor/components/collapsed-sections';
 import { ModelStore } from './model-store.service';
@@ -100,9 +104,23 @@ export class CamService implements ShapeExporter {
    * expressions in number fields. Changing a variable re-emits it, and the
    * pipelines below then re-run whatever its new value changes.
    */
-  private readonly model$: Observable<ModelType> = this.store.changes$.pipe(
-    map((model) => resolveModel(model, ModelFieldConfig)),
+  private readonly resolved$ = this.store.changes$.pipe(
+    map((raw) => ({ raw, model: resolveModel(raw, ModelFieldConfig) })),
     shareReplay({ bufferSize: 1, refCount: false }),
+  );
+  private readonly model$: Observable<ModelType> = this.resolved$.pipe(
+    map(({ model }) => model),
+    shareReplay({ bufferSize: 1, refCount: false }),
+  );
+
+  /**
+   * The shape open in the editor, which the preview edits, with the points
+   * of it that can be dragged there (see `shapeEditing`).
+   */
+  readonly editing$: Observable<ShapeEditing | null> = this.resolved$.pipe(
+    map(({ raw, model }) => shapeEditing(raw, model)),
+    distinctJson(),
+    shareReplay({ bufferSize: 1, refCount: true }),
   );
 
   private readonly shapes = generateShapesFromModel(

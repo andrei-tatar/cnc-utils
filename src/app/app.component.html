@@ -47,6 +47,10 @@
       (simulateChange)="cam.simulate$.next($event)"
       [simulationQuality]="(cam.simulationQuality$ | async) ?? 'standard'"
       (simulationQualityChange)="cam.setSimulationQuality($event)"
+      [editing]="cam.editing$ | async"
+      (shapeSelect)="onShapeSelect($event)"
+      (shapeMove)="onShapeMove($event)"
+      (pointMove)="onPointMove($event)"
     />
   </div>
 </div>
