@@ -82,9 +82,12 @@ export function checkJob(input: JobCheckInput): JobWarning[] {
   for (const op of input.operations) {
     const paths = byOperation.get(op.id) ?? [];
     if (!paths.length) continue;
-    const deepest = Math.min(
-      ...paths.map((p) => Math.min(...p.points.map((q) => q.z))),
-    );
+    // A loop: a path can have more points than a call takes arguments (a
+    // relief's raster stays down from line to line).
+    let deepest = Infinity;
+    for (const path of paths) {
+      for (const p of path.points) deepest = Math.min(deepest, p.z);
+    }
     const depth = -deepest;
     const add = (level: JobWarning['level'], text: string) =>
       warnings.push({ level, text: `${op.name}: ${text}`, operationId: op.id });

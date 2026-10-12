@@ -79,6 +79,12 @@ export function describeOperation(
     case 'image-engrave-clear':
       what = 'image engraving clearing';
       break;
+    case 'relief':
+      what = `3D relief ${mm(+operation.reliefDepth || 0)}`;
+      break;
+    case 'relief-rough':
+      what = '3D relief roughing';
+      break;
     case 'flat-plug':
       what = `flat inlay plug ${stepped(operation)}`;
       break;
@@ -127,7 +133,9 @@ export function borrowedShapeId(
         ? operation.pocketOperationId
         : operation?.type === 'image-engrave-clear'
           ? operation.engraveOperationId
-          : null;
+          : operation?.type === 'relief-rough'
+            ? operation.reliefOperationId
+            : null;
   if (!from) {
     return operation?.shapeId;
   }

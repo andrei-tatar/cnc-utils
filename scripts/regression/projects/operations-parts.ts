@@ -535,6 +535,56 @@ export function imageEngraveClear(
   };
 }
 
+/** A 3D relief from `file` (an image or STL data URL) on `shapeId`. */
+export function relief(
+  id: string,
+  toolId: string,
+  shapeId: string,
+  file: string,
+  f: Fields<'relief'> = {},
+): Operation {
+  return {
+    ...base(id, toolId, shapeId),
+    type: 'relief',
+    reliefFile: file,
+    imageFit: 'contain',
+    imageScale: 100,
+    imageAlignX: 'center',
+    imageAlignY: 'middle',
+    imageOffsetX: 0,
+    imageOffsetY: 0,
+    reliefDepth: 3,
+    invertRelief: false,
+    gamma: 1,
+    smoothing: 0,
+    reliefAround: 'floor',
+    toolEngagement: 0.1,
+    rasterAngle: 0,
+    sampleStep: 0.2,
+    allPassesInSameDirection: false,
+    crossPass: false,
+    ...f,
+  };
+}
+
+/** Roughing for relief `reliefOperationId`. */
+export function reliefRough(
+  id: string,
+  toolId: string,
+  reliefOperationId: string,
+  f: Fields<'relief-rough'> = {},
+): Operation {
+  return {
+    ...base(id, toolId, ''),
+    type: 'relief-rough',
+    reliefOperationId,
+    toolEngagement: 0.4,
+    depthPerStep: 1,
+    leaveStock: 0.3,
+    ...f,
+  };
+}
+
 export function vCarveClear(
   id: string,
   toolId: string,

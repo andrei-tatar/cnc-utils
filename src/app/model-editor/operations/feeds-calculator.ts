@@ -72,6 +72,7 @@ export function operationCut(
     }
     case 'v-carve-clear':
     case 'image-engrave-clear':
+    case 'relief-rough':
       depth = op.depthPerStep ?? 0;
       engagement = op.toolEngagement ?? 1;
       break;
@@ -84,6 +85,12 @@ export function operationCut(
       break;
     case 'inlay-plug':
       depth = vCarveDepth(borrowed(op.vcarveOperationId), tool);
+      break;
+    case 'relief':
+      // Down a slope the bit cuts as deep as its tip goes into it: no
+      // deeper than the relief, and a ball nose no more than its radius.
+      depth = Math.min(op.reliefDepth ?? 0, diameter / 2);
+      engagement = op.toolEngagement ?? 1;
       break;
     case 'image-engrave':
       // Its deepest, where the image is black (or white, inverted).

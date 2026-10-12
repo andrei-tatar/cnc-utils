@@ -146,7 +146,8 @@ function turnOperation(op: any, clockwise: boolean): any {
   if ((op.type === 'pocket' || op.type === 'flat') && op.alongAxis) {
     return { ...op, alongAxis: op.alongAxis === 'x' ? 'y' : 'x' };
   }
-  if (op.type === 'image-engrave') {
+  // Their pictures (or models) turn with the stock.
+  if (op.type === 'image-engrave' || op.type === 'relief') {
     const alignX = op.imageAlignX ?? 'center';
     const alignY = op.imageAlignY ?? 'middle';
     // Across from up, up from across (one of them reversed).

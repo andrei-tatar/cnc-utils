@@ -89,6 +89,16 @@ import {
 } from './operation-image-engrave-clear';
 
 import {
+  Definition as ReliefDefinition,
+  ModelType as ReliefModelType,
+} from './operation-relief';
+
+import {
+  Definition as ReliefRoughDefinition,
+  ModelType as ReliefRoughModelType,
+} from './operation-relief-rough';
+
+import {
   Definition as RotateDefinition,
   ModelType as RotateModelType,
 } from './operation-rotate';
@@ -115,6 +125,8 @@ const operations = [
   InlayDefinition,
   ImageEngraveDefinition,
   ImageEngraveClearDefinition,
+  ReliefDefinition,
+  ReliefRoughDefinition,
   RotateDefinition,
 ];
 
@@ -156,6 +168,11 @@ const allowedBits: Record<
     bits: ROUND_CUTTERS,
     needs: 'an end mill',
   },
+  [ReliefDefinition.type]: {
+    bits: SIDE_CUTTING,
+    needs: 'a ball nose (or another cutter, not a drill)',
+  },
+  [ReliefRoughDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
 };
 
 function allowsBit(type: string, bit: BitType) {
@@ -169,6 +186,7 @@ const borrowsShape = new Set<string>([
   RestDefinition.type,
   FlatPlugDefinition.type,
   ImageEngraveClearDefinition.type,
+  ReliefRoughDefinition.type,
 ]);
 
 export type ModelType = {
@@ -202,6 +220,8 @@ export type ModelType = {
         | FlatPlugModelType
         | ImageEngraveModelType
         | ImageEngraveClearModelType
+        | ReliefModelType
+        | ReliefRoughModelType
         | RotateModelType
         | RotaryRepeatModelType
       )
@@ -437,6 +457,7 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
           InlayDefinition.type,
           FlatPlugDefinition.type,
           ImageEngraveClearDefinition.type,
+          ReliefRoughDefinition.type,
         ],
       ),
     ),

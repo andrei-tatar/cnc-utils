@@ -50,6 +50,8 @@ export function jobChecks(
       op.type === 'rest' ||
       op.type === 'v-carve-clear' ||
       op.type === 'image-engrave-clear' ||
+      op.type === 'relief-rough' ||
+      op.type === 'relief' ||
       op.type === 'helix'
         ? (op.toolEngagement ?? null)
         : null;
