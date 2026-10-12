@@ -302,6 +302,18 @@ export class GCodeBuilder {
     return this;
   }
 
+  /**
+   * Which side of the board is up for what follows (a two-sided job): the
+   * back after turning it over along `along`. Where the side changes, the
+   * program stops at safe height with the spindle off for the board to be
+   * turned over (M0). What follows is in that side's frame, as the machine
+   * moves.
+   */
+  side(back: boolean, along: 'x' | 'y') {
+    this._instructions.push({ type: 'side', back, along });
+    return this;
+  }
+
   /** Wait `seconds` (G4), e.g. at the bottom of a hole. */
   dwell(seconds: number) {
     this._instructions.push({ type: 'dwell', seconds });
@@ -375,7 +387,8 @@ export class GCodeBuilder {
    * With the stock turned on a rotary axis, paths are in their operation's
    * frame (Z from the top as turned) and say how far it's turned
    * (`rotation`); turning it is a travel round the axis, drawn on the blank
-   * at 0°.
+   * at 0°. Cut with the board turned over (`side`), they're in the frame
+   * of its back, tagged with the axis (`flip`) and a rotation of 180.
    */
   toPaths(options: Partial<GcodeOptions> = {}): CamPath[] {
     const o = resolveGcodeOptions(options);
@@ -392,6 +405,8 @@ export class GCodeBuilder {
     // The move after `rotate`: the turn itself (others turning the axis
     // alone are wrapped cuts round the stock).
     let turned = false;
+    // Turned over along this axis, the back up (a two-sided job).
+    let flip: 'x' | 'y' | null = null;
     const rotary = o.rotary;
     /** A point the machine reaches, in the operation's frame. */
     const local = (
@@ -425,6 +440,11 @@ export class GCodeBuilder {
       source: (kind, id) => {
         if (kind === 'shape') sourceShapeId = id;
         else sourceOperationId = id || undefined;
+      },
+      side: (back, along) => {
+        if (path) paths.push(path);
+        path = null;
+        flip = back ? along : null;
       },
       rotate: (angle, newShift, wrap, fromA, toA) => {
         if (path) paths.push(path);
@@ -485,6 +505,9 @@ export class GCodeBuilder {
             path.rotation = rotation;
           } else if (isTurned(rotation)) {
             path.rotation = rotation;
+          } else if (flip) {
+            path.rotation = 180;
+            path.flip = flip;
           }
           if (type === 'carve') path.feeds = [feed];
         }
@@ -698,6 +721,8 @@ export class GCodeBuilder {
     // feed mode (G93) its cuts are written in, if asked.
     let wrap = false;
     let inverseTime = false;
+    // A two-sided job: the board's back is up.
+    let back = false;
     /** Where the tool is in the drawing (design coordinates). */
     let drawn: CamPoint3 | null = null;
     const leaveInverseTime = () => {
@@ -842,6 +867,23 @@ export class GCodeBuilder {
 
         case 'pause':
           gcode.push('M00');
+          break;
+
+        case 'side':
+          if (instruction.back !== back) {
+            flushCuts();
+            leaveInverseTime();
+            move('G0', { z: safeZ() });
+            stopSpindle();
+            back = instruction.back;
+            const axis = instruction.along.toUpperCase();
+            gcode.push(
+              `; turn the board over along ${axis}: ${back ? 'its back' : 'its front'} up, back on the dowels (or against the fence)`,
+            );
+            gcode.push('; set Z zero on its top again, then resume');
+            gcode.push('M0');
+            out.side?.(back, instruction.along);
+          }
           break;
 
         case 'rapid-z':
@@ -1318,6 +1360,8 @@ type GcodeSink = {
     from: number,
     to: number,
   ): void;
+  /** The board turned over (or back): what follows is on that side. */
+  side?(back: boolean, along: 'x' | 'y'): void;
   /**
    * A canned cycle as one line. Without it, cycles are handed to `move` as
    * the moves they make (for the preview).
@@ -1355,6 +1399,7 @@ export type PathInstruction =
        */
       wrap?: boolean;
     }
+  | { type: 'side'; back: boolean; along: 'x' | 'y' }
   | ({ type: 'drill-cycle' } & DrillCycle)
   | {
       type: 'tool';

@@ -54,6 +54,31 @@ export function rotaryOf(stock: StockOptions): Rotary | null {
       };
 }
 
+/**
+ * A board on the table turned over along `along` (a two-sided job) as a
+ * turn of half a turn round a line through its middle: along X, the line
+ * across the middle of its Y size at half its thickness. A cut on the back
+ * is a cut in the frame turned to 180° (`operationPointOnBlank`): X and Y
+ * mirrored across that line, Z from the back.
+ */
+export function flipAxis(stock: StockOptions, along: 'x' | 'y'): Rotary {
+  return along === 'x'
+    ? {
+        along,
+        across: stock.y + stock.height / 2,
+        halfWidth: stock.height / 2,
+        halfThickness: stock.thickness / 2,
+        round: false,
+      }
+    : {
+        along,
+        across: stock.x + stock.width / 2,
+        halfWidth: stock.width / 2,
+        halfThickness: stock.thickness / 2,
+        round: false,
+      };
+}
+
 /** Whether `angle` (degrees) turns the blank at all (not whole turns). */
 export function isTurned(angle: number | null | undefined): angle is number {
   return !!angle && Math.abs(angle - 360 * Math.round(angle / 360)) > 1e-9;

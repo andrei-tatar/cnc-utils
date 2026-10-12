@@ -6,12 +6,7 @@
  */
 
 export type FontCategory =
-  | 'sans-serif'
-  | 'serif'
-  | 'display'
-  | 'handwriting'
-  | 'monospace'
-  | string;
+  'sans-serif' | 'serif' | 'display' | 'handwriting' | 'monospace' | string;
 
 export type FontCatalogEntry = {
   id: string;

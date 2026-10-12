@@ -11,7 +11,11 @@ import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { shapeLabel } from '../model-editor/shapes/describe';
 import { nestPolygons } from '../../cam/polygon-nesting';
 import { rotaryOf } from '../../cam/rotary';
-import { rotationMismatch } from '../model-editor/operations/rotation';
+import {
+  jobFlip,
+  onBack,
+  rotationMismatch,
+} from '../model-editor/operations/rotation';
 import { anglesLabel } from '../model-editor/operations/operation-rotary-repeat';
 import {
   cutOperations,
@@ -83,6 +87,7 @@ export function jobChecks(
         ),
         cutsOut: outsideProfile || op.type === 'flat-plug',
         onionSkin: op.type === 'profile' && (op.onionSkin ?? 0) > 0,
+        intoSpoilboard: op.type === 'flip',
       },
     ];
   });
@@ -104,20 +109,26 @@ export function jobChecks(
   const stock = resolveStock(model.stock);
   const name = (op: any) =>
     op.name || describeOperation(op, model.shapes, model.tools, operations);
-  const turnedWrong: JobWarning[] = !rotaryOf(stock)
-    ? []
-    : cutOperations(listed).flatMap((op) => {
-        const mismatch = rotationMismatch(op, listed);
-        return mismatch
-          ? [
-              {
-                level: 'warning' as const,
-                text: `${name(op)}: cut with the stock turned to ${anglesLabel(mismatch.angles) || 'no angle'}, but “${name(mismatch.other)}” at ${anglesLabel(mismatch.otherAngles) || 'no angle'}: put it where that one is (under the same rotate step, or in the same rotary repeat)`,
-                operationId: op.id,
-              },
-            ]
-          : [];
-      });
+  // A board turned over: they must be cut on the same side.
+  const flip = jobFlip(listed, stock);
+  const side = (op: any) => (onBack(op, listed) ? 'back' : 'front');
+  const turnedWrong: JobWarning[] =
+    !rotaryOf(stock) && !flip
+      ? []
+      : cutOperations(listed).flatMap((op) => {
+          const mismatch = rotationMismatch(op, listed);
+          return mismatch
+            ? [
+                {
+                  level: 'warning' as const,
+                  text: flip
+                    ? `${name(op)}: cut on the board’s ${side(op)}, but “${name(mismatch.other)}” on its ${side(mismatch.other)}: put it on the same side (between the same flip steps)`
+                    : `${name(op)}: cut with the stock turned to ${anglesLabel(mismatch.angles) || 'no angle'}, but “${name(mismatch.other)}” at ${anglesLabel(mismatch.otherAngles) || 'no angle'}: put it where that one is (under the same rotate step, or in the same rotary repeat)`,
+                  operationId: op.id,
+                },
+              ]
+            : [];
+        });
 
   return [
     ...turnedWrong,

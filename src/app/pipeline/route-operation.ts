@@ -19,6 +19,7 @@ import { pointLength } from '../model-editor/operations/operation-drill';
 import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { operationLabel } from '../model-editor/operations';
 import { recover } from './errors';
+import { DowelHoles } from './flip';
 
 /** Everything that decides an operation's toolpath. */
 export type RoutingInputs = {
@@ -31,6 +32,8 @@ export type RoutingInputs = {
   flatPlug: FlatPlugSource | null;
   imageEngrave: ImageEngraveSource | null;
   relief: ReliefSource | null;
+  /** For a flip step: the dowel holes it drills. */
+  dowels: DowelHoles | null;
   /** End mills clearing for a v-carve (or inlay plug) before it. */
   clearings: Clearing[];
   geometry: GeometrySettings;
@@ -75,10 +78,42 @@ function route({
   flatPlug,
   imageEngrave,
   relief,
+  dowels,
   clearings,
   geometry,
   optimizeTravel,
 }: RoutingInputs): Observable<GCodeBuilder> | null {
+  // A flip step drills its dowel holes, if any: no shape of its own.
+  if (op.type === 'flip') {
+    if (!tool || !dowels || tool.bitType === 'v-bit') {
+      return null;
+    }
+    return worker.routeDrill(
+      [
+        {
+          sourceShapeId: '',
+          polygons: dowels.points.map((p) => ({ vertices: [p], close: false })),
+        },
+      ],
+      {
+        geometry,
+        optimizeTravel,
+        drillAt: 'points',
+        startDepth: 0,
+        depth: dowels.depth,
+        pointLength:
+          tool.bitType === 'drill'
+            ? pointLength(tool.diameter, tool.pointAngle)
+            : 0,
+        // Out every 3 mm to clear the chips, as deep holes want.
+        peck: 3,
+        chipBreak: false,
+        dwell: 0,
+        retractHeight: 2,
+        cycles: false,
+      },
+    );
+  }
   // No (or a deleted) tool or shape: nothing to cut. Routing functions
   // expect at least one shape (a shape of only tabs has nothing to cut).
   if (!tool || !shape.some((s) => s.polygons.length)) {

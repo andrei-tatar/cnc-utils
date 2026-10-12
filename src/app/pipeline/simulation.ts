@@ -1,6 +1,7 @@
 import { SimulatedStock, SimulatedTool } from '../../cam/simulate';
 import { resolveStock } from '../../cam/stock';
-import { Rotary, rotaryOf } from '../../cam/rotary';
+import { flipAxis, Rotary, rotaryOf } from '../../cam/rotary';
+import { jobFlip } from '../model-editor/operations/rotation';
 import { cutOperations } from '../model-editor/operations/flatten';
 import { CamPath } from '../../cam/types';
 import { ModelType } from '../model-editor/model';
@@ -47,7 +48,10 @@ export type SimulationInput = {
   stock: SimulatedStock;
   /**
    * The rotary axis the stock is held on, if it is: then cuts are made with
-   * it turned (`simulateRotaryStock`), and what's left is a solid.
+   * it turned (`simulateRotaryStock`), and what's left is a solid. Likewise
+   * a board turned over (a two-sided job): the cuts on its back are made
+   * with it turned half a turn round the line it's turned over along
+   * (`flipAxis`).
    */
   rotary: Rotary | null;
 };
@@ -88,7 +92,7 @@ export function simulationInput(
         top: 0,
         bottom: -stock.thickness,
       },
-      rotary: rotaryOf(stock),
+      rotary: rotaryOf(stock) ?? flipRotary(paths, stock, model),
     };
   }
 
@@ -123,4 +127,19 @@ export function simulationInput(
     },
     rotary: null,
   };
+}
+
+/**
+ * For a two-sided job with cuts on the back: the line the board turns over
+ * along, as an axis it's turned half a turn round. Null otherwise.
+ */
+function flipRotary(
+  paths: CamPath[],
+  stock: ReturnType<typeof resolveStock>,
+  model: ModelType,
+): Rotary | null {
+  const along = jobFlip(model.operations, stock);
+  return along && paths.some((p) => p.flip && p.type === 'carve')
+    ? flipAxis(stock, along)
+    : null;
 }

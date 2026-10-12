@@ -37,6 +37,10 @@ export function operationCut(
   const borrowed = (id: string | undefined) =>
     operations.find((o) => o?.id === id);
 
+  if (op.type === 'flip') {
+    // Dowel holes, plunged straight down.
+    return { kind: 'drill', diameter, depth: op.dowelDepth ?? 0 };
+  }
   if (op.type === 'drill' || bit === 'drill') {
     const peck = op.peck ?? 0;
     return {

@@ -85,7 +85,8 @@ export function operationAngles(
 /**
  * Which way up the stock is for an operation's cuts, as a key: operations
  * with the same key cut in the same frame (they share tabs): those inside
- * one rotary repeat, or those turned to the same angle.
+ * one rotary repeat, or those turned to the same angle, on the same side
+ * of the board.
  */
 export function operationFrame(
   operation: any,
@@ -96,7 +97,46 @@ export function operationFrame(
     return `repeat ${repeat.id}`;
   }
   const angle = operationRotation(operation, operations);
-  return `angle ${Math.round((((angle % 360) + 360) % 360) * 1e6) / 1e6}`;
+  const side = onBack(operation, operations) ? ' back' : '';
+  return `angle ${Math.round((((angle % 360) + 360) % 360) * 1e6) / 1e6}${side}`;
+}
+
+/**
+ * The way a two-sided job turns the board over: along the axis the first
+ * enabled flip step says (every flip turns it the same way). Null without
+ * one, or without a stock on the table to turn over.
+ */
+export function jobFlip(
+  operations: readonly any[] | undefined,
+  stock: { enabled?: boolean; mount?: string } | undefined,
+): 'x' | 'y' | null {
+  if (!stock?.enabled || stock.mount === 'rotary') {
+    return null;
+  }
+  const first = (operations ?? []).find(
+    (o: any) => o?.type === 'flip' && !o.disabled,
+  );
+  return first ? (first.flipAlong === 'y' ? 'y' : 'x') : null;
+}
+
+/**
+ * Whether an operation of the list is cut on the board's back: below an
+ * odd number of enabled flip steps. (A flip step's own dowel holes are
+ * drilled before it turns the board.)
+ */
+export function onBack(operation: any, operations: readonly any[]): boolean {
+  let back = false;
+  for (const op of operations ?? []) {
+    if (op?.id === operation?.id) break;
+    if (op?.type === 'flip' && !op.disabled) back = !back;
+  }
+  return back;
+}
+
+/** Whether the stock lies on the table (and is set), from any field. */
+export function onTable(field: FormlyFieldConfig | undefined): boolean {
+  const stock = rootModel(field)?.stock;
+  return !!stock?.enabled && stock?.mount !== 'rotary';
 }
 
 /**

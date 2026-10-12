@@ -23,10 +23,13 @@ import {
 } from '../model-editor/operations/flatten';
 import { repeatAngles } from '../model-editor/operations/operation-rotary-repeat';
 import {
+  jobFlip,
+  onBack,
   operationFrame,
   operationRotation,
   operationWrap,
 } from '../model-editor/operations/rotation';
+import { FlipFrame, flipFrame, flipShapes } from './flip';
 import { tabsNear, tabsOf } from '../../cam/tabs';
 import worker from '../../worker';
 import { ModelType } from '../model-editor/model';
@@ -44,6 +47,11 @@ type EntryInputs = OperationInputs & {
    * out of the tabs of shapes cut the same way up.
    */
   frame: string;
+  /**
+   * Cut on the back of a two-sided job: its shape mirrored for it (null on
+   * the front, or without turning the board over).
+   */
+  flip: FlipFrame | null;
 };
 
 /** A long-lived pipeline for one operation, kept across model emissions. */
@@ -67,6 +75,11 @@ export type ProgramStep = {
   rotation: number | null;
   /** Wrapped round the round stock, from `rotation` (see `rotate`). */
   wrap?: boolean;
+  /**
+   * In a two-sided job, which side is up: the back (see `onBack`), or the
+   * front. Left out without turning the board over.
+   */
+  back?: boolean;
 };
 
 /**
@@ -80,12 +93,16 @@ export function programSteps(
   rotary: boolean,
   /** Operations can be wrapped round the stock (it's on a rotary axis). */
   canWrap = false,
+  /** The board is turned over (a two-sided job, see `jobFlip`). */
+  flipped = false,
 ): ProgramStep[] {
   const all = flatOperations(operations);
   const step = (op: any, rotation: number | null): ProgramStep =>
     canWrap && operationWrap(op, all)
       ? { id: op.id, rotation, wrap: true }
-      : { id: op.id, rotation };
+      : flipped
+        ? { id: op.id, rotation, back: onBack(op, operations) }
+        : { id: op.id, rotation };
   return (operations ?? []).flatMap((op: any): ProgramStep[] => {
     if (op.disabled || op.type === 'rotate') {
       return [];
@@ -133,13 +150,22 @@ export function generateGcodeFromOperations(
   const entries$: Observable<OperationEntry[]> = model$.pipe(
     scan((ctx, model) => {
       const all = flatOperations(model.operations);
-      const onRotary = !!rotaryOf(resolveStock(model.stock));
+      const stock = resolveStock(model.stock);
+      const onRotary = !!rotaryOf(stock);
+      const flip = jobFlip(model.operations, stock);
       return all
         .filter((operation) => !NO_TOOL.has(operation.type!))
         .map((operation) => {
           const inputs: EntryInputs = {
             ...operationInputs(operation, { ...model, operations: all }),
-            frame: onRotary ? operationFrame(operation, model.operations) : '',
+            frame:
+              onRotary || flip
+                ? operationFrame(operation, model.operations)
+                : '',
+            flip:
+              flip && onBack(operation, model.operations)
+                ? flipFrame(stock, flip)
+                : null,
           };
           const existing = ctx.find((e) => e.id === operation.id);
           if (existing) {
@@ -178,8 +204,13 @@ export function generateGcodeFromOperations(
   );
   const steps$ = model$.pipe(
     map((model) => {
-      const rotary = rotaryOf(resolveStock(model.stock));
-      return programSteps(model.operations, !!rotary, !!rotary);
+      const stock = resolveStock(model.stock);
+      const rotary = rotaryOf(stock);
+      const flip = jobFlip(model.operations, stock);
+      return {
+        flip,
+        steps: programSteps(model.operations, !!rotary, !!rotary, !!flip),
+      };
     }),
     distinctJson(),
   );
@@ -187,12 +218,20 @@ export function generateGcodeFromOperations(
     // Each step's operation, turned for it. Incomplete operations (no tool,
     // shape or type yet) emit an empty builder rather than nothing, so they
     // don't stall the whole G-code.
-    switchMap(([entries, steps]) => {
+    switchMap(([entries, { flip, steps }]) => {
       const byId = new Map(entries.map((e) => [e.id, e]));
-      const cuts = steps.flatMap(({ id, rotation, wrap }) => {
+      const cuts = steps.flatMap(({ id, rotation, wrap, back }) => {
         const entry = byId.get(id);
         return entry
-          ? [entry.result$.pipe(map((b) => turned(b, id, rotation, wrap)))]
+          ? [
+              entry.result$.pipe(
+                map((b) =>
+                  flip && back !== undefined
+                    ? sided(b, id, back, flip)
+                    : turned(b, id, rotation, wrap),
+                ),
+              ),
+            ]
           : [];
       });
       return cuts.length ? combineLatest(cuts) : of([]);
@@ -252,6 +291,39 @@ function turned(
   return result;
 }
 
+/** Builders with the side of the board said first, by builder and side. */
+const sidedBuilders = new WeakMap<GCodeBuilder, Map<string, GCodeBuilder>>();
+
+/**
+ * `builder` (operation `id`'s) on the back or the front of the board turned
+ * over along `along`; as it is with nothing cut. The same builder for the
+ * same side each time, so unchanged steps stay unchanged.
+ */
+function sided(
+  builder: GCodeBuilder,
+  id: string,
+  back: boolean,
+  along: 'x' | 'y',
+): GCodeBuilder {
+  if (!builder.cutBounds()) {
+    return builder;
+  }
+  let bySide = sidedBuilders.get(builder);
+  if (!bySide) {
+    sidedBuilders.set(builder, (bySide = new Map()));
+  }
+  const key = `${back ? 'back' : 'front'} ${along}`;
+  let result = bySide.get(key);
+  if (!result) {
+    result = new GCodeBuilder()
+      .sourceOperationId(id)
+      .side(back, along)
+      .concat(builder);
+    bySide.set(key, result);
+  }
+  return result;
+}
+
 function createOperationEntry(
   id: string,
   inputs: EntryInputs,
@@ -265,11 +337,17 @@ function createOperationEntry(
   const input = <K extends keyof EntryInputs>(key: K) =>
     inputs$.pipe(map((i) => i[key]));
 
-  // Only this operation's shape: other shapes changing don't wake it.
-  const shape$ = input('shapeId').pipe(
-    distinctUntilChanged(),
-    switchMap((shapeId) => shapes.byId(shapeId)),
-    distinctItems(),
+  // Only this operation's shape: other shapes changing don't wake it. On
+  // the back of a two-sided job, mirrored as it is with the back up.
+  const shape$ = combineLatest([
+    input('shapeId').pipe(
+      distinctUntilChanged(),
+      switchMap((shapeId) => shapes.byId(shapeId)),
+      distinctItems(),
+    ),
+    input('flip').pipe(distinctJson()),
+  ]).pipe(
+    map(([shape, flip]) => (flip ? flipShapes(shape, flip) : shape)),
     shareLatest(),
   );
 
@@ -283,6 +361,7 @@ function createOperationEntry(
     flatPlug: input('flatPlug').pipe(distinctJson()),
     imageEngrave: input('imageEngrave').pipe(distinctJson()),
     relief: input('relief').pipe(distinctJson()),
+    dowels: input('dowels').pipe(distinctJson()),
     clearings: input('clearings').pipe(distinctJson()),
     geometry: geometry$,
     optimizeTravel: optimizeTravel$,
