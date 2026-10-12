@@ -98,7 +98,7 @@ export type ViewOptions = {
 const DEFAULTS: ViewOptions = {
   grid: true,
   gridLabels: true,
-  material: 'stock',
+  material: 'depth',
 };
 const STORAGE_KEY = 'ui.viewOptions';
 
