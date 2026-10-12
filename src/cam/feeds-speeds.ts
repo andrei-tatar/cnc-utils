@@ -21,6 +21,8 @@ export type Machine = {
    */
   slotDepth: number;
   maxSlotDepth: number;
+  /** How wide its collet nut is across (mm): checked against the material. */
+  nutDiameter: number;
 };
 
 /**
@@ -38,6 +40,8 @@ export const ULTIMATE_BEE_1000x1500: Machine = {
   maxPlunge: 800,
   slotDepth: 0.5,
   maxSlotDepth: 5,
+  // ER20 (a type A nut).
+  nutDiameter: 35,
 };
 
 /** Machines to pick from (the G-code section's `machine`). */

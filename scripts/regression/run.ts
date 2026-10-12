@@ -22,7 +22,12 @@ import {
   programPaths,
   programTime,
 } from '../../src/app/pipeline/gcode';
-import { jobChecks } from '../../src/app/pipeline/job-checks';
+import {
+  clearanceInput,
+  jobChecks,
+  withClearances,
+} from '../../src/app/pipeline/job-checks';
+import { checkClearances } from '../../src/cam/clearance';
 import { simulationInput } from '../../src/app/pipeline/simulation';
 import { simulateStock } from '../../src/worker/work/simulate-stock';
 import { resolveModel } from '../../src/app/model-editor/variables/resolve';
@@ -234,9 +239,19 @@ async function runProject(
   output.gcodeLines = lines.length;
   output.gcodeArcs = lines.filter((l) => /^G0?[23]\b/.test(l)).length;
   output.time = programTime(program).total;
-  output.warnings = jobChecks(model, paths, camShapes).map(
-    (w) => `${w.level}: ${w.text}`,
-  );
+  // With the moves checked against the material, as the app does.
+  const clearance = clearanceInput(paths, model);
+  output.warnings = withClearances(
+    jobChecks(model, paths, camShapes),
+    clearance &&
+      checkClearances(
+        paths,
+        clearance.tools,
+        clearance.stock,
+        clearance.holderDiameter,
+      ),
+    model,
+  ).map((w) => `${w.level}: ${w.text}`);
 
   // The material left, simulated on arcs drawn far finer than the preview
   // draws them: two cuts that meet exactly on a curve (a pocket inside a

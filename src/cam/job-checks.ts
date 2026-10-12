@@ -11,6 +11,11 @@ export type JobWarning = {
   text: string;
   /** The operation it's about, if any (to highlight it). */
   operationId?: string;
+  /**
+   * What it's about, where something else may say more about it (`flutes`:
+   * cut deeper than the flutes, which `checkClearances` can look into).
+   */
+  kind?: 'flutes';
 };
 
 /** An operation, as the checks see it. */
@@ -111,6 +116,7 @@ export function checkJob(input: JobCheckInput): JobWarning[] {
         'warning',
         `goes ${mm(depth)} deep, past the bit’s ${mm(op.fluteLength)} flutes`,
       );
+      warnings[warnings.length - 1].kind = 'flutes';
     }
 
     if (
