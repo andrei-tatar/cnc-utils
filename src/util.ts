@@ -59,6 +59,15 @@ export async function generateId() {
     .replace(/=+$/, '');
 }
 
+/** As `generateId`, at once: for many ids in one go (copying parts). */
+export function generateIdSync(): string {
+  const data = crypto.getRandomValues(new Uint8Array(16));
+  return btoa(String.fromCharCode(...data))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
 export function lazy<T>(factory: () => T) {
   let val: T;
   let isInitialized = false;
