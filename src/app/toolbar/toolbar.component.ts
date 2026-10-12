@@ -46,8 +46,17 @@ export type JobAction = { id: string; label: string; description: string };
   ],
   template: `
     <header #toolbar class="toolbar">
-      <span class="brand app-name">CNC Utils</span>
-      <span class="separator app-name" aria-hidden="true"></span>
+      <a
+        class="brand"
+        href="https://github.com/andrei-tatar/cnc-utils"
+        target="_blank"
+        rel="noopener"
+        title="The source code on GitHub"
+      >
+        <img class="brand_logo" src="favicon.svg" alt="" />
+        <span class="app-name">CNC Utils</span>
+      </a>
+      <span class="separator" aria-hidden="true"></span>
 
       <div
         ngbDropdown
@@ -401,10 +410,26 @@ export type JobAction = { id: string; label: string; description: string };
       }
     }
 
+    // The app's name, linking to its source.
     .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       font-weight: 600;
       font-size: 0.95rem;
       white-space: nowrap;
+      color: inherit;
+      text-decoration: none;
+
+      &:hover {
+        color: var(--bs-link-hover-color);
+      }
+    }
+
+    .brand_logo {
+      width: 18px;
+      height: 18px;
+      flex: none;
     }
 
     .separator {
@@ -507,7 +532,7 @@ export type JobAction = { id: string; label: string; description: string };
     // Set by fit() when the window is too narrow for everything: first the
     // status and "Working…" texts go (their dots and spinner stay), then the
     // secondary buttons' labels, then every label, and the name gets shorter,
-    // then the app's name.
+    // then the app's name (its logo stays).
     .toolbar:not([data-compact='0']) {
       .status_text,
       .working_label {
