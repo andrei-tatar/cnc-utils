@@ -25,7 +25,7 @@ import { meshBounds, meshHeights, parseStl } from '../../cam/stl';
 import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
 import { getDistance } from '../../util';
 import { clearOverSurface, SurfaceClearingOptions } from './clear-surface';
-import { brightnessAt, imagePixels } from './image-pixels';
+import { imageBrightness } from './image-pixels';
 import { shapeRegion } from './regions';
 
 /** The relief itself: what it's carved from and how deep. */
@@ -268,7 +268,7 @@ async function reliefMap(
 
   if (/^data:image\//i.test(relief.file)) {
     let placement: Bounds = box;
-    const pixels = await imagePixels(
+    const drawn = await imageBrightness(
       relief.file,
       (width, height) => {
         const [w, h] = sideways ? [height, width] : [width, height];
@@ -282,14 +282,6 @@ async function reliefMap(
       },
       'high',
     );
-    const drawn: ReliefMap = {
-      width: pixels.width,
-      height: pixels.height,
-      data: new Float32Array(pixels.width * pixels.height),
-    };
-    for (let i = 0; i < drawn.data.length; i++) {
-      drawn.data[i] = brightnessAt(pixels.data, i) / 255;
-    }
     return { map: rotateBrightness(drawn, turns), placement };
   }
 

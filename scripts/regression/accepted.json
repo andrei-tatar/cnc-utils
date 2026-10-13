@@ -374,5 +374,9 @@
   },
   "template-carved-rosette": {
     "material left": "The relief's drop cutter now keeps the bit off the shape's outline itself, not only off the cell centres beyond it: the cells place the outline to within a cell, so the bit came down up to a cell past it and cut the uncut surface outside the shape (in the rectangles, about 600 and 1,900 cells, up to 1.9 and 4.9 mm deep). Now nothing outside the shape is cut, and the ball leaves the rounded corner it must where the relief meets the uncut wall (or reaches closer to it where the cells held it off). The bit is also kept no lower than the relief right under its axis (blended between the cell centres), where it was kept no lower than its own height at the centres round it blended between them, which held it above convex parts: the finish now leaves less above the relief (on the template, 0.029 mm on average where it left 0.032) and still doesn't cut into it (worst 0.013 mm, the curve tolerance)."
+  },
+  "relief-png16": {
+    "operation": "New: 16-bit PNGs are read at their full depth (imageBrightness); the baseline only read images through the canvas (8 bits), which the harness's stand-in can't decode at 16 bits, so it carved nothing.",
+    "material left": "New: 16-bit PNGs are read at their full depth (imageBrightness); the baseline only read images through the canvas (8 bits), which the harness's stand-in can't decode at 16 bits, so it carved nothing."
   }
 }
