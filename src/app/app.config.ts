@@ -10,7 +10,6 @@ import {
 } from '@angular/core';
 import { provideServiceWorker } from '@angular/service-worker';
 
-import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import {
   AbstractControl,
   ReactiveFormsModule,
@@ -67,7 +66,6 @@ export const appConfig: ApplicationConfig = {
       enabled: !isDevMode(),
       registrationStrategy: 'registerWhenStable:30000',
     }),
-    provideAnimationsAsync(),
     importProvidersFrom(ReactiveFormsModule),
     importProvidersFrom(
       FormlyModule.forRoot({
