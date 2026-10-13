@@ -19,7 +19,14 @@ import {
   FormlyFormOptions,
   FormlyModule,
 } from '@ngx-formly/core';
-import { debounceTime, filter, firstValueFrom, Subject, takeUntil } from 'rxjs';
+import {
+  debounceTime,
+  filter,
+  firstValueFrom,
+  map,
+  Subject,
+  takeUntil,
+} from 'rxjs';
 import { emptyModel, ModelType, ModelFieldConfig } from './model';
 import { CamService } from '../services/cam.service';
 import { ModelStore } from '../services/model-store.service';
@@ -124,9 +131,17 @@ export class ModelEditorComponent implements OnInit, OnDestroy {
       });
     });
 
+    // A value only stands for the work it was edited from: when the store's
+    // model was replaced meanwhile (a share link opened as the app starts,
+    // undo), it'd put the old work back over the new.
     this.form.valueChanges
-      .pipe(debounceTime(100), takeUntil(this.destroy$))
-      .subscribe((v) => this.modelChange.next(v as ModelType));
+      .pipe(
+        map((value) => ({ value, from: this.store.value })),
+        debounceTime(100),
+        filter(({ from }) => from === this.store.value),
+        takeUntil(this.destroy$),
+      )
+      .subscribe(({ value }) => this.modelChange.next(value as ModelType));
   }
 
   ngOnDestroy() {

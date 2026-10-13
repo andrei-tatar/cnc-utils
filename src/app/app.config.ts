@@ -8,10 +8,8 @@ import {
   provideZonelessChangeDetection,
   provideZoneChangeDetection,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
 import { provideServiceWorker } from '@angular/service-worker';
 
-import { routes } from './app.routes';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import {
   AbstractControl,
@@ -63,7 +61,6 @@ export const appConfig: ApplicationConfig = {
     // The saved project is read (asynchronously) before anything uses it.
     provideAppInitializer(preloadModel),
     { provide: ShapeExporter, useExisting: CamService },
-    provideRouter(routes),
     // Works offline: the service worker keeps the app, its templates and
     // the fonts used (ngsw-config.json). Production builds only.
     provideServiceWorker('ngsw-worker.js', {
