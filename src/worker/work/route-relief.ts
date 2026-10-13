@@ -22,7 +22,7 @@ import {
 } from '../../cam/relief';
 import { Heightmap, SimulatedTool } from '../../cam/simulate';
 import { meshBounds, meshHeights, parseStl } from '../../cam/stl';
-import { CamPoint, CamShape } from '../../cam/types';
+import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
 import { getDistance } from '../../util';
 import { clearOverSurface, SurfaceClearingOptions } from './clear-surface';
 import { brightnessAt, imagePixels } from './image-pixels';
@@ -73,6 +73,11 @@ export type ReliefRoughingOptions = SurfaceClearingOptions & {
   geometry?: GeometrySettings;
 };
 
+/**
+ * A move is halved at most this many times to follow the relief (a cell
+ * split 256 ways: a wall is cut within a µm of upright).
+ */
+const REFINE_LEVELS = 8;
 /** Longer maps are scaled down to this many cells first. */
 const MAX_PIXELS = 2400;
 /** The surface keeps to about this many cells. */
@@ -107,39 +112,62 @@ export async function routeRelief(
   const passes = [options.angle || 0];
   if (options.crossPass) passes.push((options.angle || 0) + 90);
 
-  let at = { x: 0, y: 0, z: 0 };
+  const tolerance = curveTolerance();
+  let at: CamPoint3 = { x: 0, y: 0, z: 0 };
+  /**
+   * Carves straight on to `to`, with points in between where the bit would
+   * otherwise stray from the relief: where a steep wall stands, the bit's
+   * height jumps from one sample to the next, and a straight move between
+   * them would cut into the wall.
+   */
+  const carveTo = (to: CamPoint3, levels = REFINE_LEVELS) => {
+    const from = at;
+    if (levels > 0) {
+      const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+      const z = -depth(mid);
+      if (Math.abs(z - (from.z + to.z) / 2) > tolerance) {
+        carveTo({ ...mid, z }, levels - 1);
+        carveTo(to, levels - 1);
+        return;
+      }
+    }
+    builder.carveTo(to.x, to.y, to.z);
+    at = to;
+  };
+
   for (const angle of passes) {
     const runs: EngraveRun[] = rasterRuns(loops, depth, {
       spacing: options.spacing,
       angle,
       sampleStep: surface.cell,
       oneWay: options.oneWay,
-      tolerance: curveTolerance(),
+      tolerance,
       start: { x: box.minX, y: box.minY },
     });
     for (const { points, linked } of runs) {
       const [first, ...rest] = points;
       if (linked) {
         // Over to the next line along the relief, as low as the bit goes.
-        const length = getDistance(at, first);
+        const from = at;
+        const length = getDistance(from, first);
         const steps = Math.ceil(length / surface.cell);
         for (let k = 1; k < steps; k++) {
           const p = {
-            x: at.x + ((first.x - at.x) * k) / steps,
-            y: at.y + ((first.y - at.y) * k) / steps,
+            x: from.x + ((first.x - from.x) * k) / steps,
+            y: from.y + ((first.y - from.y) * k) / steps,
           };
-          builder.carveTo(p.x, p.y, -depth(p));
+          carveTo({ ...p, z: -depth(p) });
         }
-        builder.carveTo(first.x, first.y, first.z);
+        carveTo(first);
       } else {
         builder.goToSafeHeight();
         builder.travelTo(first.x, first.y);
         builder.plunge(first.z);
+        at = first;
       }
       for (const p of rest) {
-        builder.carveTo(p.x, p.y, p.z);
+        carveTo(p);
       }
-      at = points[points.length - 1];
     }
   }
   builder.goToSafeHeight();

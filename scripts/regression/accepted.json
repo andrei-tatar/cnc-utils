@@ -365,5 +365,17 @@
   },
   "template-scorpion-medallion": {
     "material left": "The simulation now cuts a move straight down to its bottom (it stopped at its top): where the engraving steps down into a groove, the V-bit's plunge is cut too, a few hundredths of a millimetre deeper at a few cells."
+  },
+  "relief-image": {
+    "material left": "The relief's drop cutter now works the bit's height out at each point along the line, kept no lower than it is on the cell centres round it blended between them, instead of taking the nearest cell's: lines across the cells at an angle no longer zig-zag in Z, and a move over a steep wall is split until it follows it, so the finish follows the relief more closely (on the template, cuts into the relief over 0.05 mm went from about 11,800 samples to 12, the deepest from 0.68 to 0.065 mm)."
+  },
+  "relief-image-inverted-surface": {
+    "material left": "The relief's drop cutter now works the bit's height out at each point along the line, kept no lower than it is on the cell centres round it blended between them, instead of taking the nearest cell's: lines across the cells at an angle no longer zig-zag in Z, and a move over a steep wall is split until it follows it, so the finish follows the relief more closely (on the template, cuts into the relief over 0.05 mm went from about 11,800 samples to 12, the deepest from 0.68 to 0.065 mm)."
+  },
+  "relief-stl-roughed": {
+    "material left": "The relief's drop cutter now works the bit's height out at each point along the line, kept no lower than it is on the cell centres round it blended between them, instead of taking the nearest cell's: lines across the cells at an angle no longer zig-zag in Z, and a move over a steep wall is split until it follows it, so the finish follows the relief more closely (on the template, cuts into the relief over 0.05 mm went from about 11,800 samples to 12, the deepest from 0.68 to 0.065 mm)."
+  },
+  "template-carved-rosette": {
+    "material left": "The relief's drop cutter now works the bit's height out at each point along the line, kept no lower than it is on the cell centres round it blended between them, instead of taking the nearest cell's: lines across the cells at an angle no longer zig-zag in Z, and a move over a steep wall is split until it follows it, so the finish follows the relief more closely (on the template, cuts into the relief over 0.05 mm went from about 11,800 samples to 12, the deepest from 0.68 to 0.065 mm)."
   }
 }

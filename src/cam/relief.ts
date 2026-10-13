@@ -210,8 +210,13 @@ export function reliefSurface(
 /**
  * Where the tip of `tool` comes to rest over `surface` with its axis at a
  * point (a drop cutter): as low as it goes without its profile cutting
- * into the surface anywhere under it. The point is taken at the nearest
- * cell centre. Off the map the surface is uncut (0).
+ * into the surface anywhere under it. The surface is known at the cell
+ * centres only, so that's measured from the point itself to them (the
+ * nearest cell's instead would make a line across the cells at an angle
+ * jump from cell to cell), but kept no lower than it is on the cell
+ * centres round the point, blended between them (bilinear): between
+ * centres the bit would otherwise sink a little into a flat floor, or the
+ * uncut top. Off the map the surface is uncut (0).
  */
 export function dropCutter(
   surface: Heightmap,
@@ -219,51 +224,112 @@ export function dropCutter(
 ): (p: CamPoint) => number {
   const { cell, nx, ny, minX, minY, heights } = surface;
   const r = Math.max(0, tool.diameter / 2);
-  const reach = Math.ceil(r / cell);
+  // Cells right on the bit's edge count as under it, whichever way the
+  // rounding goes: the bit's side stands straight up there, so a cell a
+  // hair outside would let the tip drop by up to a radius, and the
+  // simulation (which counts it in) would cut it.
+  const edge = r + cell * 1e-6;
+  const edge2 = edge * edge;
+  // A point is within half a cell's diagonal of its nearest cell centre.
+  const slack = cell * Math.SQRT1_2;
+  const reach = Math.ceil((edge + slack) / cell);
   const profile = toolProfile(tool);
 
-  // The cells under the bit, by how far its profile rises there, lowest
-  // first: once the highest the surface gets under the bit, less that
-  // rise, can't beat what's been found, the rest can't either.
-  const offsets: Array<{ di: number; dj: number; rise: number }> = [];
-  for (let dj = -reach; dj <= reach; dj++) {
-    for (let di = -reach; di <= reach; di++) {
-      const d = Math.hypot(di, dj) * cell;
-      if (d <= r) offsets.push({ di, dj, rise: profile(d) });
+  /**
+   * The cells that can be under the bit with its axis up to `spread` from
+   * a cell's centre, round that cell, by the least its profile can rise
+   * there, lowest first: once the highest the surface gets under the bit,
+   * less that, can't beat what's been found, the rest can't either.
+   */
+  const cellsUnder = (spread: number) => {
+    const offsets: Array<{ di: number; dj: number; least: number }> = [];
+    for (let dj = -reach; dj <= reach; dj++) {
+      for (let di = -reach; di <= reach; di++) {
+        const d = Math.hypot(di, dj) * cell;
+        if (d <= edge + spread) {
+          offsets.push({
+            di,
+            dj,
+            least: profile(Math.min(r, Math.max(0, d - spread))),
+          });
+        }
+      }
     }
-  }
-  offsets.sort((a, b) => a.rise - b.rise);
-  const di = Int32Array.from(offsets, (o) => o.di);
-  const dj = Int32Array.from(offsets, (o) => o.dj);
-  const rise = Float64Array.from(offsets, (o) => o.rise);
+    offsets.sort((a, b) => a.least - b.least);
+    return {
+      di: Int32Array.from(offsets, (o) => o.di),
+      dj: Int32Array.from(offsets, (o) => o.dj),
+      least: Float64Array.from(offsets, (o) => o.least),
+    };
+  };
+  const nearCentre = cellsUnder(0);
+  const nearPoint = cellsUnder(slack);
   const highest = maxOverDisk(heights, nx, ny, reach);
-  const found = new Float32Array(nx * ny).fill(NaN);
 
-  return (p: CamPoint) => {
-    const i = Math.round((p.x - minX) / cell - 0.5);
-    const j = Math.round((p.y - minY) / cell - 0.5);
+  /**
+   * The tip's height with its axis at (u, v), in cells from the first
+   * cell's centre (`cells` reaching that far from its nearest), or
+   * `atLeast` when that's higher.
+   */
+  const restAt = (
+    u: number,
+    v: number,
+    cells: ReturnType<typeof cellsUnder>,
+    atLeast = -Infinity,
+  ) => {
+    const { di, dj, least } = cells;
+    const i = Math.round(u);
+    const j = Math.round(v);
     if (i < 0 || j < 0 || i >= nx || j >= ny) {
       return surface.top;
     }
     const k = j * nx + i;
-    if (!Number.isNaN(found[k])) {
-      return found[k];
-    }
     // Under the bit, partly off the map: the uncut surface is there.
     const off = i < reach || j < reach || i >= nx - reach || j >= ny - reach;
     const top = off ? Math.max(highest[k], surface.top) : highest[k];
-    let best = -Infinity;
-    for (let n = 0; n < rise.length; n++) {
-      if (top - rise[n] <= best) break;
+    let best = atLeast;
+    for (let n = 0; n < least.length; n++) {
+      if (top - least[n] <= best) break;
       const x = i + di[n];
       const y = j + dj[n];
+      const d2 = ((x - u) * (x - u) + (y - v) * (y - v)) * cell * cell;
+      if (d2 > edge2) continue;
       const z =
         x < 0 || y < 0 || x >= nx || y >= ny
           ? surface.top
           : heights[y * nx + x];
-      if (z - rise[n] > best) best = z - rise[n];
+      const rest = z - profile(Math.min(Math.sqrt(d2), r));
+      if (rest > best) best = rest;
     }
-    found[k] = best;
-    return best;
+    // A bit narrower than a cell, between centres: on the nearest.
+    return best === -Infinity ? heights[k] : best;
+  };
+
+  // On the cell centres, as they're needed.
+  const centres = new Float64Array(nx * ny).fill(NaN);
+  const atCentre = (i: number, j: number) => {
+    if (i < 0 || j < 0 || i >= nx || j >= ny) {
+      return surface.top;
+    }
+    const k = j * nx + i;
+    if (Number.isNaN(centres[k])) {
+      centres[k] = restAt(i, j, nearCentre);
+    }
+    return centres[k];
+  };
+
+  return (p: CamPoint) => {
+    const u = (p.x - minX) / cell - 0.5;
+    const v = (p.y - minY) / cell - 0.5;
+    const i = Math.floor(u);
+    const j = Math.floor(v);
+    const fx = u - i;
+    const fy = v - j;
+    const blended =
+      (1 - fx) * (1 - fy) * atCentre(i, j) +
+      fx * (1 - fy) * atCentre(i + 1, j) +
+      (1 - fx) * fy * atCentre(i, j + 1) +
+      fx * fy * atCentre(i + 1, j + 1);
+    return restAt(u, v, nearPoint, blended);
   };
 }

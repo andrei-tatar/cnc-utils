@@ -182,6 +182,23 @@ describe('dropCutter', () => {
     expect(tip({ x: 3, y: 3 })).toBeLessThan(0);
   });
 
+  it('follows a slope smoothly along a line across the cells', () => {
+    // A plane falling along X: over it the ball rests the same height
+    // above it wherever it is, between cell centres too (within what the
+    // cells leave unknown; the nearest cell's height would be up to 0.035
+    // off).
+    const plane = (x: number) => -2 - 0.5 * x;
+    const tip = dropCutter(
+      surfaceOf(60, (x) => plane(x)),
+      ball,
+    );
+    const above = (x: number, y: number) => tip({ x, y }) - plane(x);
+    const expected = above(3.05, 3.05);
+    for (let t = 0; t <= 2; t += 0.07) {
+      expect(Math.abs(above(2 + t, 2 + t) - expected)).toBeLessThan(0.002);
+    }
+  });
+
   it('never cuts into the surface, and touches it', () => {
     // Bumpy: waves and a step.
     const z = (x: number, y: number) =>
