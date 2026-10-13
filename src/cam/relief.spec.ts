@@ -199,6 +199,19 @@ describe('dropCutter', () => {
     }
   });
 
+  it('keeps off the outside of the loops, between cell centres too', () => {
+    // The cells say floor right up to the loops' edge and past it.
+    const tip = dropCutter(
+      surfaceOf(60, () => -2),
+      ball,
+      [square(1, 5)],
+    );
+    expect(tip({ x: 3, y: 3 })).toBeCloseTo(-2, 6);
+    // 0.5 in from the edge: the ball's side touches it.
+    expect(tip({ x: 1.5, y: 3 })).toBeCloseTo(-(1 - Math.sqrt(0.75)), 6);
+    expect(tip({ x: 0.5, y: 3 })).toBe(0);
+  });
+
   it('never cuts into the surface, and touches it', () => {
     // Bumpy: waves and a step.
     const z = (x: number, y: number) =>

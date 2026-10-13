@@ -107,7 +107,7 @@ export async function routeRelief(
     return builder;
   }
   const { surface, loops, box } = target;
-  const tip = dropCutter(surface, options.tool);
+  const tip = dropCutter(surface, options.tool, loops);
   const depth = (p: CamPoint) => Math.max(0, -tip(p));
   const passes = [options.angle || 0];
   if (options.crossPass) passes.push((options.angle || 0) + 90);

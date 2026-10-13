@@ -216,11 +216,15 @@ export function reliefSurface(
  * jump from cell to cell), but kept no lower than it is on the cell
  * centres round the point, blended between them (bilinear): between
  * centres the bit would otherwise sink a little into a flat floor, or the
- * uncut top. Off the map the surface is uncut (0).
+ * uncut top. Off the map the surface is uncut (0), and so is everywhere
+ * outside `loops` (closed, even-odd) when they're given: the cells only
+ * place their edge to within a cell, which would let the bit down up to a
+ * cell beyond it, so it's kept off the loops themselves.
  */
 export function dropCutter(
   surface: Heightmap,
   tool: SimulatedTool,
+  loops?: CamPoint[][],
 ): (p: CamPoint) => number {
   const { cell, nx, ny, minX, minY, heights } = surface;
   const r = Math.max(0, tool.diameter / 2);
@@ -318,7 +322,17 @@ export function dropCutter(
     return centres[k];
   };
 
+  const outside = loops ? nearOutside(loops, edge) : null;
+
   return (p: CamPoint) => {
+    // Outside the loops, or within reach of them: the uncut top holds the
+    // bit up there.
+    const away = outside?.(p) ?? Infinity;
+    if (away <= 0) {
+      return surface.top;
+    }
+    const kept =
+      away <= edge ? surface.top - profile(Math.min(away, r)) : -Infinity;
     const u = (p.x - minX) / cell - 0.5;
     const v = (p.y - minY) / cell - 0.5;
     const i = Math.floor(u);
@@ -330,6 +344,106 @@ export function dropCutter(
       fx * (1 - fy) * atCentre(i + 1, j) +
       (1 - fx) * fy * atCentre(i, j + 1) +
       fx * fy * atCentre(i + 1, j + 1);
-    return restAt(u, v, nearPoint, blended);
+    return restAt(u, v, nearPoint, Math.max(blended, kept));
   };
+}
+
+/**
+ * How far a point is from the outside of `loops` (closed, even-odd): its
+ * distance to them inside, 0 outside; Infinity when that's over `reach`.
+ */
+function nearOutside(
+  loops: CamPoint[][],
+  reach: number,
+): (p: CamPoint) => number {
+  const edges: Array<[CamPoint, CamPoint]> = [];
+  for (const loop of loops) {
+    for (let k = 0; k < loop.length; k++) {
+      edges.push([loop[k], loop[(k + 1) % loop.length]]);
+    }
+  }
+  // The edges by the square buckets (`reach` on a side) they pass through,
+  // and by the rows of buckets they cross.
+  const size = Math.max(reach, 1e-6);
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const p of loops.flat()) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  const nx = Math.max(1, Math.floor((maxX - minX) / size) + 1);
+  const ny = Math.max(1, Math.floor((maxY - minY) / size) + 1);
+  const buckets: Array<Array<[CamPoint, CamPoint]>> = Array.from(
+    { length: nx * ny },
+    () => [],
+  );
+  const rows: Array<Array<[CamPoint, CamPoint]>> = Array.from(
+    { length: ny },
+    () => [],
+  );
+  for (const e of edges) {
+    const [a, b] = e;
+    const i0 = Math.floor((Math.min(a.x, b.x) - minX) / size);
+    const i1 = Math.floor((Math.max(a.x, b.x) - minX) / size);
+    const j0 = Math.floor((Math.min(a.y, b.y) - minY) / size);
+    const j1 = Math.floor((Math.max(a.y, b.y) - minY) / size);
+    for (let j = j0; j <= j1; j++) {
+      rows[j].push(e);
+      for (let i = i0; i <= i1; i++) {
+        buckets[j * nx + i].push(e);
+      }
+    }
+  }
+
+  return (p) => {
+    const i = Math.floor((p.x - minX) / size);
+    const j = Math.floor((p.y - minY) / size);
+    // More than a bucket off the loops' bounds: outside, far from them.
+    if (i < -1 || j < -1 || i > nx || j > ny) {
+      return Infinity;
+    }
+    let nearest2 = reach * reach;
+    let near = false;
+    for (let y = Math.max(0, j - 1); y <= Math.min(ny - 1, j + 1); y++) {
+      for (let x = Math.max(0, i - 1); x <= Math.min(nx - 1, i + 1); x++) {
+        for (const [a, b] of buckets[y * nx + x]) {
+          const d2 = segmentDistance2(p, a, b);
+          if (d2 <= nearest2) {
+            nearest2 = d2;
+            near = true;
+          }
+        }
+      }
+    }
+    if (!near) {
+      return Infinity;
+    }
+    // Inside: an odd number of edges cross the line from it towards +X.
+    let inside = false;
+    for (const [a, b] of rows[j] ?? []) {
+      if (
+        a.y <= p.y !== b.y <= p.y &&
+        p.x < a.x + ((p.y - a.y) / (b.y - a.y)) * (b.x - a.x)
+      ) {
+        inside = !inside;
+      }
+    }
+    return inside ? Math.sqrt(nearest2) : 0;
+  };
+}
+
+/** The squared distance from `p` to the segment from `a` to `b`. */
+function segmentDistance2(p: CamPoint, a: CamPoint, b: CamPoint) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length2 = dx * dx + dy * dy;
+  let t = length2 > 0 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const x = a.x + dx * t - p.x;
+  const y = a.y + dy * t - p.y;
+  return x * x + y * y;
 }
