@@ -176,8 +176,9 @@ describe('dropCutter', () => {
       surfaceOf(60, (x) => (Math.abs(x - 3) < 0.1 ? -5 : 0)),
       ball,
     );
+    // The cells beside it nearest the point: 0.15 across, 0.05 along.
     const r = 1;
-    const reach = r - Math.sqrt(r * r - 0.15 * 0.15);
+    const reach = r - Math.sqrt(r * r - 0.15 * 0.15 - 0.05 * 0.05);
     expect(tip({ x: 3, y: 3 })).toBeGreaterThan(-reach - 1e-6);
     expect(tip({ x: 3, y: 3 })).toBeLessThan(0);
   });

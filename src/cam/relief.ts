@@ -1,5 +1,4 @@
 import { Bounds } from './arcs';
-import { maxOverDisk } from './image-engrave-clearing';
 import { Heightmap, SimulatedTool, toolProfile } from './simulate';
 import { CamPoint } from './types';
 
@@ -213,8 +212,8 @@ export function reliefSurface(
  * into the surface anywhere under it. The surface is known at the cell
  * centres only, so that's measured from the point itself to them (the
  * nearest cell's instead would make a line across the cells at an angle
- * jump from cell to cell), but kept no lower than it is on the cell
- * centres round the point, blended between them (bilinear): between
+ * jump from cell to cell), but kept no lower than the surface right under
+ * the axis, blended between the centres round it (bilinear): between
  * centres the bit would otherwise sink a little into a flat floor, or the
  * uncut top. Off the map the surface is uncut (0), and so is everywhere
  * outside `loops` (closed, even-odd) when they're given: the cells only
@@ -238,91 +237,82 @@ export function dropCutter(
   const slack = cell * Math.SQRT1_2;
   const reach = Math.ceil((edge + slack) / cell);
   const profile = toolProfile(tool);
+  /** The least the profile rises `d` cells from a cell centre. */
+  const leastAt = (d: number) =>
+    profile(Math.min(r, Math.max(0, d * cell - slack)));
 
-  /**
-   * The cells that can be under the bit with its axis up to `spread` from
-   * a cell's centre, round that cell, by the least its profile can rise
-   * there, lowest first: once the highest the surface gets under the bit,
-   * less that, can't beat what's been found, the rest can't either.
-   */
-  const cellsUnder = (spread: number) => {
-    const offsets: Array<{ di: number; dj: number; least: number }> = [];
-    for (let dj = -reach; dj <= reach; dj++) {
-      for (let di = -reach; di <= reach; di++) {
-        const d = Math.hypot(di, dj) * cell;
-        if (d <= edge + spread) {
-          offsets.push({
-            di,
-            dj,
-            least: profile(Math.min(r, Math.max(0, d - spread))),
-          });
-        }
+  // The cells under the bit, in blocks of BLOCK × BLOCK round the nearest
+  // cell, by the least its profile can rise over a block, lowest first:
+  // once the highest the surface gets under the bit, less that, can't beat
+  // what's been found, the rest can't either; nor can a block whose
+  // highest, less that, doesn't.
+  const half = (BLOCK - 1) / 2;
+  const blocks: Array<{ di: number; dj: number; least: number }> = [];
+  const span = Math.ceil(reach / BLOCK);
+  for (let bj = -span; bj <= span; bj++) {
+    for (let bi = -span; bi <= span; bi++) {
+      const d = Math.hypot(
+        Math.max(0, Math.abs(bi * BLOCK) - half),
+        Math.max(0, Math.abs(bj * BLOCK) - half),
+      );
+      if (d * cell <= edge + slack) {
+        blocks.push({ di: bi * BLOCK, dj: bj * BLOCK, least: leastAt(d) });
       }
     }
-    offsets.sort((a, b) => a.least - b.least);
-    return {
-      di: Int32Array.from(offsets, (o) => o.di),
-      dj: Int32Array.from(offsets, (o) => o.dj),
-      least: Float64Array.from(offsets, (o) => o.least),
-    };
-  };
-  const nearCentre = cellsUnder(0);
-  const nearPoint = cellsUnder(slack);
-  const highest = maxOverDisk(heights, nx, ny, reach);
+  }
+  blocks.sort((a, b) => a.least - b.least);
+  const blockI = Int32Array.from(blocks, (o) => o.di);
+  const blockJ = Int32Array.from(blocks, (o) => o.dj);
+  const blockLeast = Float64Array.from(blocks, (o) => o.least);
+  // The surface's highest over each block, by its middle cell; off the
+  // map the uncut top.
+  const blockTop = maxOverSquare(heights, nx, ny, half, surface.top);
+  const highest = maxOverSquare(heights, nx, ny, reach, surface.top);
 
   /**
    * The tip's height with its axis at (u, v), in cells from the first
-   * cell's centre (`cells` reaching that far from its nearest), or
-   * `atLeast` when that's higher.
+   * cell's centre, or `atLeast` when that's higher.
    */
-  const restAt = (
-    u: number,
-    v: number,
-    cells: ReturnType<typeof cellsUnder>,
-    atLeast = -Infinity,
-  ) => {
-    const { di, dj, least } = cells;
+  const restAt = (u: number, v: number, atLeast: number) => {
     const i = Math.round(u);
     const j = Math.round(v);
     if (i < 0 || j < 0 || i >= nx || j >= ny) {
       return surface.top;
     }
-    const k = j * nx + i;
-    // Under the bit, partly off the map: the uncut surface is there.
-    const off = i < reach || j < reach || i >= nx - reach || j >= ny - reach;
-    const top = off ? Math.max(highest[k], surface.top) : highest[k];
+    // Off the map, under the bit: the uncut surface is there (and so in
+    // `highest`).
+    const top = highest[j * nx + i];
     let best = atLeast;
-    for (let n = 0; n < least.length; n++) {
-      if (top - least[n] <= best) break;
-      const x = i + di[n];
-      const y = j + dj[n];
-      const d2 = ((x - u) * (x - u) + (y - v) * (y - v)) * cell * cell;
-      if (d2 > edge2) continue;
-      const z =
-        x < 0 || y < 0 || x >= nx || y >= ny
+    for (let n = 0; n < blockLeast.length; n++) {
+      const least = blockLeast[n];
+      if (top - least <= best) break;
+      const bi = i + blockI[n];
+      const bj = j + blockJ[n];
+      const blockHigh =
+        bi < 0 || bj < 0 || bi >= nx || bj >= ny
           ? surface.top
-          : heights[y * nx + x];
-      const rest = z - profile(Math.min(Math.sqrt(d2), r));
-      if (rest > best) best = rest;
+          : blockTop[bj * nx + bi];
+      if (blockHigh - least <= best) continue;
+      for (let y = bj - half; y <= bj + half; y++) {
+        for (let x = bi - half; x <= bi + half; x++) {
+          const z =
+            x < 0 || y < 0 || x >= nx || y >= ny
+              ? surface.top
+              : heights[y * nx + x];
+          if (z - least <= best) continue;
+          const d2 = ((x - u) * (x - u) + (y - v) * (y - v)) * cell * cell;
+          if (d2 > edge2) continue;
+          const rest = z - profile(Math.min(Math.sqrt(d2), r));
+          if (rest > best) best = rest;
+        }
+      }
     }
-    // A bit narrower than a cell, between centres: on the nearest.
-    return best === -Infinity ? heights[k] : best;
-  };
-
-  // On the cell centres, as they're needed.
-  const centres = new Float64Array(nx * ny).fill(NaN);
-  const atCentre = (i: number, j: number) => {
-    if (i < 0 || j < 0 || i >= nx || j >= ny) {
-      return surface.top;
-    }
-    const k = j * nx + i;
-    if (Number.isNaN(centres[k])) {
-      centres[k] = restAt(i, j, nearCentre);
-    }
-    return centres[k];
+    return best;
   };
 
   const outside = loops ? nearOutside(loops, edge) : null;
+  const heightAt = (i: number, j: number) =>
+    i < 0 || j < 0 || i >= nx || j >= ny ? surface.top : heights[j * nx + i];
 
   return (p: CamPoint) => {
     // Outside the loops, or within reach of them: the uncut top holds the
@@ -339,13 +329,71 @@ export function dropCutter(
     const j = Math.floor(v);
     const fx = u - i;
     const fy = v - j;
-    const blended =
-      (1 - fx) * (1 - fy) * atCentre(i, j) +
-      fx * (1 - fy) * atCentre(i + 1, j) +
-      (1 - fx) * fy * atCentre(i, j + 1) +
-      fx * fy * atCentre(i + 1, j + 1);
-    return restAt(u, v, nearPoint, Math.max(blended, kept));
+    const under =
+      (1 - fx) * (1 - fy) * heightAt(i, j) +
+      fx * (1 - fy) * heightAt(i + 1, j) +
+      (1 - fx) * fy * heightAt(i, j + 1) +
+      fx * fy * heightAt(i + 1, j + 1);
+    return restAt(u, v, Math.max(under, kept));
   };
+}
+
+/** The drop cutter's blocks of cells are this many on a side (odd). */
+const BLOCK = 3;
+
+/**
+ * The highest of `values` (`nx` × `ny`, row by row) within `half` cells
+ * each way of each (a square), `outside` beyond the edges.
+ */
+function maxOverSquare(
+  values: Float32Array,
+  nx: number,
+  ny: number,
+  half: number,
+  outside: number,
+): Float32Array {
+  const along = new Float32Array(values.length);
+  slidingMax(values, along, nx, ny, 1, nx, half, outside);
+  const out = new Float32Array(values.length);
+  slidingMax(along, out, ny, nx, nx, 1, half, outside);
+  return out;
+}
+
+/**
+ * The highest of `n` values `step` apart, within `half` of each, along
+ * `count` lines `stride` apart (a monotonic queue: each value goes in and
+ * out once), `outside` beyond the ends.
+ */
+function slidingMax(
+  values: Float32Array,
+  out: Float32Array,
+  n: number,
+  count: number,
+  step: number,
+  stride: number,
+  half: number,
+  outside: number,
+) {
+  const queue = new Int32Array(n);
+  for (let line = 0; line < count; line++) {
+    const base = line * stride;
+    let head = 0;
+    let tail = 0;
+    let next = 0;
+    for (let i = 0; i < n; i++) {
+      for (; next < n && next <= i + half; next++) {
+        const value = values[base + next * step];
+        while (tail > head && values[base + queue[tail - 1] * step] <= value) {
+          tail--;
+        }
+        queue[tail++] = next;
+      }
+      while (queue[head] < i - half) head++;
+      const high = values[base + queue[head] * step];
+      out[base + i * step] =
+        i - half < 0 || i + half >= n ? Math.max(high, outside) : high;
+    }
+  }
 }
 
 /**
