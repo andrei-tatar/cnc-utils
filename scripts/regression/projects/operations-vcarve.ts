@@ -483,6 +483,24 @@ export default [
     }),
   },
   {
+    name: 'image-engrave-smoothed',
+    covers:
+      'image engraving smoothed over 1 mm (the ring PNG, cover, in a 40 mm disc, 2.5 deep, lines 0.3), cleared first with a 3 mm end mill: the clearing follows the blurred picture too',
+    model: project({
+      shapes: [circle('s-disc', 40)],
+      tools: [v60, em3],
+      operations: [
+        imageEngraveClear('o-clear', 't-em3', 'o-engrave'),
+        imageEngrave('o-engrave', 't-v60', 's-disc', RING_PNG, {
+          imageFit: 'cover',
+          darkDepth: 2.5,
+          lineSpacing: 0.3,
+          smoothing: 1,
+        }),
+      ],
+    }),
+  },
+  {
     name: 'image-engrave-clearing-wrapped',
     covers:
       'image engraving (as image-engrave-clearing) wrapped round a Ø60 cylinder on a rotary axis along Y, the disc on the axis line; its clearing (not ticked itself) wrapped as the engraving is',

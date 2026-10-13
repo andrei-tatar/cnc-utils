@@ -365,5 +365,9 @@
   },
   "template-scorpion-medallion": {
     "material left": "The simulation now cuts a move straight down to its bottom (it stopped at its top): where the engraving steps down into a groove, the V-bit's plunge is cut too, a few hundredths of a millimetre deeper at a few cells."
+  },
+  "image-engrave-smoothed": {
+    "operation": "New: image engravings can blur their picture first (smoothing); the baseline's code doesn't know the field and engraves the picture as it is, its clearing too.",
+    "material left": "New: image engravings can blur their picture first (smoothing); the baseline's code doesn't know the field and engraves the picture as it is, its clearing too."
   }
 }

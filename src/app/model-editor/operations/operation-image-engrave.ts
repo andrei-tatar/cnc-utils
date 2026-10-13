@@ -34,6 +34,8 @@ export interface ModelType {
   darkDepth: number;
   /** Depth follows darkness raised to this: above 1 lightens mid-tones. */
   gamma: number;
+  /** Blurred over about this far first (mm); 0 or none: not blurred. */
+  smoothing?: number;
   /** Between raster lines (mm). */
   lineSpacing: number;
   /** Direction of the lines, degrees counter-clockwise from the X axis. */
@@ -97,6 +99,17 @@ const field: FormlyFieldConfig = {
         description:
           '1: groove width follows darkness; above 1 lightens the mid-tones, below darkens them',
         min: 0.1,
+        required: true,
+      },
+    },
+    {
+      key: 'smoothing',
+      type: 'number',
+      defaultValue: 0,
+      props: {
+        label: 'smoothing',
+        description: 'mm; blurs the picture first, taking out its grain',
+        min: 0,
         required: true,
       },
     },
