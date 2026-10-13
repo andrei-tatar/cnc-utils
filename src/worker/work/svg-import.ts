@@ -1,4 +1,4 @@
-import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
+import { SVGLoader } from './svg-loader';
 import type { Curve, Path, Vector2 } from 'three';
 import { CamPoint, CamShape, CamVertex } from '../../cam/types';
 import { lazy, pointsEqual } from '../../util';
