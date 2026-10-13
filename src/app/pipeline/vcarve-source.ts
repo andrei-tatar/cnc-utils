@@ -256,6 +256,7 @@ export function imageEngraveOptions(
     lightDepth: op.lightDepth ?? 0,
     darkDepth: op.darkDepth,
     gamma: op.gamma ?? 1,
+    smoothing: op.smoothing ?? 0,
     spacing: op.lineSpacing,
     angle: op.rasterAngle ?? 0,
     sampleStep: op.sampleStep,

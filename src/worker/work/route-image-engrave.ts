@@ -14,6 +14,7 @@ import {
   quarterTurns,
   rotateBrightness,
 } from '../../cam/image-engrave';
+import { smoothRelief } from '../../cam/relief';
 import { CamShape } from '../../cam/types';
 import { brightnessAt, imagePixels } from './image-pixels';
 import { shapeRegion } from './regions';
@@ -31,6 +32,8 @@ export type ImageEngraveOptions = {
   darkDepth: number;
   /** Depth follows darkness raised to this. */
   gamma: number;
+  /** Blurred over about this far first (mm). */
+  smoothing: number;
   /** Between raster lines (mm). */
   spacing: number;
   /** Direction of the lines, degrees from the X axis. */
@@ -134,7 +137,11 @@ export async function imageEngraveRuns(
   for (let i = 0; i < drawn.data.length; i++) {
     drawn.data[i] = brightnessAt(pixels.data, i) / 255;
   }
-  const brightness = rotateBrightness(drawn, turns);
+  const turned = rotateBrightness(drawn, turns);
+  const brightness = smoothRelief(
+    turned,
+    options.smoothing / ((placement.maxX - placement.minX) / turned.width),
+  );
 
   // The bit can't carve deeper than its cone.
   const cone = vBitCone(options);
