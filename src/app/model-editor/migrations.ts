@@ -26,7 +26,34 @@ export type Migration = (model: any) => any;
  * The migrations, in order: `MIGRATIONS[i]` takes a project of version
  * `i + 1` to version `i + 2`.
  */
-const MIGRATIONS: Migration[] = [];
+const MIGRATIONS: Migration[] = [
+  // 1 → 2: rest machining has its own depths, leave stock and overlap;
+  // until then it took the first three from its pocket, with no overlap.
+  (model) => {
+    const all = (model.operations ?? []).flatMap((op: any) =>
+      op?.type === 'rotary-repeat' ? [op, ...(op.operations ?? [])] : [op],
+    );
+    for (const op of all) {
+      if (op?.type !== 'rest') continue;
+      const pocket = all.find(
+        (o: any) => o?.id === op.pocketOperationId && o?.type === 'pocket',
+      );
+      for (const key of [
+        'startDepth',
+        'depthMode',
+        'depth',
+        'steps',
+        'leaveStock',
+      ]) {
+        if (pocket?.[key] !== undefined) {
+          op[key] ??= pocket[key];
+        }
+      }
+      op.restOverlap ??= 0;
+    }
+    return model;
+  },
+];
 
 /**
  * The version of the format projects are written in. Projects saved before

@@ -18,8 +18,13 @@ export type RestOptions = {
   toolSize: number;
   /** The tool the pocket was cleared with first. */
   previousToolSize: number;
+  /** The stock the pocket left on its walls. */
+  previousLeaveStock?: number;
   toolEngagement: number;
+  /** The stock this leaves on the walls, whatever the pocket left. */
   leaveStock: number;
+  /** How far (mm) it cuts on into what the pocket cleared. */
+  overlap?: number;
   startDepth: number;
   depthPerStep: number;
   steps: number;
@@ -33,10 +38,12 @@ export type RestOptions = {
  * Rest machining: pockets, with a smaller tool, only what a larger one left
  * in the pocket: corners tighter than its radius, gaps narrower than it.
  *
- * The larger tool swept the pocket's opening by its radius; the smaller one
- * can reach the opening by its own. Their difference is what's left; the
- * smaller tool cuts the area its body sweeps reaching it (which stays in the
- * pocket), as an ordinary pocket.
+ * The larger tool swept the pocket's opening by its radius (less the stock
+ * the pocket left); the smaller one can reach the opening by its own (less
+ * its own leave stock, so leaving less than the pocket finishes the walls
+ * too). Their difference is what's left, grown by the overlap into what the
+ * pocket cleared; the smaller tool cuts the area its body sweeps reaching
+ * it (which stays in the pocket), as an ordinary pocket.
  */
 export async function routeRest(
   input: CamShape[],
@@ -50,11 +57,12 @@ export async function routeRest(
     return new GCodeBuilder().sourceShapeId(sourceShapeId);
   }
 
-  const pocket = await inflate(
-    await shapeRegion(input),
-    -Math.max(0, options.leaveStock),
+  const region = await shapeRegion(input);
+  const pocket = await inflate(region, -Math.max(0, options.leaveStock));
+  const cleared = await reachable(
+    await inflate(region, -Math.max(0, options.previousLeaveStock ?? 0)),
+    previousRadius,
   );
-  const cleared = await reachable(pocket, previousRadius);
   const reach = await reachable(pocket, radius);
   const left = await reachable(
     await combine(reach, cleared, 'difference'),
@@ -63,11 +71,16 @@ export async function routeRest(
   if (!left.length) {
     return new GCodeBuilder().sourceShapeId(sourceShapeId);
   }
+  const overlap = Math.max(0, options.overlap ?? 0);
+  const target =
+    overlap > 0
+      ? await combine(await inflate(left, overlap), reach, 'intersection')
+      : left;
   // Where the smaller tool's centre goes to cut what's left, and what it
   // sweeps from there.
   const centers = await combine(
     await inflate(pocket, -radius),
-    await inflate(left, radius),
+    await inflate(target, radius),
     'intersection',
   );
   const swept = await inflate(centers, radius);

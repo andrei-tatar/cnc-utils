@@ -55,4 +55,47 @@ describe('migrations', () => {
       expect(() => migrate(stored, migrations)).toThrow();
     }
   });
+
+  it('gives rest machining its pocket’s depths and leave stock (version 2)', () => {
+    const pocket = {
+      id: 'p',
+      type: 'pocket',
+      startDepth: 0.5,
+      depthMode: 'total',
+      depth: 'd * 2',
+      steps: 3,
+      leaveStock: 0.2,
+    };
+    const model = migrateModel({
+      version: 1,
+      operations: [
+        pocket,
+        { id: 'r', type: 'rest', pocketOperationId: 'p' },
+        {
+          id: 'x',
+          type: 'rotary-repeat',
+          operations: [{ id: 's', type: 'rest', pocketOperationId: 'p' }],
+        },
+        { id: 'g', type: 'rest', pocketOperationId: 'gone' },
+      ],
+    }) as any;
+    const copied = {
+      startDepth: 0.5,
+      depthMode: 'total',
+      depth: 'd * 2',
+      steps: 3,
+      leaveStock: 0.2,
+      restOverlap: 0,
+    };
+    expect(model.operations[1]).toEqual(jasmine.objectContaining(copied));
+    expect(model.operations[2].operations[0]).toEqual(
+      jasmine.objectContaining(copied),
+    );
+    expect(model.operations[3]).toEqual({
+      id: 'g',
+      type: 'rest',
+      pocketOperationId: 'gone',
+      restOverlap: 0,
+    });
+  });
 });

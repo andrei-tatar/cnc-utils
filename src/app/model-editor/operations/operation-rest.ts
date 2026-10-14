@@ -2,19 +2,27 @@ import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { allShapes } from '../shapes/describe';
 import { allTools } from '../tools';
+import { DepthSteps, depthStepsFields } from './depth-steps';
 import { allOperations, describeOperation } from './describe';
 
 /**
  * Rest machining: a smaller tool clears what a pocket's larger tool
  * couldn't reach (tight corners, narrow gaps), and nothing else. The shape
- * and depths come from the pocket.
+ * comes from the pocket; the depths and leave stock are its own (another
+ * bit, other steps).
  */
-export interface ModelType {
+export interface ModelType extends DepthSteps {
   type?: 'rest';
   /** The pocket to finish. */
   pocketOperationId: string;
+  leaveStock: number;
+  /** How far (mm) it cuts on into what the pocket cleared. */
+  restOverlap: number;
   toolEngagement: number;
 }
+
+/** The depth fields picking a pocket copies from it. */
+const DEPTH_KEYS = ['startDepth', 'depthMode', 'depth', 'steps'] as const;
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
@@ -24,6 +32,21 @@ const field: FormlyFieldConfig = {
       props: {
         label: 'after pocket',
         required: true,
+        // Start from the pocket's depths: the same cut, in steps to change
+        // for this bit.
+        change: (field: FormlyFieldConfig) => {
+          const pocket = allOperations(field).find(
+            (o) => o.id === field.formControl?.value && o.type === 'pocket',
+          );
+          for (const key of pocket ? DEPTH_KEYS : []) {
+            const control = field.parent?.fieldGroup?.find(
+              (f) => f.key === key,
+            )?.formControl;
+            if (pocket[key] !== undefined && control) {
+              control.setValue(pocket[key]);
+            }
+          }
+        },
       },
       validators: {
         isPocket: {
@@ -59,6 +82,28 @@ const field: FormlyFieldConfig = {
               label: o.name || describeOperation(o, shapes, tools, operations),
             }));
         },
+      },
+    },
+    ...depthStepsFields(),
+    {
+      key: 'leaveStock',
+      type: 'number',
+      defaultValue: 0,
+      props: {
+        min: 0,
+        label: 'leave stock',
+        required: true,
+      },
+    },
+    {
+      key: 'restOverlap',
+      type: 'number',
+      defaultValue: 0.5,
+      props: {
+        min: 0,
+        label: 'overlap',
+        description: 'how far it cuts on into what the pocket cleared',
+        required: true,
       },
     },
     {

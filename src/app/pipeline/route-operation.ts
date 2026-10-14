@@ -398,11 +398,13 @@ function route({
         optimizeTravel,
         toolSize: diameter,
         previousToolSize: rest.previousToolSize,
+        previousLeaveStock: rest.previousLeaveStock,
         toolEngagement: op.toolEngagement,
-        leaveStock: rest.leaveStock,
-        startDepth: rest.startDepth,
-        depthPerStep: rest.depthPerStep,
-        steps: rest.steps,
+        leaveStock: op.leaveStock ?? 0,
+        overlap: op.restOverlap ?? 0,
+        startDepth: op.startDepth,
+        depthPerStep: depthPerStep(op),
+        steps: op.steps,
         rampAngle,
       });
   }

@@ -71,7 +71,7 @@ export function describeOperation(
       what = 'inlay plug';
       break;
     case 'rest':
-      what = 'rest machining';
+      what = `rest machining ${stepped(operation)}`;
       break;
     case 'image-engrave':
       what = `image engraving ≤${mm(+operation.darkDepth || 0)}`;

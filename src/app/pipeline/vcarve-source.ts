@@ -1,6 +1,5 @@
 import { ModelType, OperationParameters } from '../model-editor/model';
 import type { InlayPlug } from '../../worker/work/inlay-plug';
-import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { withOverrides } from '../model-editor/tools/feeds-and-speeds';
 import type { ClearingTool } from '../../worker/work/route-vcarve-clearing';
 import type { ImageEngraveOptions } from '../../worker/work/route-image-engrave';
@@ -42,11 +41,9 @@ export type PlugSource = {
 /** What rest machining takes from the pocket it finishes. */
 export type RestSource = {
   shapeId: string;
-  startDepth: number;
-  depthPerStep: number;
-  steps: number;
-  leaveStock: number;
+  /** The pocket's tool, and the stock it left on the walls. */
   previousToolSize: number;
+  previousLeaveStock: number;
 };
 
 /** What a flat inlay plug takes from the pocket it fills. */
@@ -110,11 +107,8 @@ export function restSource(
   }
   return {
     shapeId: pocket.shapeId,
-    startDepth: pocket.startDepth,
-    depthPerStep: depthPerStep(pocket),
-    steps: pocket.steps,
-    leaveStock: pocket.leaveStock,
     previousToolSize: tool.diameter,
+    previousLeaveStock: pocket.leaveStock ?? 0,
   };
 }
 

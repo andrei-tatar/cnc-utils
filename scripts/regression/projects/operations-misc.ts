@@ -349,7 +349,7 @@ export default [
   {
     name: 'rest-steps-leave-stock',
     covers:
-      'rest, borrowing pocket startDepth 0.5, depthMode total 4 ÷ 2, leaveStock 0.2; toolEngagement 0.25; text "B" islands',
+      'rest with the pocket’s startDepth 0.5, depthMode total 4 ÷ 2, leaveStock 0.2; toolEngagement 0.25; text "B" islands',
     model: project({
       shapes: [text('s-text', 'B', 40, 800)],
       tools: [em3, tool('t-em1', 9, 'end-mill', 1)],
@@ -361,7 +361,14 @@ export default [
           steps: 2,
           leaveStock: 0.2,
         }),
-        rest('o-rest', 't-em1', 's-text', 'o-pocket', { toolEngagement: 0.25 }),
+        rest('o-rest', 't-em1', 's-text', 'o-pocket', {
+          startDepth: 0.5,
+          depthMode: 'total',
+          depth: 4,
+          steps: 2,
+          leaveStock: 0.2,
+          toolEngagement: 0.25,
+        }),
       ],
     }),
   },
@@ -379,8 +386,34 @@ export default [
           steps: 2,
         }),
         rest('o-rest', 't-em3', 's-l', 'o-pocket', {
+          depth: 2,
+          steps: 2,
           rampMode: 'ramp',
           rampAngle: 5,
+        }),
+      ],
+    }),
+  },
+
+  {
+    name: 'rest-own-steps-overlap',
+    covers:
+      'rest with its own steps (total 4 ÷ 4), leaveStock 0 after a pocket leaving 0.3 (finishes the walls), overlap 1 mm',
+    model: project({
+      shapes: [polyline('s-star', star(30, 30, 28, 12), true)],
+      tools: [em6, tool('t-em2', 9, 'end-mill', 2)],
+      operations: [
+        pocket('o-pocket', 't-em6', 's-star', {
+          depthMode: 'total',
+          depth: 4,
+          steps: 2,
+          leaveStock: 0.3,
+        }),
+        rest('o-rest', 't-em2', 's-star', 'o-pocket', {
+          depthMode: 'total',
+          depth: 4,
+          steps: 4,
+          restOverlap: 1,
         }),
       ],
     }),

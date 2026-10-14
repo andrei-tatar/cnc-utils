@@ -20,8 +20,8 @@ export const DEFAULT_FLUTES = 2;
 /**
  * The cut an operation makes with its tool, for working out feeds and
  * speeds: its heaviest, usually the first pass of a step (a slot). Both
- * resolved; `operations` for what it borrows (rest machining its pocket's
- * steps, an inlay plug its v-carve's depth). Null when there's no telling.
+ * resolved; `operations` for what it borrows (an inlay plug its v-carve's
+ * depth). Null when there's no telling.
  */
 export function operationCut(
   op: any,
@@ -63,17 +63,11 @@ export function operationCut(
   switch (op.type) {
     case 'pocket':
     case 'flat':
+    case 'rest':
       depth = depthPerStep(op);
       reach = totalDepth(op);
       engagement = op.toolEngagement ?? 1;
       break;
-    case 'rest': {
-      const pocket = borrowed(op.pocketOperationId) ?? {};
-      depth = depthPerStep(pocket);
-      reach = totalDepth(pocket);
-      engagement = op.toolEngagement ?? 1;
-      break;
-    }
     case 'v-carve-clear':
     case 'image-engrave-clear':
     case 'relief-rough':

@@ -375,5 +375,15 @@
   "relief-png16": {
     "operation": "New: 16-bit PNGs are read at their full depth (imageBrightness); the baseline only read images through the canvas (8 bits), which the harness's stand-in can't decode at 16 bits, so it carved nothing.",
     "material left": "New: 16-bit PNGs are read at their full depth (imageBrightness); the baseline only read images through the canvas (8 bits), which the harness's stand-in can't decode at 16 bits, so it carved nothing."
+  },
+  "rest-own-steps-overlap": {
+    "operation o-rest": "New in this fixture: rest machining's own leave stock (0, the pocket's 0.3) finishes the walls too, in its own 4 steps, and cuts 1 mm on into what the pocket cleared; master took the pocket's steps and leave stock.",
+    "material left": "New in this fixture: rest machining's own leave stock (0, the pocket's 0.3) finishes the walls too, in its own 4 steps, and cuts 1 mm on into what the pocket cleared; master took the pocket's steps and leave stock."
+  },
+  "rest-star": {
+    "warnings": "Rest machining has its own steps now, so the step-depth check covers it (master's skipped it): its 3 mm steps are deeper than the bit is wide."
+  },
+  "rest-steps-leave-stock": {
+    "warnings": "Rest machining has its own steps now, so the step-depth check covers it (master's skipped it): its 2 mm steps are deeper than the 1 mm bit is wide."
   }
 }

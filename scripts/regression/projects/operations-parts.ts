@@ -709,6 +709,12 @@ export function rest(
     ...base(id, toolId, shapeId),
     type: 'rest',
     pocketOperationId,
+    startDepth: 0,
+    depthMode: 'per-step',
+    depth: 3,
+    steps: 1,
+    leaveStock: 0,
+    restOverlap: 0,
     toolEngagement: 0.4,
     ...f,
   };

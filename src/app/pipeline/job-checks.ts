@@ -50,6 +50,7 @@ export function jobChecks(
     const round = ROUND.includes(bitType);
     const stepped =
       op.type === 'pocket' ||
+      op.type === 'rest' ||
       op.type === 'profile' ||
       op.type === 'flat' ||
       op.type === 'flat-plug';

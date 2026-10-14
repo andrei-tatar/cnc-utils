@@ -45,7 +45,7 @@ describe('operationCut', () => {
     expect((cut as any).width).toBeCloseTo(2.4, 6);
   });
 
-  it('takes rest machining’s steps from its pocket', () => {
+  it('reads rest machining’s own steps, not its pocket’s', () => {
     const pocket = {
       id: 'p',
       type: 'pocket',
@@ -54,12 +54,19 @@ describe('operationCut', () => {
       steps: 4,
     };
     const cut = operationCut(
-      { type: 'rest', pocketOperationId: 'p', toolEngagement: 0.3 },
+      {
+        type: 'rest',
+        pocketOperationId: 'p',
+        toolEngagement: 0.3,
+        depthMode: 'total',
+        depth: 6,
+        steps: 8,
+      },
       { diameter: 3 },
       [pocket],
     );
     expect(cut).toEqual(
-      jasmine.objectContaining({ depth: 1.5, width: jasmine.any(Number) }),
+      jasmine.objectContaining({ depth: 0.75, width: jasmine.any(Number) }),
     );
     expect((cut as any).width).toBeCloseTo(0.9, 6);
   });
