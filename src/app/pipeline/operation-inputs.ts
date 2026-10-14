@@ -116,6 +116,7 @@ export function operationInputs(
         fluteLength: ________,
         stickout: __________,
         flutes: _________,
+        fluteType: ___________,
         ...parameters
       }) => parameters)(tool)
     : null;

@@ -165,6 +165,18 @@ export function woodMaterial(wood: Wood): Material {
 }
 
 /**
+ * How an end mill's flutes are made: spiralling up (lifting the chips out,
+ * the usual), down (pressing them down, for a clean top edge) or serrated
+ * to break the chips (a roughing, "corn cob" bit).
+ */
+export type FluteType = 'upcut' | 'downcut' | 'roughing';
+
+/** A downcut bit fully enclosed in its cut is fed this much slower. */
+const DOWNCUT_SLOWER = 0.25;
+/** A roughing bit's serrations take this share of a plain bit's force. */
+const ROUGHING_FORCE = 0.75;
+
+/**
  * A cut, as feeds and speeds see it. `diameter` is how wide the bit cuts
  * (a V-bit's or ball nose's width at the depth it goes to).
  */
@@ -195,6 +207,8 @@ export type Cut =
        * width there ÷ its diameter). Fed faster to make up, up to twice.
        */
       edge?: number;
+      /** How the bit's flutes are made (an end mill's): see FluteType. */
+      flute?: FluteType;
     }
   | {
       kind: 'drill';
@@ -265,9 +279,18 @@ function milling(
   // wood.
   const loadWidth = Math.max(width, Math.min(cut.loadWidth ?? 0, d));
   const slotDepth = Math.min(machine.slotDepth * size, machine.maxSlotDepth);
-  const load =
+  const plainLoad =
     ((chip * edge) / base) *
     ((loadWidth * depth * material.load) / (size * slotDepth));
+  // Serrated flutes break the chip into short pieces: less force for the
+  // same cut.
+  const load =
+    cut.flute === 'roughing' ? plainLoad * ROUGHING_FORCE : plainLoad;
+  if (cut.flute === 'roughing' && plainLoad > 1) {
+    notes.push(
+      `roughing flutes take the cut with about ${percent(1 - ROUGHING_FORCE)} less force`,
+    );
+  }
   if (load > 1) {
     const eased = chip / load;
     const least = (base * material.minChipShare) / edge;
@@ -283,6 +306,27 @@ function milling(
       notes.push(
         `eased off ${percent(1 - 1 / load)} for the ${mm(depth)} depth`,
       );
+    }
+  }
+
+  // Downcut flutes push the chips down into the cut: where it's enclosed
+  // (a slot, a deep pass) they pack and are cut again, heating the bit.
+  // Slower the more the cut wraps round the bit (its width) and the deeper
+  // it goes (up to the bit's diameter), never so slow it rubs.
+  if (cut.flute === 'downcut') {
+    const enclosed = (loadWidth / d) * clamp(depth / size, 0, 1);
+    const slower = DOWNCUT_SLOWER * enclosed;
+    if (slower >= 0.05) {
+      const eased = Math.max(
+        chip * (1 - slower),
+        (base * material.minChipShare) / edge,
+      );
+      notes.push(
+        eased < chip * 0.99
+          ? `downcut: fed ${percent(1 - eased / chip)} slower, the chips pack in the cut (shallower steps clear them better)`
+          : `downcut: the chips pack in the cut, shallower steps clear them better`,
+      );
+      chip = eased;
     }
   }
 

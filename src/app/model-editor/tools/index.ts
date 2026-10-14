@@ -5,6 +5,7 @@ import { rootModel } from '../shapes/describe';
 import { toolFeedsAndSpeeds } from './feeds-and-speeds';
 import type { HeaderAction } from '../components/array-type-component';
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
+import type { FluteType } from '../../../cam/feeds-speeds';
 
 export type BitType =
   'end-mill' | 'ball-nose' | 'bull-nose' | 'v-bit' | 'drill' | 'keyhole';
@@ -22,6 +23,12 @@ export const ROUND_CUTTERS: readonly BitType[] = [
   'ball-nose',
   'bull-nose',
 ];
+
+export const FLUTE_TYPE_LABELS: Record<FluteType, string> = {
+  upcut: 'upcut',
+  downcut: 'downcut',
+  roughing: 'roughing',
+};
 
 export const BIT_TYPE_LABELS: Record<BitType, string> = {
   'end-mill': 'end mill',
@@ -56,6 +63,11 @@ export type ToolType = {
   pointAngle?: number;
   /** How many cutting edges it has (2 when not set): for feeds and speeds. */
   flutes?: number;
+  /**
+   * End mill: upcut, downcut or roughing flutes (not set: cut as an
+   * upcut): for feeds and speeds.
+   */
+  fluteType?: FluteType | null;
   /** How long its cutting edge is (mm): deeper cuts are flagged. */
   fluteLength?: number | null;
   /**
@@ -178,6 +190,9 @@ export function describeTool(tool: Partial<ToolType> | undefined): string {
       }
       break;
     default:
+      if (tool?.fluteType && FLUTE_TYPE_LABELS[tool.fluteType]) {
+        parts.push(FLUTE_TYPE_LABELS[tool.fluteType]);
+      }
       parts.push('end mill');
   }
   return parts.join(' ');
@@ -367,6 +382,22 @@ export const field: FormlyFieldConfig = {
           required: true,
         },
         validators: { validation: ['whole-number'] },
+      },
+      {
+        key: 'fluteType',
+        type: 'enum',
+        props: {
+          label: 'flute type',
+          placeholder: 'not set',
+          description:
+            'for feeds and speeds: downcut is fed slower in slots and deep passes (the chips pack in), roughing takes heavier cuts (less force)',
+          options: [
+            { value: 'upcut', label: 'upcut' },
+            { value: 'downcut', label: 'downcut' },
+            { value: 'roughing', label: 'roughing (chipbreaker)' },
+          ],
+        },
+        expressions: { hide: hideUnlessBit('end-mill') },
       },
       {
         key: 'fluteLength',

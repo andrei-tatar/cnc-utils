@@ -148,6 +148,7 @@ function sameTool(a: any, b: any): boolean {
     'cornerRadius',
     'pointAngle',
     'headHeight',
+    'fluteType',
   ];
   return keys.every(
     (k) => JSON.stringify(a?.[k] ?? null) === JSON.stringify(b?.[k] ?? null),

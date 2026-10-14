@@ -4,6 +4,7 @@ import {
   Cut,
   FeedsAndSpeeds,
   feedsAndSpeeds,
+  FluteType,
   machineById,
   vBitWidth,
   woodById,
@@ -132,6 +133,7 @@ export function operationCut(
     // A pocket's first pass and corners take the whole width.
     loadWidth: cutting,
     ...edgeOf(tool, cutting),
+    ...fluteOf(tool),
   };
 }
 
@@ -158,6 +160,14 @@ function edgeOf(
     default:
       return {};
   }
+}
+
+/** An end mill's flute type, when it says. */
+function fluteOf(
+  tool: Partial<ToolType> | undefined,
+): { flute: FluteType } | {} {
+  const bit = tool?.bitType ?? 'end-mill';
+  return bit === 'end-mill' && tool?.fluteType ? { flute: tool.fluteType } : {};
 }
 
 /** How wide the bit cuts `depth` deep. */

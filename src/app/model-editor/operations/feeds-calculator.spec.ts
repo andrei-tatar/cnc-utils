@@ -20,6 +20,20 @@ describe('operationCut', () => {
     });
   });
 
+  it('passes an end mill’s flute type on, and only an end mill’s', () => {
+    const op = { type: 'profile', depthMode: 'per-step', depth: 2, steps: 1 };
+    expect(operationCut(op, { ...endMill, fluteType: 'downcut' }, [])).toEqual(
+      jasmine.objectContaining({ flute: 'downcut' }),
+    );
+    expect(
+      operationCut(
+        op,
+        { ...endMill, bitType: 'ball-nose', fluteType: 'downcut' } as any,
+        [],
+      ),
+    ).not.toEqual(jasmine.objectContaining({ flute: jasmine.anything() }));
+  });
+
   it('takes two flutes when the tool doesn’t say', () => {
     const cut = operationCut(
       { type: 'profile', depthMode: 'per-step', depth: 2, steps: 3 },

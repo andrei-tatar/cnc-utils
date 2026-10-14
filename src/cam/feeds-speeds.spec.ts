@@ -160,6 +160,70 @@ describe('woods', () => {
   });
 });
 
+describe('flute types', () => {
+  const cut = (
+    flute: Extract<Cut, { kind: 'mill' }>['flute'],
+    depth: number,
+    width = 6,
+  ): Extract<Cut, { kind: 'mill' }> => ({
+    kind: 'mill',
+    diameter: 6,
+    flutes: 2,
+    depth,
+    width,
+    loadWidth: width,
+    flute,
+  });
+
+  it('cuts an upcut bit as one that doesn’t say', () => {
+    expect(feedsAndSpeeds(cut('upcut', 3))).toEqual(
+      feedsAndSpeeds(cut(undefined, 3)),
+    );
+  });
+
+  it('feeds a downcut bit slower the more the cut encloses it', () => {
+    const ratio = (depth: number, width: number) =>
+      feedsAndSpeeds(cut('downcut', depth, width))!.chipLoad /
+      feedsAndSpeeds(cut('upcut', depth, width))!.chipLoad;
+    // A slot half the bit deep, then half as wide.
+    expect(ratio(3, 6)).toBeCloseTo(1 - 0.125, 6);
+    expect(ratio(3, 3)).toBeCloseTo(1 - 0.0625, 6);
+    expect(feedsAndSpeeds(cut('downcut', 3))!.notes.join()).toContain(
+      'downcut: fed 13% slower',
+    );
+  });
+
+  it('never feeds a downcut bit so slow it rubs', () => {
+    // A slot as deep as the bit is already as slow as it goes.
+    const deep = feedsAndSpeeds(cut('downcut', 6))!;
+    expect(deep.chipLoad).toBeCloseTo(
+      feedsAndSpeeds(cut('upcut', 6))!.chipLoad,
+      6,
+    );
+    expect(deep.notes.join()).toContain('shallower steps clear them better');
+  });
+
+  it('leaves a downcut bit alone in a light, shallow cut', () => {
+    const light = cut('downcut', 0.5, 1);
+    expect(feedsAndSpeeds(light)).toEqual(
+      feedsAndSpeeds({ ...light, flute: 'upcut' }),
+    );
+  });
+
+  it('takes a heavier cut at full chip load with a roughing bit', () => {
+    const heavy = 4;
+    const upcut = feedsAndSpeeds(cut('upcut', heavy))!;
+    const roughing = feedsAndSpeeds(cut('roughing', heavy))!;
+    expect(upcut.notes.join()).toContain('eased off');
+    expect(roughing.chipLoad).toBeGreaterThan(upcut.chipLoad);
+    expect(roughing.notes.join()).toContain('roughing');
+    // No difference in a cut light enough for any bit.
+    expect(feedsAndSpeeds(cut('roughing', 2))).toEqual(
+      feedsAndSpeeds(cut('upcut', 2)),
+    );
+  });
+});
+
 describe('cutting widths', () => {
   it('widens a V-bit with depth, up to its diameter', () => {
     expect(vBitWidth(6, 90, 0, 1)).toBeCloseTo(2, 6);
