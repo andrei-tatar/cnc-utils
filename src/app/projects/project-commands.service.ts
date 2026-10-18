@@ -161,7 +161,7 @@ export class ProjectCommands {
    * Whether the work may be replaced: yes when there's nothing unsaved in
    * it, otherwise when the user confirms.
    */
-  private async confirmReplace(
+  async confirmReplace(
     title: string,
     message: string,
     confirmLabel: string,
@@ -179,7 +179,7 @@ export class ProjectCommands {
     );
   }
 
-  private confirm(
+  confirm(
     title: string,
     message: string,
     confirmLabel: string,

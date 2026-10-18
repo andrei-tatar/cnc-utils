@@ -197,6 +197,11 @@ const allowedBits: Record<
   },
 };
 
+/** What an operation of `type` needs for a tool, e.g. "a V-bit". */
+export function operationNeeds(type: string): string | undefined {
+  return allowedBits[type]?.needs;
+}
+
 function allowsBit(type: string, bit: BitType) {
   return allowedBits[type]?.bits.includes(bit) ?? true;
 }
@@ -400,6 +405,9 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
       props: {
         label: 'type',
         required: true,
+        // Every type, until the expression below narrows them to the ones
+        // the operation's tool and the stock allow.
+        options: types.map((t) => ({ value: t.type, label: t.label })),
       },
       validators: {
         bitType: {

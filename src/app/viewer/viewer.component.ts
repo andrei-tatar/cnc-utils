@@ -749,7 +749,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
   private simulation$ = new BehaviorSubject<Simulation | null>(null);
   /** Simulating: asks for the material left, and shows it. */
-  simulating = false;
+  @Input() simulating = false;
   @Output() simulateChange = new EventEmitter<boolean>();
   /** How finely the material is simulated (finer is slower). */
   @Input() simulationQuality: SimulationQuality = 'standard';

@@ -308,7 +308,7 @@ export class CamService implements ShapeExporter {
    * any.
    */
   async stockToFit(): Promise<ReturnType<typeof stockAround>> {
-    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+    await this.settled();
     const model = await firstValueFrom(this.model$);
     const operations = flatOperations(model.operations);
     const cuts = await Promise.all(
@@ -361,40 +361,136 @@ export class CamService implements ShapeExporter {
   constructor() {
     this.download$
       .pipe(
-        withLatestFrom(this.program$, this.model$),
+        withLatestFrom(this.program$),
         // The project as it is now, not as it was when last routed.
-        concatMap(async ([how, program, model]) => ({
+        concatMap(async ([how, program]) => ({
           how,
-          program,
-          metadata: await getModelMetadata(this.store.value),
-          descriptions: operationDescriptions(model),
+          files: await this.gcodeFiles(program, how, true),
         })),
       )
-      .subscribe(({ how, program, metadata, descriptions }) => {
+      .subscribe(({ how, files }) => {
         // Named after the saved project the work belongs to, if any.
         const name = `${
           fileNameFrom(this.store.project?.name ?? '') || 'gcode'
         }-${new Date().getTime()}`;
         if (how === 'one') {
-          downloadFile(
-            buildProgram(program, metadata, descriptions),
-            `${name}.nc`,
-          );
+          downloadFile(files[0].gcode, `${name}.nc`);
           return;
         }
-        const files = buildProgramPerTool(program, metadata, descriptions);
-        const entries = files.map((file, i) => ({
-          name: `${String(i + 1).padStart(2, '0')}-${
-            fileNameFrom(
-              file.toolNumber === null
-                ? 'no-tool'
-                : `T${file.toolNumber} ${file.label}`,
-            ) || 'tool'
-          }.nc`,
-          data: file.gcode,
-        }));
-        downloadFile(createZip(entries), `${name}-by-tool.zip`);
+        downloadFile(
+          createZip(files.map(({ name, gcode }) => ({ name, data: gcode }))),
+          `${name}-by-tool.zip`,
+        );
       });
+  }
+
+  /**
+   * Waits for the work in progress (shapes, toolpaths) to be done, so what
+   * comes next is up to date.
+   */
+  async settled() {
+    // Let an edit just made start its work first.
+    await new Promise((resolve) => setTimeout(resolve));
+    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+  }
+
+  /**
+   * The G-code once the work in progress is done: one file, or one per
+   * tool run (`per-tool`, numbered file names), with the project embedded
+   * when `withProject`.
+   */
+  async gcode(how: 'one' | 'per-tool', withProject: boolean) {
+    await this.settled();
+    return this.gcodeFiles(
+      await firstValueFrom(this.program$),
+      how,
+      withProject,
+    );
+  }
+
+  private async gcodeFiles(
+    program: Program,
+    how: 'one' | 'per-tool',
+    withProject: boolean,
+  ): Promise<GcodeFile[]> {
+    const model = await firstValueFrom(this.model$);
+    const metadata = withProject
+      ? await getModelMetadata(this.store.value)
+      : undefined;
+    const descriptions = operationDescriptions(model);
+    if (how === 'one') {
+      return [
+        {
+          name: 'program.nc',
+          gcode: buildProgram(program, metadata, descriptions),
+        },
+      ];
+    }
+    return buildProgramPerTool(program, metadata, descriptions).map(
+      (file, i) => ({
+        name: `${String(i + 1).padStart(2, '0')}-${
+          fileNameFrom(
+            file.toolNumber === null
+              ? 'no-tool'
+              : `T${file.toolNumber} ${file.label}`,
+          ) || 'tool'
+        }.nc`,
+        toolNumber: file.toolNumber,
+        gcode: file.gcode,
+      }),
+    );
+  }
+
+  /**
+   * What to look at before cutting, once the work in progress is done,
+   * with the moves checked against the material (see `warnings$`).
+   */
+  async jobWarnings(): Promise<JobWarning[]> {
+    await this.settled();
+    const [model, paths, shapes] = await firstValueFrom(
+      combineLatest([this.model$, this.paths$, this.shapes$]),
+    );
+    const input = clearanceInput(paths, model);
+    const clearances = input
+      ? await firstValueFrom(
+          worker
+            .jobClearances(
+              paths,
+              input.tools,
+              input.stock,
+              input.holderDiameter,
+            )
+            .pipe(
+              recover<ClearanceReport | null>(
+                'checking the moves against the material',
+                () => null,
+              ),
+            ),
+          { defaultValue: null },
+        )
+      : null;
+    return withClearances(jobChecks(model, paths, shapes), clearances, model);
+  }
+
+  /** A shape's outlines (after its transforms), once they're made. */
+  async shapeResult(shapeId: string): Promise<CamShape[]> {
+    await this.settled();
+    return firstValueFrom(this.shapes.byId(shapeId));
+  }
+
+  /** A shape as SVG in millimetres (see `exportShapeSvg`). */
+  async shapeSvg(shapeId: string, name: string): Promise<string> {
+    const shapes = await this.shapeResult(shapeId);
+    const model = await firstValueFrom(this.model$);
+    const options = resolveGcodeOptions(model.gcode);
+    // Points as close as the geometry's precision, the curve between them as
+    // close as the shapes follow the original curves.
+    const points = Math.max(0.005, 10 ** -options.geometryDecimals);
+    return shapesToSvg(
+      shapes,
+      { points, chords: points + options.curveTolerance },
+      name,
+    );
   }
 
   /** Downloads the latest G-code (with the project embedded). */
@@ -422,7 +518,15 @@ export class CamService implements ShapeExporter {
     tab.document.write(
       '<p style="font: 14px system-ui">Preparing the setup sheet…</p>',
     );
-    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+    const html = await this.setupSheet();
+    tab.document.open();
+    tab.document.write(html);
+    tab.document.close();
+  }
+
+  /** The setup sheet's page, once the work in progress is done. */
+  async setupSheet(): Promise<string> {
+    await this.settled();
     const [model, program, shapes, paths, view, notes] = await firstValueFrom(
       combineLatest([
         this.model$,
@@ -455,7 +559,7 @@ export class CamService implements ShapeExporter {
           seconds: time.byOperation.get(o.id)!,
         };
       });
-    const html = setupSheetHtml({
+    return setupSheetHtml({
       title: this.store.project?.name || 'Untitled project',
       date: new Date(),
       stock: view.stock,
@@ -470,9 +574,6 @@ export class CamService implements ShapeExporter {
       paths: paths.filter((p) => p.rotation === undefined),
       notes,
     });
-    tab.document.open();
-    tab.document.write(html);
-    tab.document.close();
   }
 
   /**
@@ -480,7 +581,22 @@ export class CamService implements ShapeExporter {
    * or, without nests, the parts the outside profiles cut out.
    */
   async downloadCutList() {
-    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
+    const rows = await this.cutList();
+    const name = fileNameFrom(this.store.project?.name ?? '');
+    // With a byte order mark, so spreadsheets read it as UTF-8 (Ø, ×).
+    downloadFile(
+      '\ufeff' + cutListCsv(rows),
+      `${name ? `${name}-` : ''}cut-list.csv`,
+      'text/csv',
+    );
+  }
+
+  /**
+   * The cut list (see `downloadCutList`), once the work in progress is
+   * done.
+   */
+  async cutList(): Promise<CutListRow[]> {
+    await this.settled();
     const model = await firstValueFrom(this.model$);
     const stock = resolveStock(model.stock);
     const thickness = stock.enabled ? stock.thickness : null;
@@ -577,13 +693,7 @@ export class CamService implements ShapeExporter {
       }
     }
 
-    const name = fileNameFrom(this.store.project?.name ?? '');
-    // With a byte order mark, so spreadsheets read it as UTF-8 (Ø, ×).
-    downloadFile(
-      '\ufeff' + cutListCsv(rows),
-      `${name ? `${name}-` : ''}cut-list.csv`,
-      'text/csv',
-    );
+    return rows;
   }
 
   /**
@@ -592,19 +702,7 @@ export class CamService implements ShapeExporter {
    * cut it on a laser. Waits for any work in progress, so it's up to date.
    */
   async exportShapeSvg(shapeId: string, name: string) {
-    await firstValueFrom(this.workTracker.isWorking$.pipe(filter((w) => !w)));
-    const [shapes, model] = await firstValueFrom(
-      combineLatest([this.shapes.byId(shapeId), this.model$]),
-    );
-    const options = resolveGcodeOptions(model.gcode);
-    // Points as close as the geometry's precision, the curve between them as
-    // close as the shapes follow the original curves.
-    const points = Math.max(0.005, 10 ** -options.geometryDecimals);
-    const svg = shapesToSvg(
-      shapes,
-      { points, chords: points + options.curveTolerance },
-      name,
-    );
+    const svg = await this.shapeSvg(shapeId, name);
     downloadFile(svg, `${fileNameFrom(name) || 'shape'}.svg`, 'image/svg+xml');
   }
 }
@@ -631,6 +729,14 @@ export type StockView = {
   stock: StockOptions;
   /** Where X0 Y0 Z0 of the G-code is, in design coordinates. */
   zero: { x: number; y: number; z: number };
+};
+
+/** A G-code file: the whole program, or one tool's run of it. */
+export type GcodeFile = {
+  name: string;
+  /** The tool's number (null before any tool) when split by tool. */
+  toolNumber?: number | null;
+  gcode: string;
 };
 
 export type TimeSummary = {

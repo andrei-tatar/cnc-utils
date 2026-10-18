@@ -44,6 +44,7 @@
       [checks]="cam.warnings$ | async"
       [clampShapes]="cam.clampShapes$ | async"
       [simulation]="cam.simulation$ | async"
+      [simulating]="(cam.simulate$ | async) ?? false"
       (simulateChange)="cam.simulate$.next($event)"
       [simulationQuality]="(cam.simulationQuality$ | async) ?? 'standard'"
       (simulationQualityChange)="cam.setSimulationQuality($event)"

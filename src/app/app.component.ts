@@ -33,6 +33,7 @@ import {
 } from './model-editor/components/collapsed-sections';
 import { CamPoint } from '../cam/types';
 import { generateId } from '../util';
+import { WebMcp } from './webmcp/webmcp.service';
 
 @Component({
   selector: 'app-root',
@@ -97,6 +98,8 @@ export class AppComponent {
     fromEvent(window, 'hashchange')
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.projects.openLinked());
+    // Agents in the browser can work with the project (WebMCP).
+    inject(WebMcp).start({ selectShape: (id) => this.onShapeSelect(id) });
   }
 
   /**
