@@ -1,10 +1,10 @@
 import { Color } from 'three';
-import { DEFAULT_WOOD } from '../../../cam/feeds-speeds';
+import { DEFAULT_MATERIAL } from '../../../cam/feeds-speeds';
 import { DEPTH_STOPS } from './path-colors';
 import type { StockColors } from './stock-solid';
 
-/** How each wood looks (its colour freshly cut), by id in `WOODS`. */
-const WOOD_COLORS: Record<string, string> = {
+/** How each material looks (its colour freshly cut), by id in `MATERIALS`. */
+const MATERIAL_COLORS: Record<string, string> = {
   cedar: '#c98b5a',
   spruce: '#ead7b0',
   fir: '#e2c595',
@@ -34,15 +34,33 @@ const WOOD_COLORS: Record<string, string> = {
   ipe: '#6b4a2e',
   mdf: '#b49b77',
   plywood: '#e6cc9c',
+  'acrylic-cast': '#dce9ef',
+  'acrylic-extruded': '#dce9ef',
+  polycarbonate: '#d6e1e6',
+  petg: '#d9e8e4',
+  abs: '#ebe5d3',
+  pvc: '#8f949a',
+  'pvc-foam': '#f4f4f1',
+  hdpe: '#f1f1ec',
+  uhmw: '#efefe9',
+  polypropylene: '#eeece4',
+  acetal: '#f1efe6',
+  nylon: '#ede4c9',
+  'al-6060': '#cfd2d6',
+  'al-6061': '#c8cbd0',
+  'al-5083-cast': '#d2d5d8',
+  'al-7075': '#c1c4c9',
 };
 
 /**
- * The simulated material's colours for a wood (an id in `WOODS`): its own
- * colour on the uncut faces, darker on the sides and darker still at the
- * deepest cuts.
+ * The simulated material's colours for a material (an id in `MATERIALS`):
+ * its own colour on the uncut faces, darker on the sides and darker still
+ * at the deepest cuts.
  */
-export function woodColors(woodId: string): StockColors {
-  const base = new Color(WOOD_COLORS[woodId] ?? WOOD_COLORS[DEFAULT_WOOD]);
+export function materialColors(materialId: string): StockColors {
+  const base = new Color(
+    MATERIAL_COLORS[materialId] ?? MATERIAL_COLORS[DEFAULT_MATERIAL],
+  );
   return {
     top: base.clone(),
     side: base.clone().multiplyScalar(0.8),
@@ -51,22 +69,22 @@ export function woodColors(woodId: string): StockColors {
 }
 
 /**
- * What the simulated material can look like: the stock's own wood, or, to
+ * What the simulated material can look like: the stock's own colour, or, to
  * make the details stand out, a neutral grey (its shape shown by the light
  * alone) or the cuts coloured by depth, as the toolpaths are.
  */
 export const PREVIEW_MATERIALS = [
-  { id: 'stock', name: 'wood (the stock’s)' },
+  { id: 'stock', name: 'the stock’s material' },
   { id: 'clay', name: 'grey clay' },
   { id: 'depth', name: 'depth colours' },
 ] as const;
 
 export type PreviewMaterial = (typeof PREVIEW_MATERIALS)[number]['id'];
 
-/** The simulated material's colours, for `woodId` the stock's wood. */
+/** The simulated material's colours, for `materialId` the stock's. */
 export function previewColors(
   material: PreviewMaterial,
-  woodId: string,
+  materialId: string,
 ): StockColors {
   switch (material) {
     case 'clay':
@@ -83,7 +101,7 @@ export function previewColors(
         depthRamp: DEPTH_STOPS.map((hex) => new Color(hex)),
       };
     default:
-      return woodColors(woodId);
+      return materialColors(materialId);
   }
 }
 

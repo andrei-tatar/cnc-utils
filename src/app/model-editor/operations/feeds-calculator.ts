@@ -7,8 +7,8 @@ import {
   FluteType,
   machineById,
   vBitWidth,
-  woodById,
-  woodMaterial,
+  cuttingMaterial,
+  materialById,
 } from '../../../cam/feeds-speeds';
 import { resolvedItem } from '../variables/field';
 import { rootModel } from '../shapes/describe';
@@ -215,9 +215,9 @@ function topList(field: FormlyFieldConfig, key: string) {
   return root.fieldGroup?.find((f) => f.key === key);
 }
 
-/** The wood the stock is, from any field in the form. */
-function stockWood(field: FormlyFieldConfig) {
-  return woodById(rootModel(field)?.stock?.material);
+/** What the stock is, from any field in the form. */
+function stockMaterial(field: FormlyFieldConfig) {
+  return materialById(rootModel(field)?.stock?.material);
 }
 
 /** The machine the G-code section names, from any field in the form. */
@@ -242,7 +242,11 @@ function suggestion(field: FormlyFieldConfig): FeedsAndSpeeds | null {
   const cut = operationCut(op, resolvedItem(toolsList, tool), operations);
   return (
     cut &&
-    feedsAndSpeeds(cut, gcodeMachine(field), woodMaterial(stockWood(field)))
+    feedsAndSpeeds(
+      cut,
+      gcodeMachine(field),
+      cuttingMaterial(stockMaterial(field)),
+    )
   );
 }
 
@@ -262,7 +266,7 @@ export type CalculatedKey = 'feedRate' | 'plungeFeedRate' | 'spindleSpeed';
 /**
  * A checkbox (`autoFeeds`): while it's on, the operation's feed rate, plunge
  * rate and spindle speed are worked out for its tool, how it cuts, the
- * stock's wood and the G-code section's machine, and kept up to date as any
+ * stock's material and the G-code section's machine, and kept up to date as any
  * of them changes (see `calculatedFeedExpressions`).
  */
 export const autoFeedsField: FormlyFieldConfig = {
@@ -271,11 +275,11 @@ export const autoFeedsField: FormlyFieldConfig = {
   defaultValue: true,
   expressions: {
     'props.label': (field: FormlyFieldConfig) =>
-      `calculate for ${stockWood(field).name}`,
+      `calculate for ${stockMaterial(field).name}`,
     'props.description': (field: FormlyFieldConfig) =>
       field.model?.autoFeeds
         ? `${gcodeMachine(field).name}: ${describe(suggestion(field))}`
-        : 'from the tool (diameter, flutes), the cut (depth per step, engagement), the wood (stock section) and the machine (G-code section)',
+        : 'from the tool (diameter, flutes), the cut (depth per step, engagement), the material (stock section) and the machine (G-code section)',
   },
 };
 

@@ -1,13 +1,15 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { axisEndLabel, DEFAULT_STOCK, StockOptions } from '../../../cam/stock';
-import { WoodGroup, WOODS } from '../../../cam/feeds-speeds';
+import { MaterialGroup, MATERIALS } from '../../../cam/feeds-speeds';
 import { EditorState } from '../editor-state';
 
-const WOOD_GROUPS: Record<WoodGroup, string> = {
+const MATERIAL_GROUPS: Record<MaterialGroup, string> = {
   softwood: 'softwoods',
   hardwood: 'hardwoods',
   exotic: 'exotics',
   sheet: 'sheet goods',
+  plastic: 'plastics',
+  aluminium: 'aluminium',
 };
 
 export type ModelType = {
@@ -276,13 +278,13 @@ export const field: FormlyFieldConfig = {
       type: 'enum',
       defaultValue: d.material,
       props: {
-        label: 'wood',
+        label: 'material',
         description: 'what the feeds & speeds calculator cuts',
         required: true,
-        options: WOODS.map((wood) => ({
-          value: wood.id,
-          label: wood.name,
-          group: WOOD_GROUPS[wood.group],
+        options: MATERIALS.map((material) => ({
+          value: material.id,
+          label: material.name,
+          group: MATERIAL_GROUPS[material.group],
         })),
       },
     },

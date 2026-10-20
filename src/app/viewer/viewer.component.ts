@@ -110,7 +110,7 @@ import {
   saveViewOptions,
   ViewOptions,
 } from './helpers/view-options';
-import { DEFAULT_WOOD } from '../../cam/feeds-speeds';
+import { DEFAULT_MATERIAL } from '../../cam/feeds-speeds';
 import {
   flipAxis,
   operationPointOnBlank,
@@ -1652,7 +1652,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * The simulated material as a lit, wood-coloured solid (darker where it's
+   * The simulated material as a lit solid in the stock's colour (darker where it's
    * cut deeper, with holes where it's cut through), in place of the
    * toolpaths while it's shown.
    */
@@ -1672,16 +1672,16 @@ export class ViewerComponent implements OnInit, OnDestroy {
     });
     const surface = new Group();
     this.content.add(surface);
-    // The look picked in the view options (the stock's wood, or one that
+    // The look picked in the view options (the stock's material, or one that
     // shows the details).
     const colors$ = combineLatest([this.viewOptions$, this.stock$]).pipe(
       map(([options, view]) => [
         options.material,
-        view?.stock.material ?? DEFAULT_WOOD,
+        view?.stock.material ?? DEFAULT_MATERIAL,
       ]),
       distinctUntilChanged((a, b) => a[0] === b[0] && a[1] === b[1]),
-      map(([material, wood]) =>
-        previewColors(material as PreviewMaterial, wood),
+      map(([look, material]) =>
+        previewColors(look as PreviewMaterial, material),
       ),
     );
 

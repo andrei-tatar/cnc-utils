@@ -1,5 +1,5 @@
 import { polygonsBounds } from './arcs';
-import { DEFAULT_WOOD } from './feeds-speeds';
+import { DEFAULT_MATERIAL } from './feeds-speeds';
 import { anchorPoint, BoxAnchor } from './gcode-options';
 import { CamPolygon } from './types';
 
@@ -42,7 +42,10 @@ export type StockOptions = {
    * origin.
    */
   xyZero: 'design' | BoxAnchor | 'axis-start' | 'axis-end';
-  /** The wood it is (an id in `WOODS`), for working out feeds and speeds. */
+  /**
+   * What it is (an id in `MATERIALS`: a wood, plastic or aluminium alloy),
+   * for working out feeds and speeds.
+   */
   material: string;
 };
 
@@ -59,7 +62,7 @@ export const DEFAULT_STOCK: StockOptions = {
   diameter: 50,
   zZero: 'top',
   xyZero: 'design',
-  material: DEFAULT_WOOD,
+  material: DEFAULT_MATERIAL,
 };
 
 /**

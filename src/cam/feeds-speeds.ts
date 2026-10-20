@@ -1,6 +1,6 @@
 /**
- * Suggested feeds and speeds for cutting hardwood on a hobby router: chip
- * load per tooth from the bit's (effective) diameter, thinned for light
+ * Suggested feeds and speeds for cutting wood, plastics and aluminium on a
+ * hobby router: chip load per tooth from the bit's (effective) diameter, thinned for light
  * stepovers, eased off for heavy cuts the frame can't take, at a spindle
  * speed that keeps the chip load within the machine's top feed rate.
  */
@@ -74,9 +74,14 @@ export type Material = {
    * oak being 1: the machine's heaviest cut is set in oak.
    */
   load: number;
+  /** The most flutes that clear its chips; more pack, melt or weld. */
+  maxFlutes?: number;
+  /** What to mind cutting it, said with every cut. */
+  note?: string;
 };
 
 export type WoodGroup = 'softwood' | 'hardwood' | 'exotic' | 'sheet';
+export type MaterialGroup = WoodGroup | 'plastic' | 'aluminium';
 
 /** A wood to cut, by how hard it is. */
 export type Wood = {
@@ -134,14 +139,142 @@ export const WOODS: readonly Wood[] = [
   { id: 'plywood', name: 'plywood (birch)', group: 'sheet', janka: 1100 },
 ];
 
-export const DEFAULT_WOOD = 'oak';
+/**
+ * A plastic or an aluminium alloy, by how it cuts next to the others of
+ * its kind (see `plasticMaterial`, `aluminiumMaterial`).
+ */
+export type Machinable = {
+  id: string;
+  name: string;
+  group: 'plastic' | 'aluminium';
+  /** Its chip load, as a share of its kind's. */
+  chip: number;
+  /** How hard it pushes back at that chip load, oak being 1. */
+  load: number;
+};
 
-/** The wood with this id, or oak. */
-export function woodById(id: string | null | undefined): Wood {
+/** What the stock can be (the stock section's `material`). */
+export type StockMaterial = Wood | Machinable;
+
+/**
+ * Plastics that are routed, as sheet or block. The ones that melt easily
+ * (extruded acrylic, the polyolefins) or are soft (foamed PVC) take a
+ * thicker chip; tough ones push back harder.
+ */
+export const PLASTICS: readonly Machinable[] = [
+  {
+    id: 'acrylic-cast',
+    name: 'acrylic (cast PMMA)',
+    group: 'plastic',
+    chip: 1,
+    load: 0.8,
+  },
+  {
+    id: 'acrylic-extruded',
+    name: 'acrylic (extruded PMMA)',
+    group: 'plastic',
+    chip: 1.2,
+    load: 0.8,
+  },
+  {
+    id: 'polycarbonate',
+    name: 'polycarbonate (PC)',
+    group: 'plastic',
+    chip: 1,
+    load: 1,
+  },
+  { id: 'petg', name: 'PETG', group: 'plastic', chip: 1, load: 0.8 },
+  { id: 'abs', name: 'ABS', group: 'plastic', chip: 1.1, load: 0.7 },
+  { id: 'pvc', name: 'PVC (rigid)', group: 'plastic', chip: 1, load: 0.8 },
+  {
+    id: 'pvc-foam',
+    name: 'PVC foam board',
+    group: 'plastic',
+    chip: 1.4,
+    load: 0.3,
+  },
+  { id: 'hdpe', name: 'HDPE', group: 'plastic', chip: 1.4, load: 0.5 },
+  { id: 'uhmw', name: 'UHMW-PE', group: 'plastic', chip: 1.4, load: 0.6 },
+  {
+    id: 'polypropylene',
+    name: 'polypropylene (PP)',
+    group: 'plastic',
+    chip: 1.4,
+    load: 0.5,
+  },
+  {
+    id: 'acetal',
+    name: 'acetal (POM)',
+    group: 'plastic',
+    chip: 1.1,
+    load: 0.8,
+  },
+  { id: 'nylon', name: 'nylon (PA6)', group: 'plastic', chip: 1.1, load: 0.9 },
+];
+
+/**
+ * Aluminium alloys a router cuts well: the heat-treated ones, which break
+ * their chips (pure aluminium and rolled 5xxx sheet smear onto the bit).
+ * Harder ones push back harder.
+ */
+export const ALUMINIUMS: readonly Machinable[] = [
+  {
+    id: 'al-6060',
+    name: 'aluminium 6060 / 6063 (extrusions)',
+    group: 'aluminium',
+    chip: 1,
+    load: 3.5,
+  },
+  {
+    id: 'al-6061',
+    name: 'aluminium 6061 / 6082 (T6)',
+    group: 'aluminium',
+    chip: 1,
+    load: 4,
+  },
+  {
+    id: 'al-5083-cast',
+    name: 'aluminium cast plate (5083)',
+    group: 'aluminium',
+    chip: 1,
+    load: 4,
+  },
+  {
+    id: 'al-7075',
+    name: 'aluminium 7075 (T6)',
+    group: 'aluminium',
+    chip: 0.9,
+    load: 5,
+  },
+];
+
+/** Everything the stock can be, woods first. */
+export const MATERIALS: readonly StockMaterial[] = [
+  ...WOODS,
+  ...PLASTICS,
+  ...ALUMINIUMS,
+];
+
+export const DEFAULT_MATERIAL = 'oak';
+
+/** The material with this id, or oak. */
+export function materialById(id: string | null | undefined): StockMaterial {
   return (
-    WOODS.find((wood) => wood.id === id) ??
-    WOODS.find((wood) => wood.id === DEFAULT_WOOD)!
+    MATERIALS.find((material) => material.id === id) ??
+    MATERIALS.find((material) => material.id === DEFAULT_MATERIAL)!
   );
+}
+
+/** How `material` cuts. */
+export function cuttingMaterial(material: StockMaterial): Material {
+  switch (material.group) {
+    case 'plastic':
+      return plasticMaterial(material);
+    case 'aluminium':
+      return aluminiumMaterial(material);
+    default:
+      return woodMaterial(material);
+  }
 }
 
 /**
@@ -161,6 +294,43 @@ export function woodMaterial(wood: Wood): Material {
     minChipShare: 0.5,
     // Force goes with the chip, and about with the root of the hardness.
     load: chip * Math.sqrt(1 / softer),
+  };
+}
+
+/**
+ * How `plastic` cuts: a thick chip, carrying the heat away before the
+ * plastic melts onto the bit, so never thinned far; light enough to take
+ * at about the machine's full slot.
+ */
+export function plasticMaterial(plastic: Machinable): Material {
+  return {
+    name: plastic.name,
+    surfaceSpeed: 300,
+    drillSurfaceSpeed: 60,
+    chipLoad: (diameter) => plastic.chip * clamp(0.018 * diameter, 0.01, 0.2),
+    drillFeed: (diameter) => plastic.chip * clamp(0.02 * diameter, 0.02, 0.15),
+    minChipShare: 0.7,
+    load: plastic.load,
+    maxFlutes: 2,
+  };
+}
+
+/**
+ * How `alloy` cuts: a thin chip and shallow steps, as a hobby frame flexes
+ * under aluminium's cutting force (several times oak's: a slot about a
+ * quarter as deep), though not so thin it rubs and the chip welds on.
+ */
+export function aluminiumMaterial(alloy: Machinable): Material {
+  return {
+    name: alloy.name,
+    surfaceSpeed: 300,
+    drillSurfaceSpeed: 80,
+    chipLoad: (diameter) => alloy.chip * clamp(0.006 * diameter, 0.005, 0.07),
+    drillFeed: (diameter) => alloy.chip * clamp(0.008 * diameter, 0.01, 0.1),
+    minChipShare: 0.6,
+    load: alloy.load,
+    maxFlutes: 3,
+    note: 'blow the chips out (air or mist): chips cut again weld to the bit',
   };
 }
 
@@ -233,7 +403,7 @@ export type FeedsAndSpeeds = {
 export function feedsAndSpeeds(
   cut: Cut,
   machine: Machine = ULTIMATE_BEE_1000x1500,
-  material: Material = woodMaterial(woodById(DEFAULT_WOOD)),
+  material: Material = cuttingMaterial(materialById(DEFAULT_MATERIAL)),
 ): FeedsAndSpeeds | null {
   if (!(cut.diameter > 0)) {
     return null;
@@ -256,6 +426,11 @@ function milling(
   // The bit's own diameter: the chip load and its stiffness go with it.
   const size = Math.max(cut.toolDiameter ?? 0, d);
   const base = material.chipLoad(size);
+  if (material.maxFlutes && flutes > material.maxFlutes) {
+    notes.push(
+      `${flutes} flutes pack with ${material.name} chips: ${material.maxFlutes} or fewer clear them better`,
+    );
+  }
 
   // A light stepover makes a thinner chip than the feed per tooth, and so
   // does a sloping edge: feed faster so it's as thick as it should be (to
@@ -347,6 +522,9 @@ function milling(
     );
   }
 
+  if (material.note) {
+    notes.push(material.note);
+  }
   const spindleSpeed = round(rpm, 100);
   const feedRate = round(feed, 10);
   return {
@@ -378,6 +556,9 @@ function drilling(
   }
   if (cut.depth > 3 * d) {
     notes.push(`over 3× its diameter deep: peck to clear the chips`);
+  }
+  if (material.note) {
+    notes.push(material.note);
   }
   return {
     spindleSpeed: round(rpm, 100),

@@ -3,10 +3,10 @@ import {
   Cut,
   feedsAndSpeeds,
   ULTIMATE_BEE_1000x1500,
+  cuttingMaterial,
+  MATERIALS,
+  materialById,
   vBitWidth,
-  woodById,
-  WOODS,
-  woodMaterial,
 } from './feeds-speeds';
 
 describe('feedsAndSpeeds', () => {
@@ -132,12 +132,16 @@ describe('woods', () => {
     loadWidth: 6,
   };
   const inWood = (id: string, cut = slot) =>
-    feedsAndSpeeds(cut, ULTIMATE_BEE_1000x1500, woodMaterial(woodById(id)))!;
+    feedsAndSpeeds(
+      cut,
+      ULTIMATE_BEE_1000x1500,
+      cuttingMaterial(materialById(id)),
+    )!;
 
   it('have unique ids, and oak is the default', () => {
-    expect(new Set(WOODS.map((w) => w.id)).size).toBe(WOODS.length);
-    expect(woodById(undefined).id).toBe('oak');
-    expect(woodById('no such wood').id).toBe('oak');
+    expect(new Set(MATERIALS.map((m) => m.id)).size).toBe(MATERIALS.length);
+    expect(materialById(undefined).id).toBe('oak');
+    expect(materialById('no such wood').id).toBe('oak');
     expect(inWood('oak')).toEqual(feedsAndSpeeds(slot)!);
   });
 
@@ -157,6 +161,95 @@ describe('woods', () => {
     const deep = { ...slot, depth: 3.2 };
     expect(inWood('pine', deep).notes.join()).not.toContain('eased off');
     expect(inWood('ipe', deep).notes.join()).toContain('eased off');
+  });
+});
+
+describe('plastics and aluminium', () => {
+  const cut = (
+    diameter: number,
+    depth: number,
+    flutes = 2,
+    width = diameter,
+  ): Extract<Cut, { kind: 'mill' }> => ({
+    kind: 'mill',
+    diameter,
+    flutes,
+    depth,
+    width,
+    loadWidth: width,
+  });
+  const inMaterial = (id: string, c: Cut) =>
+    feedsAndSpeeds(
+      c,
+      ULTIMATE_BEE_1000x1500,
+      cuttingMaterial(materialById(id)),
+    )!;
+
+  it('take a thicker chip in plastic than in oak, a thinner in aluminium', () => {
+    const slot = cut(6, 1);
+    const oak = inMaterial('oak', slot).chipLoad;
+    expect(inMaterial('acrylic-cast', slot).chipLoad).toBeGreaterThan(oak);
+    expect(inMaterial('hdpe', slot).chipLoad).toBeGreaterThan(
+      inMaterial('acrylic-cast', slot).chipLoad,
+    );
+    expect(inMaterial('al-6061', slot).chipLoad).toBeLessThan(oak / 2);
+  });
+
+  it('take a slot half the bit deep in plastic', () => {
+    const notes = inMaterial('acrylic-cast', cut(6, 3)).notes.join();
+    expect(notes).not.toContain('eased off');
+    expect(notes).not.toContain('heavy');
+  });
+
+  it('cut aluminium in shallow steps', () => {
+    // A 6 mm slot takes about 0.75 mm at the full chip.
+    expect(inMaterial('al-6061', cut(6, 0.7)).notes.join()).not.toContain(
+      'eased off',
+    );
+    expect(inMaterial('al-6061', cut(6, 1)).notes.join()).toContain(
+      'eased off',
+    );
+    expect(inMaterial('al-6061', cut(6, 3)).notes.join()).toContain(
+      'steps of about',
+    );
+    // A light stepover takes a full-depth pass.
+    expect(inMaterial('al-6061', cut(6, 6, 2, 0.6)).notes.join()).not.toContain(
+      'heavy',
+    );
+  });
+
+  it('push back harder in harder aluminium', () => {
+    const deep = cut(6, 1.2);
+    expect(inMaterial('al-7075', deep).chipLoad).toBeLessThan(
+      inMaterial('al-6060', deep).chipLoad,
+    );
+  });
+
+  it('never thin a plastic’s chip below what melts', () => {
+    const material = cuttingMaterial(materialById('acrylic-cast'));
+    const result = inMaterial('acrylic-cast', cut(6, 12));
+    expect(result.chipLoad).toBeGreaterThanOrEqual(
+      material.chipLoad(6) * material.minChipShare - 1e-9,
+    );
+  });
+
+  it('say when a bit has too many flutes, and to blow aluminium chips out', () => {
+    expect(inMaterial('acrylic-cast', cut(6, 1, 3)).notes.join()).toContain(
+      '3 flutes pack',
+    );
+    expect(inMaterial('oak', cut(6, 1, 3)).notes.join()).not.toContain(
+      'flutes pack',
+    );
+    expect(inMaterial('al-6061', cut(6, 0.5)).notes.join()).toContain(
+      'blow the chips out',
+    );
+    expect(
+      inMaterial('al-6061', {
+        kind: 'drill',
+        diameter: 5,
+        depth: 5,
+      }).notes.join(),
+    ).toContain('blow the chips out');
   });
 });
 
