@@ -5,12 +5,12 @@ import {
   FeedsAndSpeeds,
   feedsAndSpeeds,
   FluteType,
-  machineById,
+  machineOf,
   vBitWidth,
   cuttingMaterial,
   materialById,
 } from '../../../cam/feeds-speeds';
-import { resolvedItem } from '../variables/field';
+import { numberIn, resolvedItem } from '../variables/field';
 import { rootModel } from '../shapes/describe';
 import type { ToolType } from '../tools';
 import { depthPerStep, totalDepth } from './depth-steps';
@@ -222,7 +222,14 @@ function stockMaterial(field: FormlyFieldConfig) {
 
 /** The machine the G-code section names, from any field in the form. */
 function gcodeMachine(field: FormlyFieldConfig) {
-  return machineById(rootModel(field)?.gcode?.machine);
+  const gcode = rootModel(field)?.gcode;
+  const specs = Object.fromEntries(
+    Object.entries(gcode?.machineSpecs ?? {}).map(([key, value]) => [
+      key,
+      numberIn(field, value as any),
+    ]),
+  );
+  return machineOf({ machine: gcode?.machine, machineSpecs: specs });
 }
 
 /** The feeds and speeds the operation `field` belongs to would cut at. */

@@ -1,7 +1,7 @@
 import { hasArcs } from '../../cam/arcs';
 import { CheckedOperation, checkJob, JobWarning } from '../../cam/job-checks';
 import type { ClearanceReport, ClearanceTool } from '../../cam/clearance';
-import { machineById } from '../../cam/feeds-speeds';
+import { machineOf } from '../../cam/feeds-speeds';
 import { SimulatedStock } from '../../cam/simulate';
 import { simulationInput } from './simulation';
 import { resolveStock } from '../../cam/stock';
@@ -188,7 +188,7 @@ export function clearanceInput(
   return {
     tools,
     stock: input.stock,
-    holderDiameter: machineById(model.gcode?.machine).nutDiameter,
+    holderDiameter: machineOf(model.gcode).nutDiameter,
   };
 }
 

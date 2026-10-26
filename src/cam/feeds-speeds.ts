@@ -49,11 +49,61 @@ export const MACHINES: readonly Machine[] = [ULTIMATE_BEE_1000x1500];
 
 export const DEFAULT_MACHINE = ULTIMATE_BEE_1000x1500.id;
 
+/** The G-code section's `machine` for one described by `machineSpecs`. */
+export const CUSTOM_MACHINE = 'custom';
+
+/** What a machine can do, without its id and name. */
+export type MachineSpecs = Omit<Machine, 'id' | 'name'>;
+
+/** The specs of `machine`. */
+export function machineSpecs({ id, name, ...specs }: Machine): MachineSpecs {
+  return specs;
+}
+
 /** The machine with this id, or the default one. */
 export function machineById(id: string | null | undefined): Machine {
   return (
     MACHINES.find((machine) => machine.id === id) ?? ULTIMATE_BEE_1000x1500
   );
+}
+
+/**
+ * The machine G-code options name: one of `MACHINES`, or with
+ * `CUSTOM_MACHINE` the one `machineSpecs` describes (resolved), the default
+ * machine's values standing in for any missing or out of range.
+ */
+export function machineOf(
+  gcode:
+    | {
+        machine?: string | null;
+        machineSpecs?: Partial<Record<keyof MachineSpecs, unknown>> | null;
+      }
+    | null
+    | undefined,
+): Machine {
+  if (gcode?.machine !== CUSTOM_MACHINE) {
+    return machineById(gcode?.machine);
+  }
+  const fallback = ULTIMATE_BEE_1000x1500;
+  const given = gcode.machineSpecs ?? {};
+  const positive = (key: keyof MachineSpecs) => {
+    const value = given[key];
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? value
+      : fallback[key];
+  };
+  const minRpm = positive('minRpm');
+  return {
+    id: CUSTOM_MACHINE,
+    name: 'custom machine',
+    minRpm,
+    maxRpm: Math.max(minRpm, positive('maxRpm')),
+    maxFeed: positive('maxFeed'),
+    maxPlunge: positive('maxPlunge'),
+    slotDepth: positive('slotDepth'),
+    maxSlotDepth: positive('maxSlotDepth'),
+    nutDiameter: positive('nutDiameter'),
+  };
 }
 
 /** How a material is cut. */

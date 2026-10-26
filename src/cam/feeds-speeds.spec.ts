@@ -4,6 +4,8 @@ import {
   feedsAndSpeeds,
   ULTIMATE_BEE_1000x1500,
   cuttingMaterial,
+  CUSTOM_MACHINE,
+  machineOf,
   MATERIALS,
   materialById,
   vBitWidth,
@@ -327,5 +329,68 @@ describe('cutting widths', () => {
   it('widens a ball nose with depth, up to its diameter', () => {
     expect(ballNoseWidth(6, 3)).toBe(6);
     expect(ballNoseWidth(6, 1)).toBeCloseTo(2 * Math.sqrt(5), 6);
+  });
+});
+
+describe('machineOf', () => {
+  it('reads a picked machine by its id, whatever specs are stored', () => {
+    expect(
+      machineOf({
+        machine: ULTIMATE_BEE_1000x1500.id,
+        machineSpecs: { maxFeed: 99 },
+      }),
+    ).toBe(ULTIMATE_BEE_1000x1500);
+    expect(machineOf(undefined)).toBe(ULTIMATE_BEE_1000x1500);
+  });
+
+  it('builds a custom machine from its specs', () => {
+    const machine = machineOf({
+      machine: CUSTOM_MACHINE,
+      machineSpecs: {
+        minRpm: 6000,
+        maxRpm: 18000,
+        maxFeed: 2000,
+        maxPlunge: 500,
+        slotDepth: 0.3,
+        maxSlotDepth: 3,
+        nutDiameter: 28,
+      },
+    });
+    expect(machine).toEqual(
+      jasmine.objectContaining({
+        id: CUSTOM_MACHINE,
+        minRpm: 6000,
+        maxRpm: 18000,
+        maxFeed: 2000,
+        maxPlunge: 500,
+        slotDepth: 0.3,
+        maxSlotDepth: 3,
+        nutDiameter: 28,
+      }),
+    );
+    const cut: Cut = {
+      kind: 'mill',
+      diameter: 6,
+      flutes: 2,
+      depth: 3,
+      width: 6,
+    };
+    expect(feedsAndSpeeds(cut, machine)!.feedRate!).toBeLessThanOrEqual(2000);
+  });
+
+  it('fills in what a custom machine is missing or has out of range', () => {
+    const machine = machineOf({
+      machine: CUSTOM_MACHINE,
+      machineSpecs: {
+        minRpm: 10000,
+        maxRpm: 5000,
+        maxFeed: null,
+        nutDiameter: -1,
+      },
+    });
+    expect(machine.minRpm).toBe(10000);
+    expect(machine.maxRpm).toBe(10000);
+    expect(machine.maxFeed).toBe(ULTIMATE_BEE_1000x1500.maxFeed);
+    expect(machine.nutDiameter).toBe(ULTIMATE_BEE_1000x1500.nutDiameter);
   });
 });

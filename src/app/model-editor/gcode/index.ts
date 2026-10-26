@@ -4,8 +4,15 @@ import {
   GcodeOptions,
 } from '../../../cam/gcode-options';
 import { CURVE_TOLERANCE } from '../../../cam/geometry';
-import { MACHINES } from '../../../cam/feeds-speeds';
+import {
+  CUSTOM_MACHINE,
+  machineById,
+  MACHINES,
+  MachineSpecs,
+  machineSpecs,
+} from '../../../cam/feeds-speeds';
 import { onRotary } from '../operations/rotation';
+import { rootModel } from '../shapes/describe';
 
 export type ModelType = {
   gcode: GcodeOptions;
@@ -14,6 +21,36 @@ export type ModelType = {
 const d = DEFAULT_GCODE_OPTIONS;
 
 const hideUnlessSpindle = (field: FormlyFieldConfig) => !field.model?.spindle;
+
+/** Whether the machine is described by hand, from any field in the form. */
+const customMachine = (field: FormlyFieldConfig) =>
+  rootModel(field)?.gcode?.machine === CUSTOM_MACHINE;
+
+/**
+ * A machine spec's input: set by hand for a custom machine, else read-only
+ * and holding the picked machine's value (kept when switching to custom, to
+ * start from).
+ */
+function specField(
+  key: keyof MachineSpecs,
+  label: string,
+  description: string,
+  min: number,
+): FormlyFieldConfig {
+  return {
+    key,
+    type: 'number',
+    defaultValue: d.machineSpecs?.[key],
+    props: { label, description, min, required: true },
+    expressions: {
+      'props.readonly': (field: FormlyFieldConfig) => !customMachine(field),
+      [`model.${key}`]: (field: FormlyFieldConfig) =>
+        customMachine(field)
+          ? field.model?.[key]
+          : machineById(rootModel(field)?.gcode?.machine)[key],
+    },
+  };
+}
 
 export const field: FormlyFieldConfig = {
   key: 'gcode',
@@ -32,11 +69,61 @@ export const field: FormlyFieldConfig = {
         label: 'machine',
         description: 'what operations’ feeds & speeds are worked out for',
         required: true,
-        options: MACHINES.map((machine) => ({
-          value: machine.id,
-          label: machine.name,
-        })),
+        options: [
+          ...MACHINES.map((machine) => ({
+            value: machine.id,
+            label: machine.name,
+          })),
+          { value: CUSTOM_MACHINE, label: 'custom (set its specs below)' },
+        ],
       },
+    },
+    {
+      wrappers: ['group'],
+      props: {
+        label: 'machine specs',
+        collapsible: true,
+        startOpen: (model: any) => model?.machine === CUSTOM_MACHINE,
+      },
+      expressions: {
+        'props.description': (field: FormlyFieldConfig) =>
+          customMachine(field) ? 'set by hand' : 'the machine’s, read-only',
+      },
+      fieldGroup: [
+        {
+          key: 'machineSpecs',
+          defaultValue: d.machineSpecs,
+          fieldGroup: [
+            specField('minRpm', 'min spindle speed', 'RPM', 1),
+            specField('maxRpm', 'max spindle speed', 'RPM', 1),
+            specField(
+              'maxFeed',
+              'max feed rate',
+              'mm/min: the fastest it cuts without losing steps or chattering',
+              1,
+            ),
+            specField('maxPlunge', 'max plunge rate', 'mm/min', 1),
+            specField(
+              'slotDepth',
+              'full-load slot',
+              '× the bit’s diameter: the deepest slot it cuts at the full chip load; heavier cuts take a thinner chip',
+              0.01,
+            ),
+            specField(
+              'maxSlotDepth',
+              'max slot depth',
+              'mm: the full-load slot’s depth at most',
+              0.1,
+            ),
+            specField(
+              'nutDiameter',
+              'collet nut Ø',
+              'mm across: checked against the material (with each tool’s stickout)',
+              1,
+            ),
+          ],
+        },
+      ],
     },
     {
       wrappers: ['group'],
