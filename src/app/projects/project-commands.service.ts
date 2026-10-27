@@ -6,6 +6,10 @@ import { Template } from '../templates';
 import { Project } from '.';
 import { ProjectNameDialogComponent } from './project-name-dialog.component';
 import { ShareLinkDialogComponent } from './share-link-dialog.component';
+import {
+  KeptInNewProject,
+  NewProjectDialogComponent,
+} from './new-project-dialog.component';
 import { shareLink, sharedProject, sharedProjectData } from '../share-link';
 
 /**
@@ -18,16 +22,20 @@ export class ProjectCommands {
   private readonly store = inject(ModelStore);
   private readonly modals = inject(NgbModal);
 
-  /** Starts an empty project, asking first if there's unsaved work. */
+  /**
+   * Starts an empty project, once the user confirms, keeping the tools and
+   * G-code options they choose to keep (both, unless unticked).
+   */
   async newProject() {
-    if (
-      await this.confirmReplace(
-        'Start a new project?',
-        'The current project is closed (the tool library is kept).',
-        'New project',
-      )
-    ) {
-      this.store.clear();
+    const ref = this.modals.open(NewProjectDialogComponent, {
+      size: 'sm',
+      centered: true,
+      ariaLabelledBy: 'new-project-title',
+    });
+    ref.componentInstance.lost = this.lostWork();
+    const kept: KeptInNewProject | false = await ref.result.catch(() => false);
+    if (kept) {
+      this.store.clear(kept);
     }
   }
 
@@ -166,17 +174,19 @@ export class ProjectCommands {
     message: string,
     confirmLabel: string,
   ): Promise<boolean> {
+    const lost = this.lostWork();
+    return !lost || this.confirm(title, `${message} ${lost}`, confirmLabel);
+  }
+
+  /** What replacing the work loses: '' when there's nothing unsaved in it. */
+  private lostWork(): string {
     if (!this.store.pending) {
-      return true;
+      return '';
     }
     const project = this.store.project;
-    return this.confirm(
-      title,
-      project
-        ? `${message} The unsaved changes to “${project.name}” are lost.`
-        : `${message} To keep it, save it as a project or download its G-code first.`,
-      confirmLabel,
-    );
+    return project
+      ? `The unsaved changes to “${project.name}” are lost.`
+      : 'To keep it, save it as a project or download its G-code first.';
   }
 
   confirm(

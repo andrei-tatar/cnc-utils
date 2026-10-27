@@ -3,6 +3,7 @@ import { shapeSources } from './shapes/describe';
 import { borrowedShapeId } from './operations/describe';
 import { flatOperations, NO_TOOL } from './operations/flatten';
 import { freeToolIndex } from './tools';
+import { variablesUsedBy } from './variables/used';
 
 /** What importing parts from another project brings in. */
 export type ImportSummary = {
@@ -78,24 +79,17 @@ export function importParts(
   }
 
   // The variables their expressions use (and those those use).
-  const sourceVariables: any[] = source.variables ?? [];
-  const byName = new Map(sourceVariables.map((v) => [v.name, v]));
-  const needed = new Set<string>();
-  const names = [...identifiers([shapes, operations, addedTools])];
-  while (names.length) {
-    const name = names.pop()!;
-    if (needed.has(name) || !byName.has(name)) continue;
-    needed.add(name);
-    names.push(...identifiers(byName.get(name)!.value));
-  }
+  const used = variablesUsedBy((source.variables ?? []) as any[], [
+    shapes,
+    operations,
+    addedTools,
+  ]);
   const targetNames = new Set(
     ((target.variables ?? []) as any[]).map((v) => v.name),
   );
-  const variables = sourceVariables.filter(
-    (v) => needed.has(v.name) && !targetNames.has(v.name),
-  );
-  const sharedVariables = sourceVariables
-    .filter((v) => needed.has(v.name) && targetNames.has(v.name))
+  const variables = used.filter((v) => !targetNames.has(v.name));
+  const sharedVariables = used
+    .filter((v) => targetNames.has(v.name))
     .map((v) => v.name);
 
   // New ids for everything copied (inside it too: transforms, points…).
@@ -153,27 +147,6 @@ function sameTool(a: any, b: any): boolean {
   return keys.every(
     (k) => JSON.stringify(a?.[k] ?? null) === JSON.stringify(b?.[k] ?? null),
   );
-}
-
-/**
- * The names an expression could use, in every string of `value` (deep):
- * more than it uses (any word), which is harmless — only names of
- * variables count. Long strings (pictures, files) are skipped.
- */
-function identifiers(value: unknown): Set<string> {
-  const found = new Set<string>();
-  const walk = (v: unknown) => {
-    if (typeof v === 'string') {
-      if (v.length > 500 || v.startsWith('data:')) return;
-      for (const m of v.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) found.add(m[0]);
-    } else if (Array.isArray(v)) {
-      v.forEach(walk);
-    } else if (v && typeof v === 'object') {
-      Object.values(v).forEach(walk);
-    }
-  };
-  walk(value);
-  return found;
 }
 
 /** Every object's `id` in `value` (deep). */

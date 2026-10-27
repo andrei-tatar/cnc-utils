@@ -17,6 +17,7 @@ import {
 } from 'rxjs';
 import { emptyModel, ModelFieldConfig, ModelType } from '../model-editor/model';
 import { sameWork } from '../model-editor/same-work';
+import { variablesUsedBy } from '../model-editor/variables/used';
 import { readModelFromNcFile } from '../project-file';
 import { loadTemplate, Template } from '../templates';
 import {
@@ -156,9 +157,19 @@ export class ModelStore {
     this.open$.next();
   }
 
-  /** Replaces the project with an empty one (as on a first visit). */
-  clear() {
-    this.replace(emptyModel(), null);
+  /**
+   * Replaces the project with an empty one (as on a first visit), keeping
+   * its tools and / or G-code options when asked to, with the variables
+   * their expressions use.
+   */
+  clear(keep: { tools?: boolean; gcode?: boolean } = {}) {
+    const model = emptyModel();
+    if (keep.tools) model.tools = snapshot(this.value.tools ?? []);
+    if (keep.gcode) model.gcode = snapshot(this.value.gcode);
+    model.variables = snapshot(
+      variablesUsedBy(this.value.variables ?? [], [model.tools, model.gcode]),
+    );
+    this.replace(model, null);
   }
 
   /** Replaces the project with one from a share link. */

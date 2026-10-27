@@ -881,11 +881,21 @@ export class WebMcp {
         name: 'new_project',
         title: 'New project',
         description:
-          'Replaces the project with an empty one. When there are unsaved changes, the user is asked first.',
+          'Replaces the project with an empty one, keeping the current tools and G-code options unless `keep_tools` / `keep_gcode` is false. When there are unsaved changes, the user is asked first.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            keep_tools: { type: 'boolean', default: true },
+            keep_gcode: { type: 'boolean', default: true },
+          },
+        },
         annotations: { consequentialHint: true },
-        execute: async () => {
+        execute: async ({
+          keep_tools = true,
+          keep_gcode = true,
+        }: { keep_tools?: boolean; keep_gcode?: boolean } = {}) => {
           if (!(await mayReplace('Start a new project?'))) return declined;
-          this.store.clear();
+          this.store.clear({ tools: keep_tools, gcode: keep_gcode });
           return { done: true };
         },
       },
