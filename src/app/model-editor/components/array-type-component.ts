@@ -1202,11 +1202,12 @@ export class ArrayTypeComponent
 
 /**
  * `item` (a list item: an object with an `id`) with a new id, and the same
- * for the items of the lists inside it.
+ * for the items of the lists inside it. Other objects keep their `id`: it
+ * isn't an item's (a text shape's font's is the font's Fontsource id).
  */
-async function withNewIds(item: any): Promise<any> {
+export async function withNewIds(item: any, isItem = true): Promise<any> {
   if (Array.isArray(item)) {
-    return Promise.all(item.map(withNewIds));
+    return Promise.all(item.map((value) => withNewIds(value)));
   }
   if (!item || typeof item !== 'object') {
     return item;
@@ -1214,9 +1215,9 @@ async function withNewIds(item: any): Promise<any> {
   const entries = await Promise.all(
     Object.entries(item).map(async ([key, value]) => [
       key,
-      key === 'id' && typeof value === 'string'
+      isItem && key === 'id' && typeof value === 'string'
         ? await generateId()
-        : await withNewIds(value),
+        : await withNewIds(value, false),
     ]),
   );
   return Object.fromEntries(entries);
