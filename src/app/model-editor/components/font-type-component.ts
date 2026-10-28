@@ -570,6 +570,12 @@ export class FontTypeComponent
   private observeResults() {
     const list = this.resultsList?.nativeElement;
     if (!list) return;
+    // Closing the picker removes the list; reopened, it's a new one, which
+    // an observer of the old one never sees scroll.
+    if (this.observer && this.observer.root !== list) {
+      this.observer.disconnect();
+      this.observer = undefined;
+    }
 
     this.observer ??= new IntersectionObserver(
       (entries) => {
