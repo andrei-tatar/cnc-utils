@@ -91,7 +91,7 @@ export const field: FormlyFieldConfig = {
     label: 'text styles',
     itemLabel: 'text style',
     describeItem: describeTextStyle,
-    accent: '#0d9488',
+    accent: '#db2777',
     collapsible: true,
     clonable: true,
     description:
