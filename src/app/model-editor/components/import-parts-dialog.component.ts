@@ -240,14 +240,20 @@ export class ImportPartsDialogComponent implements OnInit {
     const parts = [count(s.shapes, 'shape')];
     if (s.operations) parts.push(count(s.operations, 'operation'));
     if (s.addedTools) parts.push(count(s.addedTools, 'tool'));
+    if (s.addedTextStyles) {
+      parts.push(count(s.addedTextStyles, 'text style'));
+    }
     if (s.variables) parts.push(count(s.variables, 'variable'));
     const reused = s.reusedTools
       ? ` Uses ${count(s.reusedTools, 'tool')} of this project’s for the same bits.`
       : '';
+    const reusedStyles = s.reusedTextStyles
+      ? ` Uses ${count(s.reusedTextStyles, 'text style')} of this project’s set the same way.`
+      : '';
     const shared = s.sharedVariables.length
       ? ` Takes this project’s ${s.sharedVariables.join(', ')}.`
       : '';
-    return `Adds ${parts.join(', ')}.${reused}${shared}`;
+    return `Adds ${parts.join(', ')}.${reused}${reusedStyles}${shared}`;
   }
 
   import() {

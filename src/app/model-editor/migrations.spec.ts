@@ -98,4 +98,15 @@ describe('migrations', () => {
       restOverlap: 0,
     });
   });
+
+  it('gives a project its text styles (version 3)', () => {
+    expect(migrateModel({ version: 2, shapes: [] }) as any).toEqual({
+      shapes: [],
+      textStyles: [],
+    });
+    const textStyles = [{ id: 's' }];
+    expect((migrateModel({ version: 2, textStyles }) as any).textStyles).toBe(
+      textStyles,
+    );
+  });
 });

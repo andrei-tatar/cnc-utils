@@ -12,6 +12,7 @@ import {
   numberedToolLabel,
   ToolType,
 } from '../model-editor/tools';
+import { textStyleLabel } from '../model-editor/text-styles';
 import {
   libraryName,
   listLibrary,
@@ -58,7 +59,13 @@ export type WebMcpHost = {
 };
 
 /** The lists items can be added to, at the top of the project. */
-const LISTS = ['variables', 'shapes', 'tools', 'operations'] as const;
+const LISTS = [
+  'variables',
+  'textStyles',
+  'shapes',
+  'tools',
+  'operations',
+] as const;
 /** The lists inside an item: a shape's transforms, a repeat's operations. */
 const ITEM_LISTS = ['transforms', 'operations'] as const;
 /** Everything `describe_fields` can describe. */
@@ -301,7 +308,7 @@ export class WebMcp {
         name: 'add_items',
         title: 'Add items',
         description:
-          'Adds items to a list of the project: variables ({name, value}), shapes, tools, operations — or, with `parent_id`, to an item’s own list: a shape’s `transforms`, a rotary repeat’s `operations`. ' +
+          'Adds items to a list of the project: variables ({name, value}), text styles (font settings text shapes are set in, by their textStyleId), shapes, tools, operations — or, with `parent_id`, to an item’s own list: a shape’s `transforms`, a rotary repeat’s `operations`. ' +
           'Give each item its `type` (for typed lists) and the fields to set; the rest take their defaults (see describe_fields). An item may carry its own unique `id` so later items in the same call can refer to it (e.g. an operation’s shapeId); otherwise ids are made. Tools without an `index` get the lowest free one. ' +
           'Returns the new items’ ids. Undo takes it back.',
         inputSchema: {
@@ -1294,6 +1301,10 @@ function outline(model: ModelType) {
       })),
       ...(s.hidden ? { hidden: true } : {}),
       ...(s.clamp ? { clamp: true } : {}),
+    })),
+    textStyles: (resolved.textStyles ?? []).map((s) => ({
+      id: s.id,
+      label: textStyleLabel(s),
     })),
     tools: resolved.tools.map((t) => ({
       id: t.id,

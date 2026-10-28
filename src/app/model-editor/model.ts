@@ -2,6 +2,10 @@ import { FormlyFieldConfig } from '@ngx-formly/core';
 import { ModelType as ShapesModelType, field as shapesField } from './shapes';
 import { ModelType as ToolsModelType, field as toolsField } from './tools';
 import {
+  ModelType as TextStylesModelType,
+  field as textStylesField,
+} from './text-styles';
+import {
   ModelType as OperationsModelType,
   field as operationsField,
 } from './operations';
@@ -17,6 +21,7 @@ import { OmitUnion } from '../../util';
 import { ToolOverrides } from './tools/feeds-and-speeds';
 
 export type ModelType = VariablesModelType &
+  TextStylesModelType &
   ShapesModelType &
   ToolsModelType &
   OperationsModelType &
@@ -62,6 +67,7 @@ export type ToolParameters = OmitUnion<
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [
   variablesField,
+  textStylesField,
   shapesField,
   toolsField,
   operationsField,
@@ -73,6 +79,7 @@ export const ModelFieldConfig: FormlyFieldConfig[] = [
 export function emptyModel(): ModelType {
   return {
     variables: [],
+    textStyles: [],
     shapes: [],
     tools: [],
     operations: [],

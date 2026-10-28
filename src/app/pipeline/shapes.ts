@@ -32,6 +32,7 @@ import { hingeCup, pointPattern } from './point-pattern';
 import { nestLayerShapes, nestShapes } from './nest';
 import { geometrySettings } from './geometry-settings';
 import { distinctJson, shareLatest } from './operators';
+import { withTextStyle } from '../model-editor/text-styles';
 
 /** A long-lived pipeline for one shape, kept across model emissions. */
 type ShapeEntry = {
@@ -75,9 +76,11 @@ export function generateShapesFromModel(
   const geometry$ = geometrySettings(model$);
   const entries$: Observable<ShapeEntry[]> = model$.pipe(
     scan(
-      (ctx, { shapes }) =>
-        shapes.map(
-          ({
+      (ctx, { shapes, textStyles }) =>
+        shapes.map((shape) => {
+          // A text shape set in a style takes its settings here, so only
+          // the shapes set in a style change with it.
+          const {
             id: shapeId,
             transforms: shapeTransforms,
             expanded: _,
@@ -85,23 +88,22 @@ export function generateShapesFromModel(
             hidden: ___,
             clamp: ____,
             ...shapeParameters
-          }) => {
-            const existing = ctx.find((e) => e.shapeId === shapeId);
-            if (existing) {
-              existing.shapeParameters$.next(shapeParameters);
-              existing.shapeTransforms$.next(shapeTransforms);
-              return existing;
-            }
-            return createShapeEntry(
-              shapeId,
-              shapeParameters,
-              shapeTransforms,
-              entries$,
-              geometry$,
-              working$,
-            );
-          },
-        ),
+          } = withTextStyle(shape, textStyles);
+          const existing = ctx.find((e) => e.shapeId === shapeId);
+          if (existing) {
+            existing.shapeParameters$.next(shapeParameters);
+            existing.shapeTransforms$.next(shapeTransforms);
+            return existing;
+          }
+          return createShapeEntry(
+            shapeId,
+            shapeParameters,
+            shapeTransforms,
+            entries$,
+            geometry$,
+            working$,
+          );
+        }),
       [] as ShapeEntry[],
     ),
     share({

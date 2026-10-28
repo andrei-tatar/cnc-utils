@@ -1,21 +1,24 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
-import { DEFAULT_FONT, FontRef } from '../../../cam/font-source';
+import { AbstractControl } from '@angular/forms';
+import { TextSettings, textSettingsFields } from '../text-styles/settings';
+import { allTextStyles, TextStyleChoice, textStyleLabel } from '../text-styles';
+import { numberIn } from '../variables/field';
 
-export interface ModelType {
+export type ModelType = {
   type: 'text';
   text: string;
-  font: FontRef;
-  fontWeight: number;
-  fontStyle: 'normal' | 'italic';
-  /** Height of capital letters, in mm. */
-  size: number;
-  letterSpacing: number;
-  lineSpacing: number;
-  align: 'left' | 'center' | 'right';
-}
+} & TextSettings &
+  TextStyleChoice;
 
 const hideUnlessText = (field: FormlyFieldConfig) =>
   field.model?.type !== Definition.type;
+
+const inStyle = (field: FormlyFieldConfig) => !!field.model?.textStyleId;
+
+/** The style the text shape `field` belongs to is set in. */
+function styleOf(field: FormlyFieldConfig) {
+  return allTextStyles(field).find((s) => s.id === field.model?.textStyleId);
+}
 
 const field: FormlyFieldConfig = {
   fieldGroup: [
@@ -30,87 +33,50 @@ const field: FormlyFieldConfig = {
       },
     },
     {
-      key: 'font',
-      type: 'font',
-      defaultValue: DEFAULT_FONT,
-      props: {
-        label: 'font',
-        required: true,
-      },
-    },
-    {
-      key: 'fontWeight',
+      key: 'textStyleId',
       type: 'enum',
-      defaultValue: 400,
       props: {
-        label: 'weight',
-        required: true,
+        label: 'text style',
+        placeholder: 'own settings',
+        description: 'set in a text style, or in its own font settings',
+      },
+      validators: {
+        textStyleExists: {
+          expression: (control: AbstractControl, field: FormlyFieldConfig) =>
+            !control.value ||
+            allTextStyles(field).some((s) => s.id === control.value),
+          message: 'This text style was deleted — pick another one',
+        },
       },
       expressions: {
+        // Only once there are styles to pick from.
+        hide: (field: FormlyFieldConfig) =>
+          !allTextStyles(field).length && !inStyle(field),
         'props.options': (field: FormlyFieldConfig) =>
-          ((field.model?.font as FontRef | undefined)?.weights ?? [400]).map(
-            (weight) => ({ value: weight, label: weightLabel(weight) }),
-          ),
+          allTextStyles(field).map((style) => ({
+            value: style.id,
+            label: textStyleLabel({
+              ...style,
+              size: numberIn(field, style.size) as number,
+            }),
+          })),
       },
     },
+    ...textSettingsFields(inStyle),
     {
-      key: 'fontStyle',
-      type: 'enum',
-      defaultValue: 'normal',
-      props: {
-        label: 'style',
-        required: true,
-      },
-      expressions: {
-        'props.options': (field: FormlyFieldConfig) =>
-          ((field.model?.font as FontRef | undefined)?.styles ?? ['normal'])
-            .slice()
-            .sort((a) => (a === 'normal' ? -1 : 1))
-            .map((style) => ({ value: style, label: style })),
-      },
-    },
-    {
-      key: 'size',
+      key: 'sizeOverride',
       type: 'number',
-      defaultValue: 20,
       props: {
         min: 0,
         label: 'cap height',
-        description: 'height of capital letters, in mm',
-        required: true,
+        description: 'mm; empty uses the text style’s',
       },
-    },
-    {
-      key: 'letterSpacing',
-      type: 'number',
-      defaultValue: 0,
-      props: {
-        label: 'letter spacing',
-        required: true,
-      },
-    },
-    {
-      key: 'lineSpacing',
-      type: 'number',
-      defaultValue: 1.2,
-      props: {
-        min: 0,
-        label: 'line spacing',
-        required: true,
-      },
-    },
-    {
-      key: 'align',
-      type: 'enum',
-      defaultValue: 'left',
-      props: {
-        label: 'align',
-        required: true,
-        options: [
-          { value: 'left', label: 'left' },
-          { value: 'center', label: 'center' },
-          { value: 'right', label: 'right' },
-        ],
+      expressions: {
+        hide: (field: FormlyFieldConfig) => !inStyle(field),
+        'props.placeholder': (field: FormlyFieldConfig) => {
+          const size = numberIn(field, styleOf(field)?.size);
+          return size === undefined ? '' : `${size} (the style’s)`;
+        },
       },
     },
   ],
@@ -118,24 +84,6 @@ const field: FormlyFieldConfig = {
     hide: hideUnlessText,
   },
 };
-
-const WEIGHT_NAMES: Record<number, string> = {
-  100: 'thin',
-  200: 'extra light',
-  300: 'light',
-  400: 'regular',
-  500: 'medium',
-  600: 'semi bold',
-  700: 'bold',
-  800: 'extra bold',
-  900: 'black',
-};
-
-function weightLabel(weight: number) {
-  return WEIGHT_NAMES[weight]
-    ? `${weight} · ${WEIGHT_NAMES[weight]}`
-    : `${weight}`;
-}
 
 export const Definition = {
   type: 'text',

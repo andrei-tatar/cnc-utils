@@ -85,6 +85,8 @@ describe('importing parts from another project', () => {
       operations: 3,
       addedTools: 1,
       reusedTools: 1,
+      addedTextStyles: 0,
+      reusedTextStyles: 0,
       variables: 2,
       sharedVariables: ['depth'],
     });
@@ -136,5 +138,58 @@ describe('importing parts from another project', () => {
     expect(summary.operations).toBe(0);
     expect(result.tools).toEqual(target.tools);
     expect(result.operations).toEqual([]);
+  });
+
+  it('brings the text styles its texts are set in, keeping their fonts', () => {
+    const font = { id: 'roboto', family: 'Roboto', version: '5.2.10' };
+    const style = (id: string, size: unknown) => ({
+      id,
+      font,
+      fontWeight: 400,
+      fontStyle: 'normal',
+      size,
+      letterSpacing: 0,
+      lineSpacing: 1.2,
+      align: 'left',
+    });
+    const text = (id: string, textStyleId?: string) => ({
+      id,
+      type: 'text',
+      text: 'ASD',
+      ...(textStyleId ? { textStyleId } : { ...style('', 20), id }),
+      transforms: [],
+    });
+    const from = model({
+      variables: [{ id: 'id-v', name: 'big', value: 30 }] as any,
+      textStyles: [style('id-y1', 'big'), style('id-y2', 10)] as any,
+      shapes: [
+        text('id-s1', 'id-y1'),
+        text('id-s2', 'id-y2'),
+        text('id-s3'),
+      ] as any,
+    });
+    const into = model({ textStyles: [style('own-y', 10)] as any });
+
+    const { model: result, summary } = importParts(
+      into,
+      from,
+      ['id-s1', 'id-s2', 'id-s3'],
+      false,
+      newId,
+    );
+
+    expect(summary.addedTextStyles).toBe(1);
+    expect(summary.reusedTextStyles).toBe(1);
+    const [own, added] = result.textStyles as any[];
+    expect(result.textStyles.length).toBe(2);
+    expect(own.id).toBe('own-y');
+    expect(added.id).not.toBe('id-y1');
+    expect(added.font).toEqual(font);
+    const [big, small, plain] = result.shapes as any[];
+    expect(big.textStyleId).toBe(added.id);
+    expect(small.textStyleId).toBe('own-y');
+    expect(plain.font).toEqual(font);
+    // The style's expression's variable comes along.
+    expect(result.variables.map((v: any) => v.name)).toEqual(['big']);
   });
 });

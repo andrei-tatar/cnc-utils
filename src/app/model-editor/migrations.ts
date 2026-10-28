@@ -53,6 +53,12 @@ const MIGRATIONS: Migration[] = [
     }
     return model;
   },
+  // 2 → 3: text styles, which text shapes can be set in. An older app
+  // would drop them, and the shapes set in them would lose their font.
+  (model) => {
+    model.textStyles ??= [];
+    return model;
+  },
 ];
 
 /**

@@ -4,6 +4,7 @@ import { borrowedShapeId } from './operations/describe';
 import { flatOperations, NO_TOOL } from './operations/flatten';
 import { freeToolIndex } from './tools';
 import { variablesUsedBy } from './variables/used';
+import { TEXT_SETTINGS } from './text-styles/settings';
 
 /** What importing parts from another project brings in. */
 export type ImportSummary = {
@@ -12,6 +13,9 @@ export type ImportSummary = {
   /** Tools added, and tools of this project used in their place. */
   addedTools: number;
   reusedTools: number;
+  /** Text styles added, and styles of this project used in their place. */
+  addedTextStyles: number;
+  reusedTextStyles: number;
   variables: number;
   /**
    * Variables the parts use that this project already has (by name): its
@@ -26,8 +30,9 @@ export type ImportSummary = {
  * and, with `withOperations`, the operations that cut them (clearings and
  * the like with what they belong to; not rotate or flip steps) and those
  * operations' tools — an identical tool of `target` is used instead. The
- * variables their expressions use come along, unless `target` has one of
- * that name. Everything copied gets a new id (`newId`), every reference
+ * text styles the shapes are set in come along too (an identical one of
+ * `target` used instead), and the variables their expressions use, unless
+ * `target` has one of that name. Everything copied gets a new id (`newId`), every reference
  * between them follows; it all goes at the end of `target`'s lists.
  */
 export function importParts(
@@ -78,11 +83,29 @@ export function importParts(
     }
   }
 
+  // The text styles the shapes are set in: this project's identical one,
+  // or a copy.
+  const styleIds = new Set(shapes.map((shape) => shape.textStyleId));
+  const targetStyles: any[] = target.textStyles ?? [];
+  const addedStyles: any[] = [];
+  let reusedStyles = 0;
+  for (const style of (source.textStyles ?? []) as any[]) {
+    if (!styleIds.has(style.id)) continue;
+    const same = targetStyles.find((s) => sameTextStyle(s, style));
+    if (same) {
+      ids.set(style.id, same.id);
+      reusedStyles++;
+    } else {
+      addedStyles.push(style);
+    }
+  }
+
   // The variables their expressions use (and those those use).
   const used = variablesUsedBy((source.variables ?? []) as any[], [
     shapes,
     operations,
     addedTools,
+    addedStyles,
   ]);
   const targetNames = new Set(
     ((target.variables ?? []) as any[]).map((v) => v.name),
@@ -93,14 +116,15 @@ export function importParts(
     .map((v) => v.name);
 
   // New ids for everything copied (inside it too: transforms, points…).
-  const copied = [shapes, operations, addedTools, variables];
+  const copied = [shapes, operations, addedTools, addedStyles, variables];
   collectIds(copied, (id) => {
     if (!ids.has(id)) ids.set(id, newId());
   });
   const remapped = remap(copied, ids) as any[][];
-  const [newShapes, newOperations, newTools, newVariables] = remapped.map(
-    (list) => list.map((item: any) => ({ ...item, expanded: false })),
-  );
+  const [newShapes, newOperations, newTools, newStyles, newVariables] =
+    remapped.map((list) =>
+      list.map((item: any) => ({ ...item, expanded: false })),
+    );
 
   // Copied tools keep their number unless it's taken here.
   const tools = [...targetTools];
@@ -117,6 +141,7 @@ export function importParts(
     model: {
       ...target,
       variables: [...(target.variables ?? []), ...newVariables],
+      textStyles: [...targetStyles, ...newStyles],
       shapes: [...(target.shapes ?? []), ...newShapes],
       tools,
       operations: [...(target.operations ?? []), ...newOperations],
@@ -126,6 +151,8 @@ export function importParts(
       operations: newOperations.length,
       addedTools: newTools.length,
       reusedTools,
+      addedTextStyles: newStyles.length,
+      reusedTextStyles: reusedStyles,
       variables: newVariables.length,
       sharedVariables,
     },
@@ -145,6 +172,13 @@ function sameTool(a: any, b: any): boolean {
     'fluteType',
   ];
   return keys.every(
+    (k) => JSON.stringify(a?.[k] ?? null) === JSON.stringify(b?.[k] ?? null),
+  );
+}
+
+/** The same text style: how it sets text, whatever it's called. */
+function sameTextStyle(a: any, b: any): boolean {
+  return TEXT_SETTINGS.every(
     (k) => JSON.stringify(a?.[k] ?? null) === JSON.stringify(b?.[k] ?? null),
   );
 }
