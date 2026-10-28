@@ -149,13 +149,21 @@ function sameTool(a: any, b: any): boolean {
   );
 }
 
-/** Every object's `id` in `value` (deep). */
-function collectIds(value: unknown, found: (id: string) => void) {
+/**
+ * The ids of the list items in `value` (deep): objects in a list. Other
+ * objects' `id`s aren't items' (a text shape's font's is the font's
+ * Fontsource id, which stays as it is).
+ */
+function collectIds(
+  value: unknown,
+  found: (id: string) => void,
+  isItem = false,
+) {
   if (Array.isArray(value)) {
-    value.forEach((v) => collectIds(v, found));
+    value.forEach((v) => collectIds(v, found, true));
   } else if (value && typeof value === 'object') {
     const id = (value as any).id;
-    if (typeof id === 'string' && id) found(id);
+    if (isItem && typeof id === 'string' && id) found(id);
     Object.values(value).forEach((v) => collectIds(v, found));
   }
 }
