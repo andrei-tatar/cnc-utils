@@ -33,6 +33,11 @@ import { nestLayerShapes, nestShapes } from './nest';
 import { geometrySettings } from './geometry-settings';
 import { distinctJson, shareLatest } from './operators';
 import { withTextStyle } from '../model-editor/text-styles';
+import {
+  MESH_TRANSFORMS,
+  meshFootprint,
+  MeshTransform,
+} from '../../cam/model-mesh';
 
 /** A long-lived pipeline for one shape, kept across model emissions. */
 type ShapeEntry = {
@@ -40,6 +45,8 @@ type ShapeEntry = {
   shapeParameters$: BehaviorSubject<ShapeParameters>;
   shapeTransforms$: BehaviorSubject<ShapeType['transforms']>;
   result$: Observable<CamShape[]>;
+  /** A 3D model shape's mesh, placed (see `ShapeResults.meshById`). */
+  mesh$: Observable<Float32Array | null>;
 };
 
 /** A long-lived pipeline for one transform of a shape. */
@@ -60,6 +67,12 @@ export type ShapeResults = {
    * exist. Only emits when that shape changes.
    */
   byId(shapeId: string): Observable<CamShape[]>;
+  /**
+   * A 3D model shape's mesh with its transforms applied: its triangles
+   * (nine numbers each) in design coordinates. Null for any other shape,
+   * or while it has no file.
+   */
+  meshById(shapeId: string): Observable<Float32Array | null>;
 };
 
 /**
@@ -122,7 +135,17 @@ export function generateShapesFromModel(
     }),
   );
 
-  return { all$, byId: (shapeId) => resultOf(entries$, shapeId) };
+  return {
+    all$,
+    byId: (shapeId) => resultOf(entries$, shapeId),
+    meshById: (shapeId) =>
+      entries$.pipe(
+        switchMap(
+          (s) => s.find((v) => v.shapeId === shapeId)?.mesh$ ?? of(null),
+        ),
+        distinctUntilChanged(),
+      ),
+  };
 }
 
 function createShapeEntry(
@@ -151,14 +174,76 @@ function createShapeEntry(
     shareLatest(),
   );
 
-  const result$ = applyTransforms(
+  const outline$ = applyTransforms(
     shape$,
     shapeTransforms$,
     geometry$,
     working$,
   );
 
-  return { shapeId, result$, shapeParameters$, shapeTransforms$ };
+  // A 3D model is a mesh, placed by the transforms that work in three
+  // dimensions (in one go: they're quick); its outline is the rectangle
+  // round it.
+  const isModel$ = shapeParameters$.pipe(
+    map((p) => p.type === 'model'),
+    distinctUntilChanged(),
+    shareLatest(),
+  );
+  const mesh$ = isModel$.pipe(
+    switchMap((isModel) =>
+      !isModel
+        ? of(null)
+        : combineLatest([
+            shapeParameters$.pipe(
+              map((p) => (p.type === 'model' ? p.modelFile : '')),
+              distinctUntilChanged(),
+            ),
+            shapeTransforms$.pipe(
+              map((transforms) =>
+                (transforms ?? []).flatMap(
+                  ({ id: _, expanded: __, disabled, ...transform }) =>
+                    disabled || !MESH_TRANSFORMS.includes(transform.type)
+                      ? []
+                      : [transform as MeshTransform],
+                ),
+              ),
+              distinctJson(),
+            ),
+          ]).pipe(
+            switchMap(([file, transforms]) =>
+              race(
+                worker
+                  .modelShape(file, transforms)
+                  .pipe(
+                    recover<Float32Array | null>(
+                      'reading a 3D model',
+                      () => null,
+                    ),
+                  ),
+                working$,
+              ),
+            ),
+          ),
+    ),
+    shareLatest(),
+  );
+  const result$ = isModel$.pipe(
+    switchMap((isModel) =>
+      !isModel
+        ? outline$
+        : mesh$.pipe(
+            map((mesh): CamShape[] => {
+              const polygons = mesh ? meshFootprint(mesh) : [];
+              return polygons.length
+                ? [{ sourceShapeId: shapeId, polygons }]
+                : [];
+            }),
+          ),
+    ),
+    shareLatest(),
+  );
+
+  return { shapeId, result$, mesh$, shapeParameters$, shapeTransforms$ };
 }
 
 /** The shape's polygons, before its transforms. */

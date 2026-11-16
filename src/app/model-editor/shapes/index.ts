@@ -88,6 +88,10 @@ import {
   Definition as NestLayerDefinition,
   ModelType as NestLayerModelType,
 } from './shape-nest-layer';
+import {
+  Definition as Model3dDefinition,
+  ModelType as Model3dModelType,
+} from './shape-model';
 
 type CommonShape = {
   id: string;
@@ -121,7 +125,8 @@ type ShapeType =
   | HingeCupModelType
   | BowtieModelType
   | NestModelType
-  | NestLayerModelType;
+  | NestLayerModelType
+  | Model3dModelType;
 
 export type ModelType = {
   shapes: Array<ShapeType & CommonShape>;
@@ -137,6 +142,7 @@ const shapes = [
   PathDataDefinition,
   SvgDefinition,
   TraceDefinition,
+  Model3dDefinition,
   TextDefinition,
   BoxPanelDefinition,
   MortisesDefinition,

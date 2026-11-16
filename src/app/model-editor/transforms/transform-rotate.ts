@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { ofModelShape } from '../shapes/shape-model';
 
 export interface ModelType {
   type: 'rotate';
@@ -8,6 +9,12 @@ export interface ModelType {
     `${'xmin' | 'xmax' | 'xcenter'}-${'ymin' | 'ymax' | 'ycenter'}` | 'point';
   aroundX?: number;
   aroundY?: number;
+  /**
+   * A 3D model shape's only: the axis it turns round (Z, like a flat
+   * shape, when left out) and the point's height.
+   */
+  rotateAxis?: 'x' | 'y' | 'z';
+  aroundZ?: number;
 }
 
 const hideUnlessPoint = (field: FormlyFieldConfig) =>
@@ -22,6 +29,25 @@ const field: FormlyFieldConfig = {
       props: {
         label: 'angle',
         required: true,
+      },
+    },
+    {
+      key: 'rotateAxis',
+      type: 'enum',
+      defaultValue: 'z',
+      props: {
+        label: 'round',
+        description:
+          'Z turns it like a flat shape; X and Y by the right-hand rule, as a rotary axis along them turns the stock',
+        required: true,
+        options: [
+          { value: 'z', label: 'the Z axis (flat)' },
+          { value: 'x', label: 'the X axis' },
+          { value: 'y', label: 'the Y axis' },
+        ],
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) => !ofModelShape(field),
       },
     },
     {
@@ -58,6 +84,16 @@ const field: FormlyFieldConfig = {
       defaultValue: 0,
       props: { label: 'y', required: true },
       expressions: { hide: hideUnlessPoint },
+    },
+    {
+      key: 'aroundZ',
+      type: 'number',
+      defaultValue: 0,
+      props: { label: 'z', required: true },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessPoint(field) || !ofModelShape(field),
+      },
     },
   ],
   expressions: {

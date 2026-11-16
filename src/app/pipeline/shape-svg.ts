@@ -96,6 +96,9 @@ export function createSvgFromShape(t: SvgShapeParameters) {
         }),
         true,
       )}" /></svg>`;
+    case 'model':
+      // A mesh, not an outline: made in `generateShapesFromModel`.
+      return `<svg></svg>`;
     default:
       return `<svg></svg>`;
   }

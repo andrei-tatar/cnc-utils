@@ -1,4 +1,5 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { ofModelShape } from '../shapes/shape-model';
 
 /**
  * Move the shape so a side or the middle of its bounding box lands on a
@@ -10,6 +11,9 @@ export interface ModelType {
   alignXTo: number;
   alignY: 'none' | 'top' | 'middle' | 'bottom';
   alignYTo: number;
+  /** A 3D model shape's only: up and down (top is the highest Z). */
+  alignZ?: 'none' | 'top' | 'middle' | 'bottom';
+  alignZTo?: number;
 }
 
 const hideUnlessAlign = (field: FormlyFieldConfig) =>
@@ -71,6 +75,41 @@ const field: FormlyFieldConfig = {
       expressions: {
         hide: (field: FormlyFieldConfig) =>
           hideUnlessAlign(field) || field.model?.alignY === 'none',
+      },
+    },
+    {
+      key: 'alignZ',
+      type: 'enum',
+      defaultValue: 'top',
+      props: {
+        label: 'align z',
+        description:
+          'Z 0 is the top of the stock; on a rotary axis, the axis is half the stock’s thickness below it',
+        required: true,
+        options: [
+          { value: 'none', label: 'don’t align z' },
+          { value: 'top', label: 'top' },
+          { value: 'middle', label: 'middle' },
+          { value: 'bottom', label: 'bottom' },
+        ],
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) => !ofModelShape(field),
+      },
+    },
+    {
+      key: 'alignZTo',
+      type: 'number',
+      defaultValue: 0,
+      props: {
+        label: 'to z',
+        required: true,
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          hideUnlessAlign(field) ||
+          !ofModelShape(field) ||
+          (field.model?.alignZ ?? 'top') === 'none',
       },
     },
   ],

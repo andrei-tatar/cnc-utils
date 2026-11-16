@@ -76,6 +76,8 @@ export function describeShape(
       return `dado ${shape['dadoLength']} for ${shape['dadoThickness']} mm`;
     case 'trace':
       return shape['fileName'] ? `trace ${shape['fileName']}` : 'image trace';
+    case 'model':
+      return shape['fileName'] ? `3D model ${shape['fileName']}` : '3D model';
     case 'svg':
       return shape['fileName'] ? `svg ${shape['fileName']}` : 'svg';
     case 'text': {

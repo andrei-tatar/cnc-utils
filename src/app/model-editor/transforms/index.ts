@@ -1,4 +1,6 @@
 import { FormlyFieldConfig } from '@ngx-formly/core';
+import { ofModelShape } from '../shapes/shape-model';
+import { MESH_TRANSFORMS } from '../../../cam/model-mesh';
 
 import {
   Definition as RepeatDefinition,
@@ -155,6 +157,19 @@ export const field: FormlyFieldConfig = {
           label: 'type',
           required: true,
           options: transforms.map((t) => ({ value: t.type, label: t.label })),
+        },
+        expressions: {
+          // A 3D model takes the ones that work in three dimensions (and
+          // shows the one it has, whatever it is).
+          'props.options': (field: FormlyFieldConfig) =>
+            transforms
+              .filter(
+                (t) =>
+                  !ofModelShape(field) ||
+                  MESH_TRANSFORMS.includes(t.type) ||
+                  t.type === field.model?.type,
+              )
+              .map((t) => ({ value: t.type, label: t.label })),
         },
       },
       ...transforms.map((t) => t.fieldGroup),
