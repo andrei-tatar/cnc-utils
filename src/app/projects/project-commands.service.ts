@@ -11,6 +11,8 @@ import {
   NewProjectDialogComponent,
 } from './new-project-dialog.component';
 import { shareLink, sharedProject, sharedProjectData } from '../share-link';
+import { modelFromNcText } from '../project-file';
+import { reportError } from '../pipeline/errors';
 
 /**
  * What the toolbar does to the project, with the dialogs it takes: saving,
@@ -91,6 +93,35 @@ export class ProjectCommands {
         this.store.openShared(model);
       }
     });
+  }
+
+  /**
+   * Opens the project in a .nc file dropped on the app, asking first if
+   * there's unsaved work. A file without one (or with one that can't be
+   * read) is reported, and nothing changes.
+   */
+  async openNcFile(file: File) {
+    let model;
+    try {
+      model = await modelFromNcText(await file.text());
+    } catch (error) {
+      reportError(`opening “${file.name}”`, error, 'Nothing was changed.');
+      return;
+    }
+    if (
+      await this.confirmReplace(
+        `Open “${file.name}”?`,
+        'Its project replaces the current one.',
+        'Replace project',
+      )
+    ) {
+      this.store.openFile(model);
+    }
+  }
+
+  /** Whether a dialog is open (over the project). */
+  get busy(): boolean {
+    return this.modals.hasOpenModals();
   }
 
   /** Opens a saved project, asking first if there's unsaved work. */

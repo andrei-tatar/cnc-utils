@@ -45,8 +45,10 @@ const MAX_TOASTS = 3;
           <div class="toast-body">
             <div>Error {{ toast.context }}: {{ toast.message }}</div>
             <div class="hint">
-              What it was working on is left out until the next change. Details
-              are in the browser console.
+              {{
+                toast.hint ??
+                  'What it was working on is left out until the next change. Details are in the browser console.'
+              }}
             </div>
           </div>
         </div>

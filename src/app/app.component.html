@@ -56,5 +56,15 @@
   </div>
 </div>
 
+@if (dropping()) {
+  <div class="drop-zone" aria-hidden="true">
+    <div class="drop-zone_message">
+      <strong>Drop to open</strong>
+      <span>An .svg file becomes a new shape</span>
+      <span>A .nc file’s project replaces this one</span>
+    </div>
+  </div>
+}
+
 <app-error-toast />
 <app-update-notice />

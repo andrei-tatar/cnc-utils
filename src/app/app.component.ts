@@ -34,6 +34,8 @@ import {
 import { CamPoint } from '../cam/types';
 import { generateId } from '../util';
 import { WebMcp } from './webmcp/webmcp.service';
+import { droppedFileKind, isSvg } from './project-file';
+import { reportError } from './pipeline/errors';
 
 @Component({
   selector: 'app-root',
@@ -47,7 +49,12 @@ import { WebMcp } from './webmcp/webmcp.service';
     UpdateNoticeComponent,
   ],
   templateUrl: './app.component.html',
-  host: { '(document:keydown)': 'onKeydown($event)' },
+  host: {
+    '(document:keydown)': 'onKeydown($event)',
+    '(document:dragover)': 'onDragOver($event)',
+    '(document:dragleave)': 'onDragLeave($event)',
+    '(document:drop)': 'onDrop($event)',
+  },
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './app.component.scss',
 })
@@ -84,6 +91,8 @@ export class AppComponent {
 
   readonly editorWidth = signal(loadEditorWidth());
   readonly resizing = signal(false);
+  /** Files are being dragged over the window. */
+  readonly dropping = signal(false);
 
   private readonly viewer = viewChild.required(ViewerComponent);
 
@@ -136,6 +145,86 @@ export class AppComponent {
     );
   }
 
+  /**
+   * Files dragged over the window can be dropped anywhere (the browser
+   * would open them in place of the app otherwise).
+   */
+  onDragOver(event: DragEvent) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    const taken = this.projects.busy;
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = taken ? 'none' : 'copy';
+    }
+    this.dropping.set(!taken);
+  }
+
+  onDragLeave(event: DragEvent) {
+    // Out of the window, not from one element to the next.
+    if (!event.relatedTarget) this.dropping.set(false);
+  }
+
+  /**
+   * Files dropped on the app: a .nc file's project is opened, each SVG
+   * becomes a new shape. A file field takes what's dropped on it itself.
+   */
+  async onDrop(event: DragEvent) {
+    if (!hasFiles(event)) return;
+    this.dropping.set(false);
+    const taken = event.defaultPrevented || this.projects.busy;
+    event.preventDefault();
+    if (taken) return;
+
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    const project = files.find((f) => droppedFileKind(f) === 'project');
+    if (project) {
+      await this.projects.openNcFile(project);
+      return;
+    }
+    let model = this.store.value;
+    let added: string | null = null;
+    for (const file of files) {
+      const context = `opening “${file.name}”`;
+      const unchanged = 'Nothing was changed.';
+      if (droppedFileKind(file) !== 'svg') {
+        reportError(
+          context,
+          'only .svg files (a new shape) and .nc files (their project) can be dropped here',
+          unchanged,
+        );
+        continue;
+      }
+      try {
+        const svg = await file.text();
+        if (!isSvg(svg)) {
+          reportError(context, 'it isn’t an SVG drawing', unchanged);
+          continue;
+        }
+        added = await generateId();
+        model = {
+          ...model,
+          shapes: [
+            ...(model.shapes ?? []),
+            {
+              id: added,
+              type: 'svg',
+              svg,
+              fileName: file.name,
+              expanded: true,
+              transforms: [],
+            },
+          ],
+        };
+      } catch (error) {
+        reportError(context, error, unchanged);
+      }
+    }
+    if (added) {
+      this.store.set(model);
+      this.onShapeSelect(added);
+    }
+  }
+
   onJobAction(id: string) {
     switch (id) {
       case 'setup-sheet':
@@ -167,6 +256,10 @@ export class AppComponent {
     }
     event.preventDefault();
   }
+}
+
+function hasFiles(event: DragEvent) {
+  return !!event.dataTransfer?.types.includes('Files');
 }
 
 function isTextEntry(target: EventTarget | null) {

@@ -32,6 +32,44 @@ export function fileNameFrom(name: string): string {
 }
 
 /**
+ * The project embedded in a G-code file's text. Throws, saying why, when
+ * it has none or it can't be read.
+ */
+export async function modelFromNcText(content: string): Promise<ModelType> {
+  let stored: unknown;
+  try {
+    stored = await loadModelFromGcode(content);
+  } catch {
+    throw new Error('the project in it can’t be read (the file is damaged)');
+  }
+  if (!stored) {
+    throw new Error(
+      'there’s no project in it (G-code downloaded from this app has one)',
+    );
+  }
+  return migrateModel(stored);
+}
+
+/** What a file dropped on the app is, by its name (or type). */
+export function droppedFileKind(file: {
+  name: string;
+  type?: string;
+}): 'svg' | 'project' | null {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.svg') || file.type === 'image/svg+xml') return 'svg';
+  return /\.(nc|ngc|gcode)$/.test(name) ? 'project' : null;
+}
+
+/** Whether `text` is an SVG document. */
+export function isSvg(text: string): boolean {
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  return (
+    doc.documentElement?.localName === 'svg' &&
+    !doc.getElementsByTagName('parsererror').length
+  );
+}
+
+/**
  * Asks for a G-code file and emits the project embedded in it. Completes
  * without emitting for a file without one.
  */

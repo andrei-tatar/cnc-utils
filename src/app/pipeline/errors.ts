@@ -6,6 +6,11 @@ export type AppError = {
   context: string;
   /** What went wrong, from the error. */
   message: string;
+  /**
+   * What it means for the work, in place of the toast's usual note (that
+   * what was being worked on is left out).
+   */
+  hint?: string;
 };
 
 const errors = new Subject<AppError>();
@@ -14,9 +19,17 @@ const errors = new Subject<AppError>();
 export const appErrors$: Observable<AppError> = errors.asObservable();
 
 /** Logs `error` and tells the UI about it. */
-export function reportError(context: string, error: unknown): void {
+export function reportError(
+  context: string,
+  error: unknown,
+  hint?: string,
+): void {
   console.error(`Error ${context}:`, error);
-  errors.next({ context, message: errorMessage(error) });
+  errors.next({
+    context,
+    message: errorMessage(error),
+    ...(hint === undefined ? {} : { hint }),
+  });
 }
 
 /**

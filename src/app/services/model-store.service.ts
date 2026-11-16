@@ -172,6 +172,11 @@ export class ModelStore {
     this.replace(model, null);
   }
 
+  /** Replaces the project with one read from a .nc file (a dropped one). */
+  openFile(model: ModelType) {
+    this.replace(model, null);
+  }
+
   /** Replaces the project with one from a share link. */
   openShared(model: ModelType) {
     this.replace(model, null);
