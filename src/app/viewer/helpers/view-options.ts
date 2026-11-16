@@ -109,6 +109,8 @@ export function previewColors(
 export type ViewOptions = {
   grid: boolean;
   gridLabels: boolean;
+  /** The 3D model shapes, see-through under the toolpaths. */
+  models: boolean;
   /** What the simulated material looks like. */
   material: PreviewMaterial;
 };
@@ -116,6 +118,7 @@ export type ViewOptions = {
 const DEFAULTS: ViewOptions = {
   grid: true,
   gridLabels: true,
+  models: true,
   material: 'depth',
 };
 const STORAGE_KEY = 'ui.viewOptions';
@@ -130,6 +133,8 @@ export function loadViewOptions(): ViewOptions {
         typeof stored.gridLabels === 'boolean'
           ? stored.gridLabels
           : DEFAULTS.gridLabels,
+      models:
+        typeof stored.models === 'boolean' ? stored.models : DEFAULTS.models,
       material: PREVIEW_MATERIALS.some((m) => m.id === stored.material)
         ? stored.material
         : DEFAULTS.material,

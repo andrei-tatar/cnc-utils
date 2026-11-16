@@ -1,3 +1,4 @@
+import { PreviewModel, shapeModels } from '../pipeline/relief-models';
 import { inject, Injectable } from '@angular/core';
 import {
   combineLatest,
@@ -205,6 +206,12 @@ export class CamService implements ShapeExporter {
     ),
     distinctJson(),
     shareReplay({ bufferSize: 1, refCount: true }),
+  );
+
+  /** The 3D model shapes' meshes, for the preview to show. */
+  readonly models$: Observable<PreviewModel[]> = shapeModels(
+    this.model$,
+    this.shapes,
   );
 
   /** Whether to simulate the material left (see `simulation$`). */

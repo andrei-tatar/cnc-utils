@@ -100,6 +100,7 @@ import {
 import { StockView, TimeSummary } from '../services/cam.service';
 import { JobWarning } from '../../cam/job-checks';
 import type { Simulation } from '../../cam/simulate-rotary';
+import type { PreviewModel } from '../pipeline/relief-models';
 import { SIMULATION_CELLS, SimulationQuality } from '../pipeline/simulation';
 import { rotarySolid, stockSolid } from './helpers/stock-solid';
 import {
@@ -262,6 +263,14 @@ type PathFrames = {
                 "
               />
               grid numbers
+            </label>
+            <label class="view-options_row">
+              <input
+                type="checkbox"
+                [checked]="viewOptions.models"
+                (change)="setViewOption('models', $any($event.target).checked)"
+              />
+              3D models
             </label>
             <label class="view-options_row view-options_row--select">
               material
@@ -748,6 +757,15 @@ export class ViewerComponent implements OnInit, OnDestroy {
       (value ? `: cells of ${value.cell.toFixed(2)} mm` : '');
   }
   private simulation$ = new BehaviorSubject<Simulation | null>(null);
+  /**
+   * The 3D model shapes, drawn see-through where they are so the
+   * toolpaths show against them.
+   */
+  @Input()
+  set models(value: PreviewModel[] | null) {
+    this.models$.next(value ?? []);
+  }
+  private models$ = new BehaviorSubject<PreviewModel[]>([]);
   /** Simulating: asks for the material left, and shows it. */
   @Input() simulating = false;
   @Output() simulateChange = new EventEmitter<boolean>();
@@ -884,6 +902,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe((editing) => this.shapeEditor.setEditing(editing));
     this.drawSimulation(scene, grid);
+    this.drawModels();
 
     // Axis arrows of a constant on-screen size (scaled per frame below).
     const origin = new Vector3(0, 0, 0);
@@ -1713,6 +1732,46 @@ export class ViewerComponent implements OnInit, OnDestroy {
           geometry.computeVertexNormals();
           surface.add(new Mesh(geometry, material));
         }
+        this.requestRender();
+      });
+  }
+
+  /**
+   * The 3D model shapes as see-through solids (lit by the simulation's
+   * lights), unless they're turned off in the view options; not while the
+   * simulated material is shown.
+   */
+  private drawModels() {
+    const material = new MeshLambertMaterial({
+      color: '#3d8bfd',
+      transparent: true,
+      opacity: 0.28,
+      // See-through from every side, and never hiding a toolpath.
+      depthWrite: false,
+      side: DoubleSide,
+    });
+    const group = new Group();
+    group.renderOrder = -1;
+    this.content.add(group);
+    this.models$.pipe(takeUntil(this.destroy$)).subscribe((models) => {
+      group.children.forEach((child) => (child as Mesh).geometry.dispose());
+      group.clear();
+      for (const model of models) {
+        const geometry = new BufferGeometry();
+        geometry.setAttribute(
+          'position',
+          new BufferAttribute(model.triangles, 3),
+        );
+        // Not indexed: each triangle lit as the flat it is.
+        geometry.computeVertexNormals();
+        group.add(new Mesh(geometry, material));
+      }
+      this.requestRender();
+    });
+    combineLatest([this.viewOptions$, this.simulation$])
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(([options, simulation]) => {
+        group.visible = options.models && !simulation;
         this.requestRender();
       });
   }
