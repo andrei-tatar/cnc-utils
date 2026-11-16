@@ -170,6 +170,39 @@ export function operationPointOnBlank(
 }
 
 /**
+ * The other way: a point on the blank at 0° (Z from its top there) in the
+ * frame of an operation turned to `angle` (Z from the top as turned).
+ */
+export function operationPointInFrame(
+  rotary: Rotary,
+  angle: number,
+  point: CamPoint3,
+): CamPoint3 {
+  if (!isTurned(angle)) {
+    return point;
+  }
+  const radians = (angle * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const w = point.z + rotary.halfThickness;
+  const top = rotaryTop(rotary, angle);
+  if (rotary.along === 'x') {
+    const v = point.y - rotary.across;
+    return {
+      x: point.x,
+      y: rotary.across + v * cos - w * sin,
+      z: v * sin + w * cos - top,
+    };
+  }
+  const u = point.x - rotary.across;
+  return {
+    x: rotary.across + u * cos + w * sin,
+    y: point.y,
+    z: -u * sin + w * cos - top,
+  };
+}
+
+/**
  * The circle a wrapped design is wrapped on: a cylinder's own, or the one
  * a box's corners turn in (what's outside it is air). Wrapped Z is the depth
  * below it.
