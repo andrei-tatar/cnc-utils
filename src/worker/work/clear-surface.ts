@@ -36,7 +36,9 @@ export type SurfaceClearingOptions = {
  * `surface`, never closer than `margin` to it: level by level, outlines
  * where the surface is `margin` or more below the level and pockets them
  * (rings inwards, like a pocket's offset strategy), an area and then the
- * deeper ones inside it before the next nearest.
+ * deeper ones inside it before the next nearest. (With `material`, a
+ * deeper level's areas needn't lie in a shallower one's: each then goes
+ * under the nearest, or is cut from the top.)
  */
 export async function clearOverSurface(
   builder: GCodeBuilder,
@@ -44,6 +46,12 @@ export async function clearOverSurface(
   margin: number,
   total: number,
   options: SurfaceClearingOptions,
+  /**
+   * Per cell of the surface, how high there's material within the bit's
+   * reach (twice its radius, so slivers aren't lost): a level is only
+   * cleared where that's above it. All of it when left out.
+   */
+  material?: Float32Array,
 ): Promise<void> {
   // The outlines are read off cell centres and then simplified: keep that
   // far inside them.
@@ -57,7 +65,7 @@ export async function clearOverSurface(
   const roots: Island[] = [];
   let parents: Island[] = [];
   for (const depth of clearingLevels(total, options.depthPerStep)) {
-    const loops = clearableLoops(surface, -depth, margin)
+    const loops = clearableLoops(surface, -depth, margin, material)
       .map((loop) => simplifyPoints(loop, tolerance, true))
       .filter((loop) => loop.length > 2);
     const region = await inflate(

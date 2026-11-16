@@ -25,11 +25,20 @@ export function clearableLoops(
   surface: Heightmap,
   z: number,
   margin: number,
+  /**
+   * Per cell, how high there's material to clear near it: only where
+   * that's above `z` is there anything to clear down to it.
+   */
+  material?: Float32Array,
 ): CamPoint[][] {
   const { minX, minY, cell, nx, ny, heights } = surface;
   const field = new Float32Array(heights.length);
   for (let i = 0; i < heights.length; i++) {
     field[i] = z - (heights[i] + margin);
+    if (material) {
+      // Kept finite, for the outline to be placed between cells.
+      field[i] = Math.min(field[i], Math.max(-1e3, material[i] - z));
+    }
   }
   return traceContours(field, nx, ny).map((loop) =>
     loop.map((p) => ({

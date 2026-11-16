@@ -21,6 +21,7 @@ import { operationLabel } from '../model-editor/operations';
 import { recover } from './errors';
 import { DowelHoles } from './flip';
 import { Rotary } from '../../cam/rotary';
+import { CutBefore } from '../../cam/rotary-remaining';
 
 /** Everything that decides an operation's toolpath. */
 export type RoutingInputs = {
@@ -37,7 +38,7 @@ export type RoutingInputs = {
    * For a relief whose model turns with the stock (and its roughing): the
    * rotary axis and the angle this is routed for.
    */
-  turned: { rotary: Rotary; angle: number } | null;
+  turned: { rotary: Rotary; angle: number; before?: CutBefore[] } | null;
   /**
    * For a relief that carves a 3D model shape (and its roughing): the
    * shape's mesh, null while there's none. Left out for any other.

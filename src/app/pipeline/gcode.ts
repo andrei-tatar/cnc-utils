@@ -17,6 +17,7 @@ import { GeometrySettings } from '../../cam/geometry';
 import { CamPath, CamShape, CamTab } from '../../cam/types';
 import { Rotary, rotaryOf } from '../../cam/rotary';
 import { carvedModel } from './vcarve-source';
+import { CutBefore } from '../../cam/rotary-remaining';
 import {
   flatOperations,
   NO_TOOL,
@@ -66,6 +67,11 @@ type EntryInputs = OperationInputs & {
    * once whatever the angle.
    */
   turn: Rotary | null;
+  /**
+   * With `turn`: by the angle it's cut at (see `angleKey`), the cuts of
+   * the same relief the program makes before that one (see `cutsBefore`).
+   */
+  before: Record<string, CutBefore[]> | null;
 };
 
 /** A long-lived pipeline for one operation, kept across model emissions. */
@@ -172,6 +178,9 @@ export function generateGcodeFromOperations(
       const rotary = rotaryOf(stock);
       const onRotary = !!rotary;
       const flip = jobFlip(model.operations, stock);
+      const before = rotary
+        ? cutsBefore(model, all)
+        : new Map<string, Record<string, CutBefore[]>>();
       return all
         .filter((operation) => !NO_TOOL.has(operation.type!))
         .map((operation) => {
@@ -189,6 +198,7 @@ export function generateGcodeFromOperations(
             modelShapeId: carves ? carves.shapeId : undefined,
             modelMargin: carves?.margin,
             turn: rotary && carves?.turns ? rotary : null,
+            before: before.get(operation.id) ?? null,
           };
           const existing = ctx.find((e) => e.id === operation.id);
           if (existing) {
@@ -278,6 +288,49 @@ export function generateGcodeFromOperations(
         ),
       }),
   );
+}
+
+/** An angle within a turn (degrees, 0 – 360). */
+function angleKey(angle: number): number {
+  return ((angle % 360) + 360) % 360;
+}
+
+/**
+ * For each operation carving or roughing out a relief whose 3D model
+ * turns with the stock: by the angle it's cut at, the cuts of that same
+ * relief (its roughing's and its own) that come before in the program, at
+ * whatever angle. Those have taken material away that the later ones then
+ * needn't go over (see `materialTop`).
+ */
+export function cutsBefore(
+  model: ModelType,
+  all: readonly any[],
+): Map<string, Record<string, CutBefore[]>> {
+  const result = new Map<string, Record<string, CutBefore[]>>();
+  // What's been cut so far of each relief (by the relief's id).
+  const done = new Map<string, CutBefore[]>();
+  const tools = model.tools ?? [];
+  for (const step of programSteps(model.operations, true, true)) {
+    const op = all.find((o) => o.id === step.id);
+    if (!op || !carvedModel(op, all, model.shapes ?? [])?.turns) continue;
+    const diameter = +(tools.find((t) => t.id === op.toolId)?.diameter ?? 0);
+    if (!(diameter > 0)) continue;
+    const rough = op.type === 'relief-rough';
+    const relief: string = rough ? op.reliefOperationId : op.id;
+    const cuts = done.get(relief) ?? [];
+    done.set(relief, cuts);
+    const angle = angleKey(step.rotation ?? 0);
+    const byAngle = result.get(op.id) ?? {};
+    result.set(op.id, byAngle);
+    byAngle[angle] ??= [...cuts];
+    cuts.push({
+      angle,
+      radius: diameter / 2,
+      offset: rough ? Math.max(0, +op.leaveStock || 0) : 0,
+      ...(rough && +op.depthPerStep > 0 ? { step: +op.depthPerStep } : {}),
+    });
+  }
+  return result;
 }
 
 /** The tabs on what an operation cuts, and which way up the stock is. */
@@ -396,7 +449,15 @@ function createOperationEntry(
     const routed$ = combineLatest({
       shape: shape$,
       model: model$,
-      turned: turn$.pipe(map((rotary) => (rotary ? { rotary, angle } : null))),
+      turned: combineLatest([
+        turn$,
+        input('before').pipe(
+          map((before) => before?.[angleKey(angle)] ?? []),
+          distinctJson(),
+        ),
+      ]).pipe(
+        map(([rotary, before]) => (rotary ? { rotary, angle, before } : null)),
+      ),
       op: input('operationParameters').pipe(distinctJson()),
       tool: input('toolParameters').pipe(distinctJson()),
       source: input('source').pipe(distinctJson()),
@@ -485,7 +546,7 @@ function createOperationEntry(
   // the stock.
   const turnedResults = new Map<number, Observable<GCodeBuilder>>();
   const resultAt = (rotation: number | null) => {
-    const angle = (((rotation ?? 0) % 360) + 360) % 360;
+    const angle = angleKey(rotation ?? 0);
     if (!angle) {
       return result$;
     }

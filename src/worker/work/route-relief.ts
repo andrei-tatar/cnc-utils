@@ -24,6 +24,12 @@ import { Heightmap, SimulatedTool } from '../../cam/simulate';
 import { meshBounds, meshHeights, parseStl } from '../../cam/stl';
 import { modelTurnedTo } from '../../cam/model-mesh';
 import { Rotary } from '../../cam/rotary';
+import {
+  clearedAbove,
+  CutBefore,
+  materialTop,
+  materialWithin,
+} from '../../cam/rotary-remaining';
 import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
 import { getDistance } from '../../util';
 import { clearOverSurface, SurfaceClearingOptions } from './clear-surface';
@@ -63,7 +69,16 @@ export type ReliefSourceOptions = {
    * at 0°, and the operation, turned to `angle`, carves the side that's up
    * then (`depth` below the top as turned, at most).
    */
-  turned?: { rotary: Rotary; angle: number } | null;
+  turned?: {
+    rotary: Rotary;
+    angle: number;
+    /**
+     * The cuts of this relief made before this one, at whatever angle
+     * (roughing and finishing): what they and the blank's own shape leave
+     * as air is left out.
+     */
+    before?: CutBefore[];
+  } | null;
   /**
    * With a mesh: carve within the rectangle round it as the operation
    * meets it, grown this much (mm), instead of within the shape given.
@@ -104,6 +119,16 @@ const MAX_PIXELS = 2400;
 const MAX_CELLS = 4_000_000;
 /** Never finer than this (mm). */
 const MIN_CELL = 0.02;
+/**
+ * A finishing line lifts over a stretch of air only when that's quicker
+ * than carrying on through it: longer than this many times the way back
+ * down (from safe height, at the plunge rate), and than two bit diameters.
+ */
+const LIFT_OVER_AIR = 4;
+/** About how far above the top the bit travels (mm), for that. */
+const TRAVEL_HEIGHT = 5;
+/** The material's top is known about this well (mm), see `materialTop`. */
+const MATERIAL_SLACK = 0.5;
 
 /**
  * Carves a relief inside the shape: raster lines across it, the bit's tip
@@ -129,6 +154,18 @@ export async function routeRelief(
   const { surface, loops, box } = target;
   const tip = dropCutter(surface, options.tool, loops);
   const depth = (p: CamPoint) => Math.max(0, -tip(p));
+  // Where earlier cuts at other angles (and the blank's shape) left only
+  // air under the bit, there's nothing to carve.
+  const remaining = await materialLeft(input, options.relief, surface);
+  const material =
+    remaining && materialWithin(remaining, surface, radius + MATERIAL_SLACK);
+  const inAir = (p: CamPoint3) => {
+    if (!material) return false;
+    const i = Math.floor((p.x - surface.minX) / surface.cell);
+    const j = Math.floor((p.y - surface.minY) / surface.cell);
+    if (i < 0 || j < 0 || i >= surface.nx || j >= surface.ny) return false;
+    return p.z >= material[j * surface.nx + i];
+  };
   const passes = [options.angle || 0];
   if (options.crossPass) passes.push((options.angle || 0) + 90);
 
@@ -164,30 +201,42 @@ export async function routeRelief(
       tolerance,
       start: { x: box.minX, y: box.minY },
     });
-    for (const { points, linked } of runs) {
-      const [first, ...rest] = points;
-      if (linked) {
-        // Over to the next line along the relief, as low as the bit goes.
-        const from = at;
-        const length = getDistance(from, first);
-        const steps = Math.ceil(length / surface.cell);
-        for (let k = 1; k < steps; k++) {
-          const p = {
-            x: from.x + ((first.x - from.x) * k) / steps,
-            y: from.y + ((first.y - from.y) * k) / steps,
-          };
-          carveTo({ ...p, z: -depth(p) });
+    // Whether any of the last line was carved (so the next can be gone
+    // over to along the relief).
+    let carvedLast = false;
+    for (const { points: all, linked } of runs) {
+      const pieces = material ? carvedPieces(all, inAir, radius) : [all];
+      pieces.forEach((points, k) => {
+        const [first, ...rest] = points;
+        // A line trimmed of its air is still gone over to along the
+        // relief, when that's not far.
+        const near =
+          getDistance(at, first) <=
+          Math.max(4 * radius, LIFT_OVER_AIR * (TRAVEL_HEIGHT - first.z));
+        if (linked && k === 0 && carvedLast && (material ? near : true)) {
+          // Over to the next line along the relief, as low as the bit goes.
+          const from = at;
+          const length = getDistance(from, first);
+          const steps = Math.ceil(length / surface.cell);
+          for (let n = 1; n < steps; n++) {
+            const p = {
+              x: from.x + ((first.x - from.x) * n) / steps,
+              y: from.y + ((first.y - from.y) * n) / steps,
+            };
+            carveTo({ ...p, z: -depth(p) });
+          }
+          carveTo(first);
+        } else {
+          builder.goToSafeHeight();
+          builder.travelTo(first.x, first.y);
+          builder.plunge(first.z);
+          at = first;
         }
-        carveTo(first);
-      } else {
-        builder.goToSafeHeight();
-        builder.travelTo(first.x, first.y);
-        builder.plunge(first.z);
-        at = first;
-      }
-      for (const p of rest) {
-        carveTo(p);
-      }
+        for (const p of rest) {
+          carveTo(p);
+        }
+      });
+      carvedLast = pieces.length > 0;
     }
   }
   builder.goToSafeHeight();
@@ -217,9 +266,111 @@ export async function routeReliefRough(
   const margin = Math.max(0, options.leaveStock);
   // Down to the deepest the end mill reaches without cutting into it.
   const total = -lowestReach(target.surface, radius) - margin;
-  await clearOverSurface(builder, target.surface, margin, total, options);
+  const remaining = await materialLeft(input, options.relief, target.surface);
+  await clearOverSurface(
+    builder,
+    target.surface,
+    margin,
+    total,
+    options,
+    // The bit's centre comes within its radius of material: its area is
+    // this, drawn in by the radius.
+    remaining
+      ? materialWithin(remaining, target.surface, 2 * radius + MATERIAL_SLACK)
+      : undefined,
+  );
   builder.goToSafeHeight();
   return builder;
+}
+
+/**
+ * A finishing line's points in the pieces that are carved: without the
+ * stretches where the bit only meets air (`inAir`), unless they're short —
+ * then it carries on through rather than lift. A point is kept either side
+ * of each piece, so the bit is on its way when it meets the material.
+ */
+function carvedPieces(
+  points: CamPoint3[],
+  inAir: (p: CamPoint3) => boolean,
+  radius: number,
+): CamPoint3[][] {
+  const keep = points.map((p) => !inAir(p));
+  // Through stretches of air too short to be worth lifting over.
+  for (let i = 0; i < points.length;) {
+    if (keep[i]) {
+      i++;
+      continue;
+    }
+    let end = i;
+    while (end < points.length && !keep[end]) end++;
+    const between = i > 0 && end < points.length;
+    if (
+      between &&
+      getDistance(points[i - 1], points[end]) <=
+        Math.max(4 * radius, LIFT_OVER_AIR * (TRAVEL_HEIGHT - points[end].z))
+    ) {
+      keep.fill(true, i, end);
+    }
+    i = end;
+  }
+  const pieces: CamPoint3[][] = [];
+  for (let i = 0; i < points.length;) {
+    if (!keep[i]) {
+      i++;
+      continue;
+    }
+    let end = i;
+    while (end < points.length && keep[end]) end++;
+    pieces.push(
+      points.slice(Math.max(0, i - 1), Math.min(points.length, end + 1)),
+    );
+    i = end;
+  }
+  return pieces;
+}
+
+/**
+ * For a relief whose model turns with the stock: how high material still
+ * stands over each cell of `surface` when this cut is made (see
+ * `materialTop`), from the blank's shape and the cuts before. Null for any
+ * other relief: all of it is carved.
+ */
+async function materialLeft(
+  input: CamShape[],
+  relief: ReliefSourceOptions,
+  surface: Heightmap,
+): Promise<Float32Array | null> {
+  const turned = relief.turned;
+  if (!turned || !relief.mesh?.length) {
+    return null;
+  }
+  const cleared: { angle: number; above: Heightmap }[] = [];
+  // Each angle's surface once, however many cuts were made at it.
+  const surfaces = new Map<number, Heightmap | null>();
+  for (const cut of turned.before ?? []) {
+    if (!surfaces.has(cut.angle)) {
+      const target = await reliefTarget(
+        input,
+        { ...relief, turned: { rotary: turned.rotary, angle: cut.angle } },
+        cut.radius,
+      );
+      surfaces.set(cut.angle, target?.surface ?? null);
+    }
+    const there = surfaces.get(cut.angle);
+    if (there) {
+      cleared.push({
+        angle: cut.angle,
+        above: clearedAbove(there, cut, MATERIAL_SLACK),
+      });
+    }
+  }
+  return materialTop(
+    surface,
+    turned.rotary,
+    turned.angle,
+    -Math.max(0, relief.depth),
+    cleared,
+  );
 }
 
 /**
