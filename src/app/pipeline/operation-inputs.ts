@@ -1,3 +1,4 @@
+import { reliefShapeId } from '../model-editor/operations/operation-relief';
 import {
   ModelType,
   OperationParameters,
@@ -153,7 +154,9 @@ export function operationInputs(
     operationParameters,
     shapeId:
       (source ?? plug ?? rest ?? flatPlug ?? imageEngrave ?? relief)?.shapeId ??
-      shapeId,
+      (operationParameters.type === 'relief'
+        ? (reliefShapeId({ ...operationParameters, shapeId }) ?? shapeId)
+        : shapeId),
     toolParameters,
     source,
     plug,

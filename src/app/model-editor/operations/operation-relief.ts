@@ -1,17 +1,41 @@
+import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { numberIn } from '../variables/field';
 import { allTools } from '../tools';
 import { imagePlacementField, ImagePlacementModel } from './image-placement';
+import { onRotary } from './rotation';
+import { allShapes } from '../shapes/describe';
 
 /**
  * A relief carved in 3D, usually with a ball nose: from a greyscale image
- * (light high, dark deep) or an STL model seen from above, laid on the
- * shape's bounding box and clipped by the shape. Raster lines across it,
+ * (light high, dark deep) laid on the shape's bounding box, or a 3D model
+ * shape where it is; clipped by the shape. Raster lines across it,
  * the bit as low as it goes at each point without cutting into the relief.
  */
 export interface ModelType extends ImagePlacementModel {
   type?: 'relief';
-  /** The image or STL model, as a data URL. */
+  /**
+   * What's carved: a height-map image (`reliefFile`, laid on the shape) or
+   * a 3D model shape (`modelShapeId`), where it is. An image when left out.
+   */
+  reliefSource?: 'image' | 'model';
+  /** The 3D model shape to carve (see `reliefModelShapeId`). */
+  modelShapeId?: string;
+  /**
+   * For a 3D model carved without a shape to carve within: how far round
+   * the rectangle round the model is carved too (mm).
+   */
+  reliefMargin?: number;
+  /**
+   * The model turns with the stock on its rotary axis: turned to each
+   * angle, the operation carves the side that's up then.
+   */
+  modelTurns?: boolean;
+  /**
+   * The height-map image, as a data URL. (Reliefs made before 3D model
+   * shapes may hold an STL file here: still carved as it was, seen from
+   * above and laid out like an image.)
+   */
   reliefFile: string;
   /** Name of the file it was loaded from (display only). */
   fileName?: string;
@@ -40,28 +64,106 @@ const field: FormlyFieldConfig = {
   fieldGroup: [
     { key: 'fileName', type: 'hidden' },
     {
+      key: 'reliefSource',
+      type: 'enum',
+      defaultValue: 'image',
+      props: {
+        label: 'relief from',
+        required: true,
+        options: [
+          { value: 'image', label: 'a height-map image' },
+          { value: 'model', label: 'a 3D model shape' },
+        ],
+      },
+    },
+    {
+      key: 'modelShapeId',
+      type: 'enum',
+      props: {
+        label: '3D model',
+        description:
+          'carved where it is, its heights as they are (Z 0 the top of the stock)',
+        required: true,
+        options: [],
+      },
+      expressions: {
+        'props.options': (field: FormlyFieldConfig) =>
+          modelShapes(field).map((s) => ({
+            value: s.id,
+            label: s.name || s['fileName'] || '3D model',
+          })),
+        hide: (field: FormlyFieldConfig) => !carvesModel(field),
+      },
+      validators: {
+        exists: {
+          expression: (control: AbstractControl, field: FormlyFieldConfig) =>
+            !control.value ||
+            modelShapes(field).some((s) => s.id === control.value),
+          message: 'This 3D model was deleted or changed type — pick another',
+        },
+      },
+    },
+    {
+      key: 'reliefMargin',
+      type: 'number',
+      defaultValue: 5,
+      props: {
+        label: 'margin',
+        description:
+          'mm carved round the rectangle the model is in, so the bit gets down its sides; or pick a shape to carve within',
+        min: 0,
+        required: true,
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          !carvesModel(field) || !!field.model?.shapeId,
+      },
+    },
+    {
+      key: 'modelTurns',
+      type: 'boolean',
+      defaultValue: false,
+      props: {
+        label: 'the model turns with the stock',
+        description:
+          'carved in the round: the model is on the blank as at 0°, and at each angle the stock is turned to (rotate steps, a rotary repeat) the side that’s up is carved',
+      },
+      expressions: {
+        hide: (field: FormlyFieldConfig) =>
+          !carvesModel(field) || !onRotary(field) || !!field.model?.wrap,
+      },
+    },
+    {
       key: 'reliefFile',
       type: 'file',
       props: {
-        label: 'relief',
-        description:
-          'a greyscale image (light high, dark deep) or an STL model, seen from above',
-        accept: 'image/*,.stl',
+        label: 'height map',
+        description: 'a greyscale image: light stands high, dark goes deep',
+        accept: 'image/*',
         readAs: 'dataUrl',
         fileNameKey: 'fileName',
         required: true,
       },
+      expressions: { hide: carvesModel },
     },
-    imagePlacementField('placement'),
+    {
+      ...imagePlacementField('placement'),
+      expressions: { hide: (field: FormlyFieldConfig) => hideFileField(field) },
+    },
     {
       key: 'reliefDepth',
       type: 'number',
       defaultValue: 3,
       props: {
         label: 'depth',
-        description: 'mm, where the relief is lowest',
         min: 0.01,
         required: true,
+      },
+      expressions: {
+        'props.description': (field: FormlyFieldConfig) =>
+          carvesModel(field)
+            ? 'mm below the top of the stock (as turned), at most: what of the model is lower isn’t carved'
+            : 'mm, where the relief is lowest',
       },
     },
     {
@@ -69,6 +171,7 @@ const field: FormlyFieldConfig = {
       type: 'boolean',
       defaultValue: false,
       props: { label: 'carve the high parts deepest (a mould)' },
+      expressions: { hide: carvesModel },
     },
     {
       key: 'gamma',
@@ -81,6 +184,7 @@ const field: FormlyFieldConfig = {
         min: 0.1,
         required: true,
       },
+      expressions: { hide: carvesModel },
     },
     {
       key: 'smoothing',
@@ -165,6 +269,61 @@ const field: FormlyFieldConfig = {
     hide: (field: FormlyFieldConfig) => field.model?.type !== Definition.type,
   },
 };
+
+/** The model's 3D model shapes, from any field of the form. */
+function modelShapes(field: FormlyFieldConfig) {
+  return allShapes(field).filter((s) => s.type === 'model');
+}
+
+/** Whether the relief a field belongs to carves a 3D model shape. */
+function carvesModel(field: FormlyFieldConfig): boolean {
+  return (
+    field.model?.type === Definition.type &&
+    field.model?.reliefSource === 'model'
+  );
+}
+
+function hideFileField(field: FormlyFieldConfig): boolean {
+  // The group's model is the operation's.
+  return field.model?.type !== Definition.type || carvesModel(field);
+}
+
+/**
+ * The shape a relief is carved in: the one picked, or, for a 3D model
+ * without one, the model's own (the rectangle round it; the worker carves
+ * within that and the relief's margin).
+ */
+export function reliefShapeId(
+  op:
+    | {
+        shapeId?: string | null;
+        reliefSource?: string;
+        modelShapeId?: string | null;
+      }
+    | undefined,
+): string | undefined {
+  return (
+    op?.shapeId ||
+    (op?.reliefSource === 'model' ? op.modelShapeId || undefined : undefined)
+  );
+}
+
+/**
+ * The 3D model shape a relief carves: undefined for a relief from an
+ * image, null when the one picked isn't there (nothing is carved then).
+ */
+export function reliefModelShapeId(
+  op: { reliefSource?: string; modelShapeId?: string | null } | undefined,
+  shapes: readonly { id?: string; type?: string }[],
+): string | null | undefined {
+  if (op?.reliefSource !== 'model') {
+    return undefined;
+  }
+  const id = op.modelShapeId;
+  return id && shapes.some((s) => s.id === id && s.type === 'model')
+    ? id
+    : null;
+}
 
 export const Definition = {
   type: 'relief',

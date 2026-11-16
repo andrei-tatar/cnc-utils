@@ -128,4 +128,104 @@ export default [
       ],
     }),
   },
+  {
+    name: 'relief-model-shape',
+    covers:
+      '3D relief of a 3D model shape (the STL pyramid, scaled ×1.5 and half as high, turned 30° round Z, its top aligned 1 below the top of the stock, moved): carved where it is in the rectangle round it, 5 deep at most; Ø3 ball nose',
+    model: project({
+      shapes: [
+        {
+          id: 's-model',
+          expanded: false,
+          type: 'model',
+          modelFile: pyramidStl(),
+          transforms: [
+            {
+              id: 't-scale',
+              expanded: false,
+              type: 'scale',
+              scaleX: 1.5,
+              scaleY: 1.5,
+              scaleZ: 0.5,
+            },
+            {
+              id: 't-rotate',
+              expanded: false,
+              type: 'rotate',
+              rotateAngle: 30,
+              rotateAxis: 'z',
+              around: 'xcenter-ycenter',
+            },
+            {
+              id: 't-align',
+              expanded: false,
+              type: 'align',
+              alignX: 'left',
+              alignXTo: 0,
+              alignY: 'bottom',
+              alignYTo: 0,
+              alignZ: 'top',
+              alignZTo: -1,
+            },
+            {
+              id: 't-move',
+              expanded: false,
+              type: 'translate',
+              translateX: 5,
+              translateY: 5,
+              translateZ: 0,
+            },
+          ],
+        },
+      ],
+      tools: [ball3],
+      operations: [
+        relief('o-relief', 't-ball', 's-model', '', {
+          reliefSource: 'model',
+          modelShapeId: 's-model',
+          reliefDepth: 5,
+        }),
+      ],
+    }),
+  },
+  {
+    name: 'relief-model-margin',
+    covers:
+      '3D relief of a 3D model shape with no shape to carve within: the rectangle round the model (the STL pyramid, its top at the top of the stock) and a 4 mm margin, roughed out first; 6 deep at most',
+    model: project({
+      shapes: [
+        {
+          id: 's-model',
+          expanded: false,
+          type: 'model',
+          modelFile: pyramidStl(),
+          transforms: [
+            {
+              id: 't-align',
+              expanded: false,
+              type: 'align',
+              alignX: 'none',
+              alignXTo: 0,
+              alignY: 'none',
+              alignYTo: 0,
+              alignZ: 'top',
+              alignZTo: 0,
+            },
+          ],
+        },
+      ],
+      tools: [ball3, em6],
+      operations: [
+        reliefRough('o-rough', 't-em6', 'o-relief', { depthPerStep: 2 }),
+        {
+          ...relief('o-relief', 't-ball', '', '', {
+            reliefSource: 'model',
+            modelShapeId: 's-model',
+            reliefMargin: 4,
+            reliefDepth: 6,
+          }),
+        },
+      ],
+    }),
+  },
 ] satisfies Fixture[];

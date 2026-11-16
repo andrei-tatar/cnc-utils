@@ -15,7 +15,8 @@ import { resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
 import { CamPath, CamShape, CamTab } from '../../cam/types';
-import { rotaryOf } from '../../cam/rotary';
+import { Rotary, rotaryOf } from '../../cam/rotary';
+import { carvedModel } from './vcarve-source';
 import {
   flatOperations,
   NO_TOOL,
@@ -52,6 +53,19 @@ type EntryInputs = OperationInputs & {
    * the front, or without turning the board over).
    */
   flip: FlipFrame | null;
+  /**
+   * The 3D model shape it carves (see `carvedModel`): null when that isn't
+   * there, undefined for anything that doesn't carve one.
+   */
+  modelShapeId: string | null | undefined;
+  /** That model is carved within its own rectangle and this margin. */
+  modelMargin: number | undefined;
+  /**
+   * That model turns with the stock on this rotary axis: the operation is
+   * routed for each angle it's cut at. Null for everything else, routed
+   * once whatever the angle.
+   */
+  turn: Rotary | null;
 };
 
 /** A long-lived pipeline for one operation, kept across model emissions. */
@@ -61,8 +75,12 @@ type OperationEntry = {
   /** The shape it cuts. */
   shape$: Observable<CamShape[]>;
   frame$: Observable<string>;
-  /** Routed and tagged with its tool; turning the stock comes later. */
-  result$: Observable<GCodeBuilder>;
+  /**
+   * Routed and tagged with its tool, to cut with the stock turned to
+   * `rotation`; turning the stock comes later. The same whatever the
+   * angle, but for what turns with the stock.
+   */
+  resultAt(rotation: number | null): Observable<GCodeBuilder>;
 };
 
 /**
@@ -151,11 +169,13 @@ export function generateGcodeFromOperations(
     scan((ctx, model) => {
       const all = flatOperations(model.operations);
       const stock = resolveStock(model.stock);
-      const onRotary = !!rotaryOf(stock);
+      const rotary = rotaryOf(stock);
+      const onRotary = !!rotary;
       const flip = jobFlip(model.operations, stock);
       return all
         .filter((operation) => !NO_TOOL.has(operation.type!))
         .map((operation) => {
+          const carves = carvedModel(operation, all, model.shapes ?? []);
           const inputs: EntryInputs = {
             ...operationInputs(operation, { ...model, operations: all }),
             frame:
@@ -166,6 +186,9 @@ export function generateGcodeFromOperations(
               flip && onBack(operation, model.operations)
                 ? flipFrame(stock, flip)
                 : null,
+            modelShapeId: carves ? carves.shapeId : undefined,
+            modelMargin: carves?.margin,
+            turn: rotary && carves?.turns ? rotary : null,
           };
           const existing = ctx.find((e) => e.id === operation.id);
           if (existing) {
@@ -224,13 +247,15 @@ export function generateGcodeFromOperations(
         const entry = byId.get(id);
         return entry
           ? [
-              entry.result$.pipe(
-                map((b) =>
-                  flip && back !== undefined
-                    ? sided(b, id, back, flip)
-                    : turned(b, id, rotation, wrap),
+              entry
+                .resultAt(rotation)
+                .pipe(
+                  map((b) =>
+                    flip && back !== undefined
+                      ? sided(b, id, back, flip)
+                      : turned(b, id, rotation, wrap),
+                  ),
                 ),
-              ),
             ]
           : [];
       });
@@ -351,90 +376,136 @@ function createOperationEntry(
     shareLatest(),
   );
 
-  const routed$ = combineLatest({
-    shape: shape$,
-    op: input('operationParameters').pipe(distinctJson()),
-    tool: input('toolParameters').pipe(distinctJson()),
-    source: input('source').pipe(distinctJson()),
-    plug: input('plug').pipe(distinctJson()),
-    rest: input('rest').pipe(distinctJson()),
-    flatPlug: input('flatPlug').pipe(distinctJson()),
-    imageEngrave: input('imageEngrave').pipe(distinctJson()),
-    relief: input('relief').pipe(distinctJson()),
-    dowels: input('dowels').pipe(distinctJson()),
-    clearings: input('clearings').pipe(distinctJson()),
-    geometry: geometry$,
-    optimizeTravel: optimizeTravel$,
-  }).pipe(switchMap((routing) => routeOperation(id, routing, working$)));
-
   const frame$ = input('frame').pipe(distinctUntilChanged());
-  const tabs$ = combineLatest([framedTabs$, frame$]).pipe(
-    map(([all, frame]) =>
-      all.filter((t) => t.frame === frame).flatMap((t) => t.tabs),
-    ),
-    distinctJson(),
-  );
-
-  // Then over the tabs the tool would cut into: changing tabs doesn't
-  // re-route.
-  const radius$ = input('toolParameters').pipe(
-    map((tool) => (tool?.diameter ?? 0) / 2),
-    distinctUntilChanged(),
-  );
-  const kept$ = combineLatest([routed$, tabs$, radius$]).pipe(
-    map(([builder, tabs, radius]) => ({
-      builder,
-      radius,
-      tabs: tabsNear(tabs, builder.cutBounds(), radius),
-    })),
-    distinctUntilChanged(
-      (a, b) =>
-        a.builder === b.builder &&
-        a.radius === b.radius &&
-        JSON.stringify(a.tabs) === JSON.stringify(b.tabs),
-    ),
-    switchMap(({ builder, tabs, radius }) =>
-      tabs.length
-        ? race(
-            worker.keepTabs(builder, tabs, radius).pipe(
-              // Cutting through the tabs beats not cutting at all; the
-              // user is told.
-              recover('keeping the cuts out of the tabs', () => builder),
-            ),
-            working$,
-          )
-        : of(builder),
-    ),
-  );
-
-  // Tag the routed G-code with its tool afterwards, so renumbering tools
-  // (reordering the list) doesn't re-run the routing (nor does turning the
-  // stock: see `turned`).
-  const tagged$ = combineLatest([
-    kept$,
-    input('toolInfo').pipe(distinctJson()),
+  const turn$ = input('turn').pipe(distinctJson(), shareLatest());
+  // The mesh of the 3D model shape it carves, when it carves one.
+  const model$ = combineLatest([
+    input('modelShapeId').pipe(distinctUntilChanged()),
+    input('modelMargin').pipe(distinctUntilChanged()),
   ]).pipe(
-    map(([builder, info]) =>
-      info
-        ? new GCodeBuilder()
-            .useTool(info.number, info.label, info.spindleSpeed)
-            .carveFeedrate(info.feedRate)
-            .plungeFeedRate(info.plungeFeedRate)
-            .concat(builder)
-        : builder,
+    switchMap(([modelShapeId, margin]) =>
+      modelShapeId
+        ? shapes.meshById(modelShapeId).pipe(map((mesh) => ({ mesh, margin })))
+        : of(modelShapeId === null ? { mesh: null, margin } : undefined),
     ),
     shareLatest(),
   );
+  // Routed for the stock turned to `angle`: only what turns with the stock
+  // is told the angle (anything else is the same routing at every one).
+  const routedAt = (angle: number) => {
+    const routed$ = combineLatest({
+      shape: shape$,
+      model: model$,
+      turned: turn$.pipe(map((rotary) => (rotary ? { rotary, angle } : null))),
+      op: input('operationParameters').pipe(distinctJson()),
+      tool: input('toolParameters').pipe(distinctJson()),
+      source: input('source').pipe(distinctJson()),
+      plug: input('plug').pipe(distinctJson()),
+      rest: input('rest').pipe(distinctJson()),
+      flatPlug: input('flatPlug').pipe(distinctJson()),
+      imageEngrave: input('imageEngrave').pipe(distinctJson()),
+      relief: input('relief').pipe(distinctJson()),
+      dowels: input('dowels').pipe(distinctJson()),
+      clearings: input('clearings').pipe(distinctJson()),
+      geometry: geometry$,
+      optimizeTravel: optimizeTravel$,
+    }).pipe(switchMap((routing) => routeOperation(id, routing, working$)));
 
-  // A disabled operation contributes nothing, and isn't routed at all while
-  // it stays disabled.
-  const result$ = input('enabled').pipe(
-    distinctUntilChanged(),
-    switchMap((enabled) => (enabled ? tagged$ : of(new GCodeBuilder()))),
-    shareLatest(),
-  );
+    const tabs$ = combineLatest([framedTabs$, frame$]).pipe(
+      map(([all, frame]) =>
+        all.filter((t) => t.frame === frame).flatMap((t) => t.tabs),
+      ),
+      distinctJson(),
+    );
 
-  return { id, inputs$, shape$, frame$, result$ };
+    // Then over the tabs the tool would cut into: changing tabs doesn't
+    // re-route.
+    const radius$ = input('toolParameters').pipe(
+      map((tool) => (tool?.diameter ?? 0) / 2),
+      distinctUntilChanged(),
+    );
+    const kept$ = combineLatest([routed$, tabs$, radius$]).pipe(
+      map(([builder, tabs, radius]) => ({
+        builder,
+        radius,
+        tabs: tabsNear(tabs, builder.cutBounds(), radius),
+      })),
+      distinctUntilChanged(
+        (a, b) =>
+          a.builder === b.builder &&
+          a.radius === b.radius &&
+          JSON.stringify(a.tabs) === JSON.stringify(b.tabs),
+      ),
+      switchMap(({ builder, tabs, radius }) =>
+        tabs.length
+          ? race(
+              worker.keepTabs(builder, tabs, radius).pipe(
+                // Cutting through the tabs beats not cutting at all; the
+                // user is told.
+                recover('keeping the cuts out of the tabs', () => builder),
+              ),
+              working$,
+            )
+          : of(builder),
+      ),
+    );
+
+    // Tag the routed G-code with its tool afterwards, so renumbering tools
+    // (reordering the list) doesn't re-run the routing (nor does turning the
+    // stock: see `turned`).
+    const tagged$ = combineLatest([
+      kept$,
+      input('toolInfo').pipe(distinctJson()),
+    ]).pipe(
+      map(([builder, info]) =>
+        info
+          ? new GCodeBuilder()
+              .useTool(info.number, info.label, info.spindleSpeed)
+              .carveFeedrate(info.feedRate)
+              .plungeFeedRate(info.plungeFeedRate)
+              .concat(builder)
+          : builder,
+      ),
+      shareLatest(),
+    );
+
+    // A disabled operation contributes nothing, and isn't routed at all while
+    // it stays disabled.
+    const result$ = input('enabled').pipe(
+      distinctUntilChanged(),
+      switchMap((enabled) => (enabled ? tagged$ : of(new GCodeBuilder()))),
+      shareLatest(),
+    );
+
+    return result$;
+  };
+
+  const result$ = routedAt(0);
+  // One more pipeline per other angle it's cut at, while it turns with
+  // the stock.
+  const turnedResults = new Map<number, Observable<GCodeBuilder>>();
+  const resultAt = (rotation: number | null) => {
+    const angle = (((rotation ?? 0) % 360) + 360) % 360;
+    if (!angle) {
+      return result$;
+    }
+    return turn$.pipe(
+      map((rotary) => !!rotary),
+      distinctUntilChanged(),
+      switchMap((turns) => {
+        if (!turns) {
+          return result$;
+        }
+        let turned$ = turnedResults.get(angle);
+        if (!turned$) {
+          turnedResults.set(angle, (turned$ = routedAt(angle)));
+        }
+        return turned$;
+      }),
+    );
+  };
+
+  return { id, inputs$, shape$, frame$, resultAt };
 }
 
 /**

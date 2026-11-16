@@ -143,6 +143,10 @@ const operations = [
 ];
 
 /** Rotate steps and rotary repeats: no tool, no shape, nothing cut. */
+/** A relief that carves a 3D model shape. */
+const modelRelief = (field: FormlyFieldConfig) =>
+  field.model?.type === 'relief' && field.model?.reliefSource === 'model';
+
 const cutsNothing = (field: FormlyFieldConfig) =>
   NO_TOOL.has(field.model?.type);
 
@@ -390,12 +394,22 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
           borrowsShape.has(field.model?.type) ||
           cutsNothing(field) ||
           isFlip(field),
+        // A relief of a 3D model carves round the model unless it's given
+        // a shape to carve within.
+        'props.required': (field: FormlyFieldConfig) => !modelRelief(field),
+        'props.label': (field: FormlyFieldConfig) =>
+          modelRelief(field) ? 'carve within' : 'shape',
         'props.options': (field: FormlyFieldConfig) => {
           const shapes = allShapes(field);
-          return shapes.map((shape) => ({
-            value: shape.id,
-            label: shapeLabel(shape, shapes),
-          }));
+          return [
+            ...(modelRelief(field)
+              ? [{ value: null, label: 'the model’s rectangle, and a margin' }]
+              : []),
+            ...shapes.map((shape) => ({
+              value: shape.id,
+              label: shapeLabel(shape, shapes),
+            })),
+          ];
         },
       },
     },

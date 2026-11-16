@@ -22,6 +22,8 @@ import {
 } from '../../cam/relief';
 import { Heightmap, SimulatedTool } from '../../cam/simulate';
 import { meshBounds, meshHeights, parseStl } from '../../cam/stl';
+import { modelTurnedTo } from '../../cam/model-mesh';
+import { Rotary } from '../../cam/rotary';
 import { CamPoint, CamPoint3, CamShape } from '../../cam/types';
 import { getDistance } from '../../util';
 import { clearOverSurface, SurfaceClearingOptions } from './clear-surface';
@@ -49,6 +51,24 @@ export type ReliefSourceOptions = {
   around: 'surface' | 'floor';
   /** The surface is worked out on cells this size (mm). */
   resolution: number;
+  /**
+   * A 3D model shape's mesh to carve instead of the file (triangles in
+   * design coordinates, Z 0 the top of the stock): carved where it is, at
+   * its own heights, nothing more than `depth` below the top (the layout,
+   * gamma and `invert` don't apply).
+   */
+  mesh?: Float32Array | null;
+  /**
+   * The mesh turns with the stock on its rotary axis: it's on the blank as
+   * at 0°, and the operation, turned to `angle`, carves the side that's up
+   * then (`depth` below the top as turned, at most).
+   */
+  turned?: { rotary: Rotary; angle: number } | null;
+  /**
+   * With a mesh: carve within the rectangle round it as the operation
+   * meets it, grown this much (mm), instead of within the shape given.
+   */
+  margin?: number;
 };
 
 export type ReliefOptions = {
@@ -212,15 +232,47 @@ async function reliefTarget(
   relief: ReliefSourceOptions,
   reach: number,
 ): Promise<{ surface: Heightmap; loops: CamPoint[][]; box: Bounds } | null> {
-  if (!relief.file || !(relief.depth > 0) || !(relief.resolution > 0)) {
+  if (
+    !(relief.mesh?.length || relief.file) ||
+    !(relief.depth > 0) ||
+    !(relief.resolution > 0)
+  ) {
     return null;
   }
-  const region = await shapeRegion(input);
-  if (!region.length) {
-    return null;
+  // The mesh as this operation meets it: Z from the top (as turned).
+  const seen = !relief.mesh?.length
+    ? null
+    : relief.turned
+      ? modelTurnedTo(relief.mesh, relief.turned.rotary, relief.turned.angle)
+      : relief.mesh;
+  let loops: CamPoint[][];
+  let box: Bounds;
+  if (seen && relief.margin !== undefined) {
+    // Within the rectangle round the model, and a margin.
+    const b = meshBounds(seen);
+    const m = Math.max(0, relief.margin);
+    box = {
+      minX: b.minX - m,
+      maxX: b.maxX + m,
+      minY: b.minY - m,
+      maxY: b.maxY + m,
+    };
+    loops = [
+      [
+        { x: box.minX, y: box.minY },
+        { x: box.maxX, y: box.minY },
+        { x: box.maxX, y: box.maxY },
+        { x: box.minX, y: box.maxY },
+      ],
+    ];
+  } else {
+    const region = await shapeRegion(input);
+    if (!region.length) {
+      return null;
+    }
+    loops = region.map((p) => polygonPoints(p, curveTolerance()));
+    box = polygonsBounds(region);
   }
-  const loops = region.map((p) => polygonPoints(p, curveTolerance()));
-  const box = polygonsBounds(region);
   const border = reach + 2 * relief.resolution;
   const area =
     (box.maxX - box.minX + 2 * border) * (box.maxY - box.minY + 2 * border);
@@ -229,7 +281,7 @@ async function reliefTarget(
     relief.resolution,
     Math.sqrt(area / MAX_CELLS),
   );
-  const { map, placement } = await reliefMap(relief, box, cell);
+  const { map, placement, absolute } = await reliefMap(relief, box, cell, seen);
   const smoothed = smoothRelief(
     map,
     relief.smoothing / ((placement.maxX - placement.minX) / map.width),
@@ -240,8 +292,8 @@ async function reliefTarget(
     {
       placement,
       depth: relief.depth,
-      gamma: relief.gamma,
-      invert: relief.invert,
+      gamma: absolute ? 1 : relief.gamma,
+      invert: absolute ? false : relief.invert,
       around: relief.around,
     },
     cell,
@@ -259,7 +311,37 @@ async function reliefMap(
   relief: ReliefSourceOptions,
   box: Bounds,
   cell: number,
-): Promise<{ map: ReliefMap; placement: Bounds }> {
+  /** A 3D model shape's mesh, as the operation meets it. */
+  mesh: Float32Array | null,
+): Promise<{
+  map: ReliefMap;
+  placement: Bounds;
+  /** The map's heights are true ones (a 3D model shape's). */
+  absolute?: boolean;
+}> {
+  if (mesh) {
+    const b = meshBounds(mesh);
+    const cells = (mm: number) =>
+      Math.max(1, Math.min(MAX_PIXELS, Math.ceil(mm / cell)));
+    const map = meshHeights(
+      mesh,
+      cells(b.maxX - b.minX),
+      cells(b.maxY - b.minY),
+    );
+    // From the mesh's own lowest – highest to the top – `depth` below it:
+    // what's above the stock can't be added, what's lower isn't carved.
+    const rise = b.maxZ - b.minZ;
+    const depth = Math.max(relief.depth, 1e-9);
+    for (let k = 0; k < map.data.length; k++) {
+      const z = b.minZ + map.data[k] * rise;
+      map.data[k] = Math.min(1, Math.max(0, 1 + z / depth));
+    }
+    return {
+      map,
+      placement: { minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY },
+      absolute: true,
+    };
+  }
   // Turned a quarter (or three), width and height swap places.
   const turns = quarterTurns(relief.layout.rotation);
   const sideways = turns % 2 === 1;

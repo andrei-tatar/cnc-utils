@@ -5,7 +5,11 @@ import type { ClearingTool } from '../../worker/work/route-vcarve-clearing';
 import type { ImageEngraveOptions } from '../../worker/work/route-image-engrave';
 import type { ModelType as ImageEngraveType } from '../model-editor/operations/operation-image-engrave';
 import type { ImagePlacementModel } from '../model-editor/operations/image-placement';
-import type { ModelType as ReliefType } from '../model-editor/operations/operation-relief';
+import {
+  reliefModelShapeId,
+  reliefShapeId,
+  type ModelType as ReliefType,
+} from '../model-editor/operations/operation-relief';
 import type { ImageLayout } from '../../cam/image-engrave';
 import type { ReliefSourceOptions } from '../../worker/work/route-relief';
 
@@ -315,6 +319,43 @@ export function reliefOptions(
   };
 }
 
+/**
+ * The relief an operation carves or roughs out (itself, or the one its
+ * roughing is for), when that carves a 3D model shape: the shape's id
+ * (null when it isn't there), and whether it turns with the stock on a
+ * rotary axis — then it's routed for each angle it's cut at. Null for
+ * anything else.
+ */
+export function carvedModel(
+  operation: { type?: string; [key: string]: any },
+  operations: readonly { id: string; type?: string }[],
+  shapes: readonly { id?: string; type?: string }[],
+): {
+  shapeId: string | null;
+  turns: boolean;
+  /**
+   * Without a shape to carve within: the margin round the model's own
+   * rectangle that's carved.
+   */
+  margin?: number;
+} | null {
+  const relief: any =
+    operation.type === 'relief-rough'
+      ? operations.find((o) => o.id === operation['reliefOperationId'])
+      : operation;
+  if (relief?.type !== 'relief') {
+    return null;
+  }
+  const shapeId = reliefModelShapeId(relief, shapes);
+  return shapeId === undefined
+    ? null
+    : {
+        shapeId,
+        turns: !!relief.modelTurns && !relief.wrap,
+        ...(relief.shapeId ? {} : { margin: +relief.reliefMargin || 0 }),
+      };
+}
+
 /** What a relief's roughing takes from the relief. */
 export type ReliefSource = {
   shapeId: string;
@@ -333,5 +374,8 @@ export function reliefSource(
   if (relief?.type !== 'relief') {
     return null;
   }
-  return { shapeId: relief.shapeId, relief: reliefOptions(relief) };
+  return {
+    shapeId: reliefShapeId(relief) ?? relief.shapeId,
+    relief: reliefOptions(relief),
+  };
 }

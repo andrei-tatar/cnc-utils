@@ -20,6 +20,7 @@ import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { operationLabel } from '../model-editor/operations';
 import { recover } from './errors';
 import { DowelHoles } from './flip';
+import { Rotary } from '../../cam/rotary';
 
 /** Everything that decides an operation's toolpath. */
 export type RoutingInputs = {
@@ -32,6 +33,20 @@ export type RoutingInputs = {
   flatPlug: FlatPlugSource | null;
   imageEngrave: ImageEngraveSource | null;
   relief: ReliefSource | null;
+  /**
+   * For a relief whose model turns with the stock (and its roughing): the
+   * rotary axis and the angle this is routed for.
+   */
+  turned: { rotary: Rotary; angle: number } | null;
+  /**
+   * For a relief that carves a 3D model shape (and its roughing): the
+   * shape's mesh, null while there's none. Left out for any other.
+   */
+  model?: {
+    mesh: Float32Array | null;
+    /** Carved within the model's own rectangle and this margin. */
+    margin?: number;
+  };
   /** For a flip step: the dowel holes it drills. */
   dowels: DowelHoles | null;
   /** End mills clearing for a v-carve (or inlay plug) before it. */
@@ -67,6 +82,23 @@ export function routeOperation(
   );
 }
 
+/** A relief's options, carving a 3D model shape's mesh instead of a file. */
+function carved(
+  relief: ReliefSource['relief'],
+  model: RoutingInputs['model'],
+  turned: RoutingInputs['turned'],
+): ReliefSource['relief'] {
+  return model
+    ? {
+        ...relief,
+        file: '',
+        mesh: model.mesh,
+        ...(model.margin === undefined ? {} : { margin: model.margin }),
+        ...(turned ? { turned } : {}),
+      }
+    : relief;
+}
+
 /** The worker call for the operation's type, or null for nothing to cut. */
 function route({
   shape,
@@ -78,6 +110,8 @@ function route({
   flatPlug,
   imageEngrave,
   relief,
+  turned,
+  model,
   dowels,
   clearings,
   geometry,
@@ -360,7 +394,7 @@ function route({
       }
       return worker.routeRelief(shape, {
         geometry,
-        relief: reliefOptions(op),
+        relief: carved(reliefOptions(op), model, turned),
         tool: {
           bitType: bitType ?? 'end-mill',
           diameter,
@@ -381,7 +415,7 @@ function route({
       return worker.routeReliefRough(shape, {
         geometry,
         optimizeTravel,
-        relief: relief.relief,
+        relief: carved(relief.relief, model, turned),
         toolSize: diameter,
         toolEngagement: op.toolEngagement,
         depthPerStep: op.depthPerStep,

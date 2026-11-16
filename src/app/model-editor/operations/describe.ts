@@ -1,3 +1,4 @@
+import { reliefShapeId } from './operation-relief';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { rootModel, shapeLabel } from '../shapes/describe';
 import { numberedToolLabel, ToolType } from '../tools';
@@ -145,7 +146,10 @@ export function borrowedShapeId(
             ? operation.reliefOperationId
             : null;
   if (!from) {
-    return operation?.shapeId;
+    // A relief of a 3D model needs no shape of its own to carve within.
+    return operation?.type === 'relief'
+      ? reliefShapeId(operation)
+      : operation?.shapeId;
   }
   const other = operations.find((o) => o.id === from);
   // A clearing for an inlay plug borrows twice; never loop.

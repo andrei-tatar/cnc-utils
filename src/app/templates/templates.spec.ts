@@ -92,6 +92,12 @@ describe('templates', () => {
         expect(has(model.shapes, borrowedShapeId(op, operations)!))
           .withContext(`${where} shape`)
           .toBeTrue();
+        // A relief's 3D model shape.
+        if (op.modelShapeId) {
+          expect(has(model.shapes, op.modelShapeId))
+            .withContext(`${where} 3D model`)
+            .toBeTrue();
+        }
         for (const key of [
           'vcarveOperationId',
           'pocketOperationId',
