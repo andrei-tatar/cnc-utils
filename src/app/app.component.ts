@@ -34,8 +34,10 @@ import {
 import { CamPoint } from '../cam/types';
 import { generateId } from '../util';
 import { WebMcp } from './webmcp/webmcp.service';
-import { droppedFileKind, isSvg } from './project-file';
+import { droppedFileKind, isSvg, readAsDataUrl } from './project-file';
+import { ModelType } from './model-editor/model';
 import { reportError } from './pipeline/errors';
+import { parseModelFile } from '../cam/threemf';
 
 @Component({
   selector: 'app-root',
@@ -166,7 +168,7 @@ export class AppComponent {
 
   /**
    * Files dropped on the app: a .nc file's project is opened, each SVG
-   * becomes a new shape. A file field takes what's dropped on it itself.
+   * becomes a new shape, each STL or 3MF file a new 3D model shape. A file field takes what's dropped on it itself.
    */
   async onDrop(event: DragEvent) {
     if (!hasFiles(event)) return;
@@ -186,35 +188,55 @@ export class AppComponent {
     for (const file of files) {
       const context = `opening “${file.name}”`;
       const unchanged = 'Nothing was changed.';
-      if (droppedFileKind(file) !== 'svg') {
-        reportError(
-          context,
-          'only .svg files (a new shape) and .nc files (their project) can be dropped here',
-          unchanged,
-        );
-        continue;
-      }
+      const kind = droppedFileKind(file);
       try {
-        const svg = await file.text();
-        if (!isSvg(svg)) {
-          reportError(context, 'it isn’t an SVG drawing', unchanged);
-          continue;
+        if (kind === 'svg') {
+          const svg = await file.text();
+          if (!isSvg(svg)) {
+            reportError(context, 'it isn’t an SVG drawing', unchanged);
+            continue;
+          }
+          added = await generateId();
+          model = withShape(model, {
+            id: added,
+            type: 'svg',
+            svg,
+            fileName: file.name,
+            expanded: true,
+            transforms: [],
+          });
+        } else if (kind === 'model') {
+          // Read once here, so a file that isn't a model adds nothing.
+          await parseModelFile(await file.arrayBuffer());
+          added = await generateId();
+          model = withShape(model, {
+            id: added,
+            type: 'model',
+            modelFile: await readAsDataUrl(file),
+            fileName: file.name,
+            expanded: true,
+            // Its top at the top of the stock, where a relief carves it.
+            transforms: [
+              {
+                id: await generateId(),
+                expanded: false,
+                type: 'align',
+                alignX: 'none',
+                alignXTo: 0,
+                alignY: 'none',
+                alignYTo: 0,
+                alignZ: 'top',
+                alignZTo: 0,
+              },
+            ],
+          });
+        } else {
+          reportError(
+            context,
+            'only .svg files (a new shape), .stl and .3mf files (a new 3D model) and .nc files (their project) can be dropped here',
+            unchanged,
+          );
         }
-        added = await generateId();
-        model = {
-          ...model,
-          shapes: [
-            ...(model.shapes ?? []),
-            {
-              id: added,
-              type: 'svg',
-              svg,
-              fileName: file.name,
-              expanded: true,
-              transforms: [],
-            },
-          ],
-        };
       } catch (error) {
         reportError(context, error, unchanged);
       }
@@ -256,6 +278,14 @@ export class AppComponent {
     }
     event.preventDefault();
   }
+}
+
+/** `model` with `shape` at the end of its shapes. */
+function withShape(
+  model: ModelType,
+  shape: ModelType['shapes'][number],
+): ModelType {
+  return { ...model, shapes: [...(model.shapes ?? []), shape] };
 }
 
 function hasFiles(event: DragEvent) {

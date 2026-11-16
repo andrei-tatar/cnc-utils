@@ -54,9 +54,10 @@ export async function modelFromNcText(content: string): Promise<ModelType> {
 export function droppedFileKind(file: {
   name: string;
   type?: string;
-}): 'svg' | 'project' | null {
+}): 'svg' | 'model' | 'project' | null {
   const name = file.name.toLowerCase();
   if (name.endsWith('.svg') || file.type === 'image/svg+xml') return 'svg';
+  if (/\.(stl|3mf)$/.test(name)) return 'model';
   return /\.(nc|ngc|gcode)$/.test(name) ? 'project' : null;
 }
 
@@ -67,6 +68,16 @@ export function isSvg(text: string): boolean {
     doc.documentElement?.localName === 'svg' &&
     !doc.getElementsByTagName('parsererror').length
   );
+}
+
+/** A file's content as a data URL. */
+export function readAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 /**

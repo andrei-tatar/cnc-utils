@@ -8,6 +8,8 @@ describe('dropped files', () => {
     expect(droppedFileKind({ name: 'logo', type: 'image/svg+xml' })).toBe(
       'svg',
     );
+    expect(droppedFileKind({ name: 'knight.STL' })).toBe('model');
+    expect(droppedFileKind({ name: 'knight.3mf' })).toBe('model');
     expect(droppedFileKind({ name: 'job.nc' })).toBe('project');
     expect(droppedFileKind({ name: 'job.gcode' })).toBe('project');
     expect(droppedFileKind({ name: 'photo.png' })).toBeNull();
