@@ -386,8 +386,12 @@ export class ToolLibraryDialogComponent implements OnInit {
     this.refresh();
   }
 
+  /** The tool's index (its T number), then what kind of bit it is. */
   describe(tool: LibraryTool) {
-    return describeTool(tool);
+    const description = describeTool(tool);
+    return typeof tool.index === 'number' && Number.isFinite(tool.index)
+      ? `T${tool.index} · ${description}`
+      : description;
   }
 
   /** Where the tools of a library are kept. */
