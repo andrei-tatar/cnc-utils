@@ -69,7 +69,12 @@ import {
   timer,
 } from 'rxjs';
 
-import { AdaptiveGrid } from './helpers/adaptive-grid';
+import {
+  AdaptiveGrid,
+  VerticalGrid,
+  floorHeight,
+  gridSpacing,
+} from './helpers/adaptive-grid';
 import { loadView, saveView } from './helpers/saved-view';
 import {
   colorScale,
@@ -933,6 +938,12 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
     const grid = new AdaptiveGrid(this.palette$.value.grid);
     scene.add(grid);
+    // The grid for Z: walls behind what's drawn (in a group the view option
+    // shows or hides; the walls hide themselves when edge-on).
+    const zGrid = new VerticalGrid(this.palette$.value.grid);
+    const zGridGroup = new Group();
+    zGridGroup.add(zGrid);
+    scene.add(zGridGroup);
     scene.add(this.content);
     scene.add(this.measureGroup);
     this.content.add(this.pathsGroup);
@@ -955,7 +966,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.editing$
       .pipe(takeUntil(this.destroy$))
       .subscribe((editing) => this.shapeEditor.setEditing(editing));
-    this.drawSimulation(scene, grid);
+    this.drawSimulation(scene);
     this.drawModels();
 
     // Axis arrows of a constant on-screen size (scaled per frame below).
@@ -1081,6 +1092,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe(({ grid: showGrid, gridLabels }) => {
         grid.visible = showGrid;
+        zGridGroup.visible = showGrid;
         // (Their stylesheet sets `display`, which `hidden` wouldn't beat.)
         this.labelsLayer.nativeElement.style.display = gridLabels ? '' : 'none';
         this.gridReadout.nativeElement.style.display = showGrid ? '' : 'none';
@@ -1103,7 +1115,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
         this.camera.zoom,
         width,
         height,
-        grid.position.z,
+      ].join();
+      // The vertical grid stands round what's drawn, so it follows that too.
+      const contentBox = this.viewBox();
+      const gridKey = [
+        key,
+        ...contentBox.min.toArray(),
+        ...contentBox.max.toArray(),
       ].join();
 
       // Arrows keep a constant on-screen size and are thinned out on screen,
@@ -1114,10 +1132,22 @@ export class ViewerComponent implements OnInit, OnDestroy {
         this.layoutArrows(pixelsPerUnit, width, height);
       }
 
-      if (pixelsPerUnit > 0 && key !== viewKey) {
-        viewKey = key;
-        const bounds = visiblePlaneBounds(this.camera, this.controls.target);
+      if (pixelsPerUnit > 0 && gridKey !== viewKey) {
+        viewKey = gridKey;
+        // The floor grid lies on the side of what's drawn away from the
+        // camera (under it, or over it seen from below), on a grid line.
+        const direction = this.camera.getWorldDirection(new Vector3());
+        const floorBounds = (z: number) =>
+          visiblePlaneBounds(this.camera, this.controls.target, z);
+        const farZ = direction.z <= 0 ? contentBox.min.z : contentBox.max.z;
+        grid.position.z = floorHeight(
+          contentBox,
+          direction,
+          gridSpacing(pixelsPerUnit, floorBounds(farZ)).minor,
+        );
+        const bounds = floorBounds(grid.position.z);
         const spacing = grid.update(bounds, pixelsPerUnit);
+        const vertical = zGrid.update(contentBox, spacing, direction);
         labels.update(
           bounds,
           spacing,
@@ -1125,6 +1155,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
           width,
           height,
           grid.position.z,
+          vertical,
         );
         this.gridReadout.nativeElement.textContent = `grid ${formatMm(
           spacing.minor,
@@ -1137,7 +1168,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
       // and toolpaths arrive or change. Wait for the real viewport size
       // (before the first resize the camera has a ±1 frustum).
       if (this.autoFit && this.camera.right - this.camera.left > 2) {
-        const box = this.viewBox();
+        const box = contentBox;
         const boxKey = [...box.min.toArray(), ...box.max.toArray()]
           .map((v) => v.toFixed(2))
           .join();
@@ -1221,6 +1252,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
     this.palette$.pipe(takeUntil(this.destroy$)).subscribe((palette) => {
       renderer.setClearColor(palette.background);
       grid.colors = palette.grid;
+      zGrid.colors = palette.grid;
       viewKey = '';
       for (const stock of [stockEdges, stockTop, stockSkin, rotaryAxis]) {
         stock.color.copy(palette.stock);
@@ -1747,13 +1779,13 @@ export class ViewerComponent implements OnInit, OnDestroy {
    * cut deeper, with holes where it's cut through), in place of the
    * toolpaths while it's shown.
    */
-  private drawSimulation(scene: Scene, grid: Object3D) {
+  private drawSimulation(scene: Scene) {
     scene.add(new AmbientLight('#ffffff', 1.6));
     const sun = new DirectionalLight('#ffffff', 1.8);
     sun.position.set(-0.5, -0.8, 1.2);
     scene.add(sun);
-    // Pulled towards the camera, so the grid (on the same Z0) stays behind
-    // the uncut surface instead of flickering through it.
+    // Pulled towards the camera, so the grid (on a face of the block, seen
+    // from below) stays behind it instead of flickering through it.
     const material = new MeshLambertMaterial({
       vertexColors: true,
       side: DoubleSide,
@@ -1786,9 +1818,6 @@ export class ViewerComponent implements OnInit, OnDestroy {
         // A solid on a rotary axis can be cut away anywhere round: the
         // stock's box would hide that.
         this.stockBox.visible = !(map && 'positions' in map);
-        // The block stands on the grid, rather than the grid cutting through
-        // it at Z0.
-        grid.position.z = map ? map.bottom : 0;
         if (map) {
           const solid =
             'positions' in map
