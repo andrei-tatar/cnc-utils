@@ -29,7 +29,13 @@ import type { CloudUser } from '../projects/cloud-projects.service';
 const FLYOUT_WIDTH = 800;
 
 /** An entry in the G-code button's menu. */
-export type JobAction = { id: string; label: string; description: string };
+export type JobAction = {
+  id: string;
+  label: string;
+  description: string;
+  /** A small button beside the entry, for its settings. */
+  settings?: { id: string; label: string };
+};
 
 /**
  * The app's header, across the editor and the preview: the project being
@@ -484,15 +490,45 @@ export type JobAction = { id: string; label: string; description: string };
             >
           </button>
           @for (action of jobActions(); track action.label) {
-            <button
-              ngbDropdownItem
-              type="button"
-              [disabled]="working()"
-              (click)="jobAction.emit(action.id)"
-            >
-              <span class="menu_name">{{ action.label }}</span>
-              <span class="menu_description">{{ action.description }}</span>
-            </button>
+            @if (action.settings; as settings) {
+              <div class="menu_row">
+                <button
+                  ngbDropdownItem
+                  type="button"
+                  class="menu_open"
+                  [disabled]="working()"
+                  (click)="jobAction.emit(action.id)"
+                >
+                  <span class="menu_name">{{ action.label }}</span>
+                  <span class="menu_description">{{ action.description }}</span>
+                </button>
+                <button
+                  ngbDropdownItem
+                  type="button"
+                  class="menu_action menu_settings"
+                  [attr.aria-label]="settings.label"
+                  [title]="settings.label"
+                  (click)="jobAction.emit(settings.id)"
+                >
+                  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M6.9 3.4 7.1 1.9h1.8l.2 1.5 1.3.6 1.3-1L13 4.3l-1 1.3.6 1.3 1.5.2v1.8l-1.5.2-.6 1.3 1 1.3-1.3 1.3-1.3-1-1.3.6-.2 1.5H7.1l-.2-1.5-1.3-.6-1.3 1L3 11.7l1-1.3-.6-1.3-1.5-.2V7.1l1.5-.2.6-1.3-1-1.3L4.3 3l1.3 1z"
+                    />
+                    <circle cx="8" cy="8" r="2" />
+                  </svg>
+                </button>
+              </div>
+            } @else {
+              <button
+                ngbDropdownItem
+                type="button"
+                [disabled]="working()"
+                (click)="jobAction.emit(action.id)"
+              >
+                <span class="menu_name">{{ action.label }}</span>
+                <span class="menu_description">{{ action.description }}</span>
+              </button>
+            }
           }
         </div>
       </div>
@@ -835,6 +871,11 @@ export type JobAction = { id: string; label: string; description: string };
       &:focus {
         color: var(--bs-body-color);
       }
+    }
+
+    .menu .menu_settings {
+      padding: 0 14px;
+      border-left: 1px solid var(--bs-border-color-translucent);
     }
 
     .menu .menu_delete {

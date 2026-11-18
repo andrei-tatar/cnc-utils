@@ -78,12 +78,11 @@ export class AppComponent {
       label: 'Send to cncjs',
       description:
         'Loads the G-code in cncjs running on your network, ready to run from there.',
-    },
-    {
-      id: 'cncjs-settings',
-      label: 'cncjs settings…',
-      description:
-        'Its address, and whether the G-code button sends to it instead of downloading.',
+      settings: {
+        id: 'cncjs-settings',
+        label:
+          'cncjs settings: its address, and whether the G-code button sends to it',
+      },
     },
     {
       id: 'setup-sheet',

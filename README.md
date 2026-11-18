@@ -87,7 +87,7 @@ Safe height, default feeds, rapid speed (for the time estimate), tool changes (`
 
 ### Sending to cncjs
 
-**cncjs settings…** (the G-code menu) takes the address cncjs answers at. The browser has to be let through to it: cncjs's API doesn't answer other sites, so a proxy in front of it must add CORS headers, its user accounts must be off, and from the https site Chrome asks to allow the local network. With several machines connected it asks which. Once a program is sent, the dialog can be turned off ("Don't show this again"): sending then only shows a short notice.
+**cncjs settings** (the gear beside the G-code menu's Send to cncjs) takes the address cncjs answers at. The browser has to be let through to it: cncjs's API doesn't answer other sites, so a proxy in front of it must add CORS headers, its user accounts must be off, and from the https site Chrome asks to allow the local network. With several machines connected it asks which. Once a program is sent, the dialog can be turned off ("Don't show this again"): sending then only shows a short notice.
 
 ### Agents (WebMCP)
 
