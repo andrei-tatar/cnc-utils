@@ -23,6 +23,20 @@
             ".validate": "newData.isString() && newData.val().length <= 10000000"
           }
         },
+        "tools": {
+          "$tool": {
+            ".validate": "newData.hasChildren(['tool', 'savedAt'])",
+            "tool": {
+              ".validate": "newData.isString() && newData.val().length <= 100000"
+            },
+            "savedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
         "$other": {
           ".validate": false
         }

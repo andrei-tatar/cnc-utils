@@ -31,27 +31,40 @@ export async function listLibrary(): Promise<LibraryEntry[]> {
   const entries = (await requestResult(
     db.transaction(TOOLS_STORE).objectStore(TOOLS_STORE).getAll(),
   )) as LibraryEntry[];
+  return sortedByName(entries);
+}
+
+export function sortedByName(entries: LibraryEntry[]): LibraryEntry[] {
   return entries.sort((a, b) =>
     libraryName(a.tool).localeCompare(libraryName(b.tool)),
   );
 }
 
 /**
- * Keep `tool` in the library. A library tool with the same name is
- * replaced (so saving again updates it); unnamed tools are only added once.
+ * The entry that keeps `tool` in a library holding `entries`: in place of
+ * the tool with the same name (so saving again updates it); unnamed tools
+ * are only added once.
  */
-export async function saveToLibrary(tool: ToolType | LibraryTool) {
+export async function entryFor(
+  entries: LibraryEntry[],
+  tool: ToolType | LibraryTool,
+): Promise<LibraryEntry> {
   const settings = librarySettings(tool);
-  const existing = (await listLibrary()).find((entry) =>
+  const existing = entries.find((entry) =>
     settings.name
       ? entry.tool.name === settings.name
       : JSON.stringify(entry.tool) === JSON.stringify(settings),
   );
-  await put({
+  return {
     key: existing?.key ?? (await generateId()),
     tool: settings,
     savedAt: Date.now(),
-  });
+  };
+}
+
+/** Keep `tool` in this browser's library (see `entryFor`). */
+export async function saveToLibrary(tool: ToolType | LibraryTool) {
+  await put(await entryFor(await listLibrary(), tool));
 }
 
 export async function removeFromLibrary(key: string) {

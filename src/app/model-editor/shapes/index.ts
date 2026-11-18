@@ -177,7 +177,7 @@ export const field: FormlyFieldConfig = {
       {
         label: 'Import',
         title:
-          'Import shapes from a saved project, with the operations that cut them',
+          'Import shapes from a saved project (in this browser or in Firebase), with the operations that cut them',
         icon: 'M8 2.5v7M5 6.5 8 9.5l3-3M2.5 10.5v3h11v-3',
         async run({ injector }) {
           const { ImportPartsDialogComponent } =

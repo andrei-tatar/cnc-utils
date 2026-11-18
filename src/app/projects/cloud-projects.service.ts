@@ -3,6 +3,7 @@ import { BehaviorSubject } from 'rxjs';
 import type { Auth, User } from 'firebase/auth';
 import type { Database } from 'firebase/database';
 import type { ModelType } from '../model-editor/model';
+import { LibraryEntry, sortedByName } from '../model-editor/tools/tool-library';
 import { migrateModel } from '../model-editor/migrations';
 import { reportError } from '../pipeline/errors';
 import { getModelMetadata, loadModelFromMetadata } from '../store';
@@ -21,6 +22,8 @@ const SIGNED_IN_KEY = 'cloudSignedIn';
 /** The longest stored model the database's rules take (characters). */
 const MAX_MODEL_LENGTH = 10_000_000;
 
+type List = 'projects' | 'projectModels' | 'tools';
+
 type Sdk = {
   auth: Auth;
   db: Database;
@@ -34,7 +37,8 @@ type Sdk = {
  * Database, `projects/<id>` a project's name and time — listened to, so the
  * list follows what other browsers do — and `projectModels/<id>` its model,
  * gzipped and base64 like the one in a .nc file (the database would drop
- * empty lists from a model stored as it is). The rules
+ * empty lists from a model stored as it is). Their tool library is there
+ * too: `tools/<key>`, each tool as JSON with its time. The rules
  * (`database.rules.json`) give each user their own branch only.
  */
 @Injectable({ providedIn: 'root' })
@@ -49,6 +53,12 @@ export class CloudProjects {
    * they aren't known (nobody signed in, or still being read).
    */
   readonly projects$ = new BehaviorSubject<Project[] | null>(null);
+
+  /**
+   * Their tool library there, by name; null while it isn't known (nobody
+   * signed in, or still being read).
+   */
+  readonly tools$ = new BehaviorSubject<LibraryEntry[] | null>(null);
 
   private sdk: Promise<Sdk> | null = null;
   private stopListening: (() => void) | null = null;
@@ -128,7 +138,21 @@ export class CloudProjects {
     });
   }
 
-  private path(list: 'projects' | 'projectModels', id: string): string {
+  /** Keeps (or replaces) a tool in the library there. */
+  async putTool({ key, tool, savedAt }: LibraryEntry) {
+    const { db, dbApi } = await this.online();
+    await dbApi.set(dbApi.ref(db, this.path('tools', key)), {
+      tool: JSON.stringify(tool),
+      savedAt,
+    });
+  }
+
+  async deleteTool(key: string) {
+    const { db, dbApi } = await this.online();
+    await dbApi.remove(dbApi.ref(db, this.path('tools', key)));
+  }
+
+  private path(list: List, id: string): string {
     const user = this.user$.value;
     if (!user) {
       throw new Error('Sign in to Firebase first.');
@@ -180,6 +204,7 @@ export class CloudProjects {
     this.stopListening = null;
     remember(!!user);
     this.projects$.next(null);
+    this.tools$.next(null);
     this.user$.next(
       user && {
         uid: user.uid,
@@ -188,11 +213,20 @@ export class CloudProjects {
       },
     );
     if (user) {
-      this.stopListening = dbApi.onValue(
+      const stopProjects = dbApi.onValue(
         dbApi.ref(db, `users/${user.uid}/projects`),
         (list) => this.projects$.next(projectsIn(list.val())),
         (error) => reportError('reading the projects in Firebase', error),
       );
+      const stopTools = dbApi.onValue(
+        dbApi.ref(db, `users/${user.uid}/tools`),
+        (list) => this.tools$.next(toolsIn(list.val())),
+        (error) => reportError('reading the tool library in Firebase', error),
+      );
+      this.stopListening = () => {
+        stopProjects();
+        stopTools();
+      };
     }
   }
 }
@@ -212,6 +246,25 @@ export function projectsIn(list: unknown): Project[] {
       cloud: true as const,
     }))
     .sort((a, b) => b.savedAt - a.savedAt);
+}
+
+/** The tools in a stored library (by key), by name. */
+export function toolsIn(list: unknown): LibraryEntry[] {
+  const entries: LibraryEntry[] = [];
+  for (const [key, stored] of Object.entries(
+    (list as Record<string, { tool?: unknown; savedAt?: unknown }>) ?? {},
+  )) {
+    if (typeof stored?.tool !== 'string') continue;
+    try {
+      const tool = JSON.parse(stored.tool);
+      if (tool && typeof tool === 'object') {
+        entries.push({ key, tool, savedAt: Number(stored.savedAt) || 0 });
+      }
+    } catch {
+      // Not a tool: left out.
+    }
+  }
+  return sortedByName(entries);
 }
 
 function wasSignedIn(): boolean {

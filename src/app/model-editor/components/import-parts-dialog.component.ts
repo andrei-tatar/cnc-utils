@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -6,7 +7,9 @@ import {
   OnInit,
   signal,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
+import { CloudProjects } from '../../projects/cloud-projects.service';
 import { listProjects, loadProject, Project } from '../../projects';
 import { ModelStore } from '../../services/model-store.service';
 import { generateIdSync } from '../../../util';
@@ -18,12 +21,13 @@ import { shapeLabel } from '../shapes/describe';
 
 /**
  * Copies shapes — with the operations that cut them, their tools and the
- * variables they use — from a project saved in this browser into the work
- * (see `importParts`).
+ * variables they use — from a project saved in this browser, or kept in
+ * Firebase by whoever's signed in, into the work (see `importParts`).
  */
 @Component({
   selector: 'app-import-parts-dialog',
   changeDetection: ChangeDetectionStrategy.Eager,
+  imports: [NgTemplateOutlet],
   styles: `
     .modal-header {
       border-bottom: none;
@@ -80,7 +84,7 @@ import { shapeLabel } from '../shapes/describe';
     <div class="modal-body">
       @if (projects() === null) {
         <p class="empty">Reading the saved projects…</p>
-      } @else if (!projects()!.length) {
+      } @else if (!projects()!.length && !cloudProjects().length) {
         <p class="empty">
           No saved projects yet. Save a project (the Save button) to take its
           shapes into others.
@@ -94,15 +98,38 @@ import { shapeLabel } from '../shapes/describe';
           (change)="choose($any($event.target).value)"
         >
           <option value="" [selected]="!projectId()">Pick a project…</option>
-          @for (project of projects(); track project.id) {
+          @if (cloudProjects().length) {
+            @if (projects()!.length) {
+              <optgroup label="In this browser">
+                <ng-container
+                  [ngTemplateOutlet]="options"
+                  [ngTemplateOutletContext]="{ $implicit: projects() }"
+                />
+              </optgroup>
+            }
+            <optgroup label="In Firebase">
+              <ng-container
+                [ngTemplateOutlet]="options"
+                [ngTemplateOutletContext]="{ $implicit: cloudProjects() }"
+              />
+            </optgroup>
+          } @else {
+            <ng-container
+              [ngTemplateOutlet]="options"
+              [ngTemplateOutletContext]="{ $implicit: projects() }"
+            />
+          }
+        </select>
+        <ng-template #options let-list>
+          @for (project of list; track project.id) {
             <option
-              [value]="project.id"
-              [selected]="project.id === projectId()"
+              [value]="keyOf(project)"
+              [selected]="keyOf(project) === projectId()"
             >
               {{ project.name }}
             </option>
           }
-        </select>
+        </ng-template>
 
         @if (source(); as model) {
           @if (!model.shapes.length) {
@@ -168,7 +195,14 @@ export class ImportPartsDialogComponent implements OnInit {
   readonly modal = inject(NgbActiveModal);
   private readonly store = inject(ModelStore);
 
+  private readonly cloud = inject(CloudProjects);
+
+  /** The projects saved in this browser; null while they're being read. */
   readonly projects = signal<Project[] | null>(null);
+  /** Those kept in Firebase, once someone's signed in and they're read. */
+  private readonly inCloud = toSignal(this.cloud.projects$);
+  readonly cloudProjects = computed(() => this.inCloud() ?? []);
+  /** The chosen project's `keyOf`. */
   readonly projectId = signal('');
   readonly source = signal<ModelType | null>(null);
   readonly picked = signal(new Set<string>());
@@ -192,6 +226,11 @@ export class ImportPartsDialogComponent implements OnInit {
     this.projects.set(await listProjects());
   }
 
+  /** Tells a project from one of the same id kept in the other place. */
+  keyOf(project: Project): string {
+    return `${project.cloud ? 'cloud' : 'local'}:${project.id}`;
+  }
+
   async choose(id: string) {
     this.projectId.set(id);
     this.picked.set(new Set());
@@ -201,7 +240,10 @@ export class ImportPartsDialogComponent implements OnInit {
     let model: ModelType | undefined;
     let problem = '';
     try {
-      model = await loadProject(id);
+      const projectId = id.slice(id.indexOf(':') + 1);
+      model = id.startsWith('cloud:')
+        ? await this.cloud.load(projectId)
+        : await loadProject(projectId);
     } catch (error) {
       problem = (error as Error)?.message ?? '';
     }
