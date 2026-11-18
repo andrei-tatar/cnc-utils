@@ -3,7 +3,17 @@ import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { CamService } from '../services/cam.service';
 import { ModelStore } from '../services/model-store.service';
 import { fileNameFrom } from '../project-file';
-import { CncjsSettings, loadCncjsSettings, saveCncjsSettings } from './cncjs';
+import { clearNotice, showNotice } from '../notices';
+import {
+  cncjsPorts,
+  CncjsSettings,
+  loadCncjsSettings,
+  loadInCncjs,
+  saveCncjsSettings,
+} from './cncjs';
+
+/** The notice shown while, and once, the G-code is sent without the dialog. */
+const NOTICE = 'cncjs';
 
 /**
  * The G-code menu's "Send to cncjs": loads the job's G-code in the user's
@@ -17,10 +27,17 @@ export class Cncjs {
   private readonly store = inject(ModelStore);
 
   readonly settings = signal<CncjsSettings>(loadCncjsSettings());
+  /** Sending without the dialog is under way. */
+  private busy = false;
 
   /** Sends the G-code (asking for the address first when there's none). */
   send() {
-    this.open(true);
+    const { address, quiet } = this.settings();
+    if (quiet && address) {
+      this.sendQuietly(address);
+    } else {
+      this.open(true);
+    }
   }
 
   /** Shows the settings. */
@@ -28,7 +45,35 @@ export class Cncjs {
     this.open(false);
   }
 
-  private async open(sending: boolean) {
+  /**
+   * Sends with only a notice to show for it. The dialog still opens to say
+   * what went wrong, or when it has something to ask or say (several
+   * machines connected, or none).
+   */
+  private async sendQuietly(address: string) {
+    if (this.busy) return;
+    this.busy = true;
+    showNotice(NOTICE, 'Sending the G-code to cncjs…', true);
+    try {
+      const { token, ports } = await cncjsPorts(address);
+      if (ports.length !== 1) {
+        clearNotice(NOTICE);
+        this.open(true);
+        return;
+      }
+      const { name, gcode } = await this.program();
+      await loadInCncjs(address, token, ports[0].port, name, gcode);
+      showNotice(NOTICE, 'G-code sent to cncjs');
+    } catch (error) {
+      console.error('[cncjs]', error);
+      clearNotice(NOTICE);
+      this.open(true, error);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async open(sending: boolean, failed: unknown = null) {
     // Fetched when first used: most never send to cncjs.
     const { CncjsDialogComponent } = await import('./cncjs-dialog.component');
     const ref = this.modals.open(CncjsDialogComponent, {
@@ -37,6 +82,7 @@ export class Cncjs {
     });
     Object.assign(ref.componentInstance, {
       sending,
+      failed,
       settings: this.settings(),
       save: (settings: CncjsSettings) => {
         saveCncjsSettings(settings);

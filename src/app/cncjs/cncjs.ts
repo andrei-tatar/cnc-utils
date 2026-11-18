@@ -17,6 +17,11 @@ export type CncjsSettings = {
   address: string;
   /** The G-code button sends to it, instead of downloading. */
   byDefault: boolean;
+  /**
+   * Sending shows no dialog, only a short notice once it's sent (the dialog
+   * still opens when something's to be asked or went wrong).
+   */
+  quiet: boolean;
 };
 
 /** A port cncjs has open, with the kind of controller on it. */
@@ -41,9 +46,13 @@ export function loadCncjsSettings(): CncjsSettings {
   try {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}');
     const address = cncjsAddress(String(stored?.address ?? ''));
-    return { address, byDefault: !!address && stored?.byDefault === true };
+    return {
+      address,
+      byDefault: !!address && stored?.byDefault === true,
+      quiet: stored?.quiet === true,
+    };
   } catch {
-    return { address: '', byDefault: false };
+    return { address: '', byDefault: false, quiet: false };
   }
 }
 

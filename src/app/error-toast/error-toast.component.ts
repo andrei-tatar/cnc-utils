@@ -6,19 +6,24 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AppNotice, appNotices$ } from '../notices';
 import { AppError, appErrors$ } from '../pipeline/errors';
 
 type Toast = AppError & { id: number; count: number; timer?: number };
+type Notice = { key: string; text: string; working: boolean; timer?: number };
 
 /** How long a toast stays up (ms), from its last repeat. */
 const SHOW_FOR = 10_000;
+/** How long a notice does (ms), once what it's about is done. */
+const SHOW_NOTICE_FOR = 4_000;
 /** At most this many at once; older ones give way. */
 const MAX_TOASTS = 3;
 
 /**
  * "Something went wrong" toasts for errors reported anywhere (see
  * reportError): what was being done and what went wrong, a repeat of the
- * same one counted on it rather than stacked.
+ * same one counted on it rather than stacked. Short notices (see showNotice)
+ * show in the same stack.
  */
 @Component({
   selector: 'app-error-toast',
@@ -53,6 +58,27 @@ const MAX_TOASTS = 3;
           </div>
         </div>
       }
+      @for (notice of notices(); track notice.key) {
+        <div class="toast show" role="status">
+          <div class="toast-body notice">
+            @if (notice.working) {
+              <span
+                class="spinner-border spinner-border-sm"
+                aria-hidden="true"
+              ></span>
+            } @else {
+              <span class="tick" aria-hidden="true">✓</span>
+            }
+            <span class="me-auto">{{ notice.text }}</span>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              (click)="dismissNotice(notice.key)"
+            ></button>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: `
@@ -80,6 +106,15 @@ const MAX_TOASTS = 3;
     .toast-body {
       overflow-wrap: anywhere;
     }
+    .notice {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tick {
+      color: var(--bs-success);
+      font-weight: 700;
+    }
     .hint {
       margin-top: 4px;
       font-size: 0.8125rem;
@@ -89,15 +124,35 @@ const MAX_TOASTS = 3;
 })
 export class ErrorToastComponent {
   readonly toasts = signal<Toast[]>([]);
+  readonly notices = signal<Notice[]>([]);
   private nextId = 1;
 
   constructor() {
     appErrors$
       .pipe(takeUntilDestroyed())
       .subscribe((error) => this.show(error));
+    appNotices$
+      .pipe(takeUntilDestroyed())
+      .subscribe((notice) => this.showNotice(notice));
     inject(DestroyRef).onDestroy(() =>
-      this.toasts().forEach((t) => clearTimeout(t.timer)),
+      [...this.toasts(), ...this.notices()].forEach((t) =>
+        clearTimeout(t.timer),
+      ),
     );
+  }
+
+  dismissNotice(key: string) {
+    clearTimeout(this.notices().find((n) => n.key === key)?.timer);
+    this.notices.update((list) => list.filter((n) => n.key !== key));
+  }
+
+  private showNotice({ key, text, working = false }: AppNotice) {
+    this.dismissNotice(key);
+    if (text === null) return;
+    const timer = working
+      ? undefined
+      : window.setTimeout(() => this.dismissNotice(key), SHOW_NOTICE_FOR);
+    this.notices.update((list) => [...list, { key, text, working, timer }]);
   }
 
   dismiss(id: number) {

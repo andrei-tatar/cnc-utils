@@ -81,7 +81,8 @@ type Status =
       margin-top: 8px;
     }
 
-    .test {
+    .test,
+    .quiet {
       margin-top: 12px;
     }
 
@@ -133,6 +134,22 @@ type Status =
               >
             </label>
           </div>
+          <div class="form-check mt-2">
+            <input
+              id="cncjs-quiet"
+              class="form-check-input"
+              type="checkbox"
+              [checked]="quiet()"
+              (change)="quiet.set($any($event.target).checked)"
+            />
+            <label class="form-check-label" for="cncjs-quiet">
+              Only a short notice once it’s sent
+              <span class="d-block note mt-0 mb-0"
+                >No dialog, unless something goes wrong or there are several
+                machines to pick from.</span
+              >
+            </label>
+          </div>
         }
         @switch (status().kind) {
           @case ('working') {
@@ -152,6 +169,24 @@ type Status =
             >
               ✓ {{ $any(status()).text }}
             </p>
+            @if (!editing()) {
+              <div class="form-check quiet">
+                <input
+                  id="cncjs-quiet-next"
+                  class="form-check-input"
+                  type="checkbox"
+                  [checked]="settings.quiet"
+                  (change)="setQuiet($any($event.target).checked)"
+                />
+                <label class="form-check-label" for="cncjs-quiet-next">
+                  Don’t show this again
+                  <span class="d-block note mt-0 mb-0"
+                    >Just a short notice once it’s sent. cncjs settings bring
+                    this back.</span
+                  >
+                </label>
+              </div>
+            }
           }
           @case ('error') {
             <div [class.test]="editing()" role="alert">
@@ -249,7 +284,9 @@ export class CncjsDialogComponent {
 
   /** Opened to send the G-code (not only for the settings). */
   sending = false;
-  settings: CncjsSettings = { address: '', byDefault: false };
+  settings: CncjsSettings = { address: '', byDefault: false, quiet: false };
+  /** What went wrong sending without the dialog, which it opens to say. */
+  failed: unknown = null;
   save: (settings: CncjsSettings) => void = () => {};
   /** The G-code to send, once it's made. */
   program: () => Promise<{ name: string; gcode: string }> = async () => ({
@@ -262,12 +299,15 @@ export class CncjsDialogComponent {
   readonly status = signal<Status>(this.idle);
   readonly typed = signal('');
   readonly byDefault = signal(false);
+  readonly quiet = signal(false);
   readonly address = computed(() => cncjsAddress(this.typed()));
   readonly busy = computed(() => this.status().kind === 'working');
 
   /** Once its inputs are set: sends, or shows the settings. */
   start() {
-    if (this.sending && this.settings.address) {
+    if (this.failed) {
+      this.fail(this.failed);
+    } else if (this.sending && this.settings.address) {
       this.send();
     } else {
       this.edit();
@@ -277,6 +317,7 @@ export class CncjsDialogComponent {
   edit() {
     this.typed.set(this.settings.address.replace(/^http:\/\//, ''));
     this.byDefault.set(this.settings.byDefault);
+    this.quiet.set(this.settings.quiet);
     this.status.set(this.idle);
     this.editing.set(true);
   }
@@ -284,7 +325,11 @@ export class CncjsDialogComponent {
   /** Keeps the settings; then sends, when that's what it was opened for. */
   apply() {
     const address = this.address();
-    this.settings = { address, byDefault: !!address && this.byDefault() };
+    this.settings = {
+      address,
+      byDefault: !!address && this.byDefault(),
+      quiet: this.quiet(),
+    };
     this.save(this.settings);
     if (this.sending && address) {
       this.editing.set(false);
@@ -339,6 +384,12 @@ export class CncjsDialogComponent {
     });
   }
 
+  /** Whether sending shows only a notice from now on. */
+  setQuiet(quiet: boolean) {
+    this.settings = { ...this.settings, quiet };
+    this.save(this.settings);
+  }
+
   describe(port: CncjsPort): string {
     return port.controller ? `${port.port} (${port.controller})` : port.port;
   }
@@ -352,11 +403,15 @@ export class CncjsDialogComponent {
       await work();
     } catch (error) {
       console.error('[cncjs]', error);
-      this.status.set({
-        kind: 'error',
-        text: (error as Error)?.message ?? String(error),
-        hint: error instanceof CncjsError ? error.hint : '',
-      });
+      this.fail(error);
     }
+  }
+
+  private fail(error: unknown) {
+    this.status.set({
+      kind: 'error',
+      text: (error as Error)?.message ?? String(error),
+      hint: error instanceof CncjsError ? error.hint : '',
+    });
   }
 }
