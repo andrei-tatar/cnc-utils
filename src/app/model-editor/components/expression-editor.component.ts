@@ -259,7 +259,7 @@ const TIP_POSITIONS: ConnectedPosition[] = [
       font-weight: 500;
     }
     .tip .value.failed {
-      color: #ff9b9b;
+      color: var(--code-tip-error);
     }
     .detail {
       margin-left: auto;

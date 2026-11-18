@@ -1,6 +1,6 @@
 import { Color } from 'three';
 import { DEFAULT_MATERIAL } from '../../../cam/feeds-speeds';
-import { DEPTH_STOPS } from './path-colors';
+import { DEPTH_STOPS } from './preview-palette';
 import type { StockColors } from './stock-solid';
 
 /** How each material looks (its colour freshly cut), by id in `MATERIALS`. */

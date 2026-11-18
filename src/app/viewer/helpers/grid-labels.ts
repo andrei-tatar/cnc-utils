@@ -74,7 +74,7 @@ export class GridLabels {
       const span = document.createElement('span');
       span.style.cssText =
         'position:absolute;left:0;top:0;white-space:nowrap;' +
-        'text-shadow:0 0 3px #000,0 0 3px #000;';
+        'text-shadow:0 0 3px var(--pv-halo),0 0 3px var(--pv-halo);';
       this.layer.appendChild(span);
       this.pool.push(span);
     }

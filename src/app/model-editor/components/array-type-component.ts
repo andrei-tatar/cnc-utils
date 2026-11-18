@@ -90,7 +90,12 @@ export type ItemAction = {
     }
 
     .list {
-      --accent: var(--bs-secondary);
+      --accent-base: var(--bs-secondary);
+      --accent: color-mix(
+        in srgb,
+        var(--accent-base) var(--editor-accent-strength, 100%),
+        #fff
+      );
       border-left: 3px solid var(--accent);
       border-radius: 6px;
       background: var(--editor-nested-bg);
@@ -215,7 +220,7 @@ export type ItemAction = {
       --bs-btn-font-weight: 500;
       --bs-btn-color: var(--accent);
       --bs-btn-border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-      --bs-btn-hover-color: #fff;
+      --bs-btn-hover-color: var(--editor-on-accent);
       --bs-btn-hover-bg: var(--accent);
       --bs-btn-hover-border-color: var(--accent);
       --bs-btn-disabled-color: var(--accent);
@@ -338,7 +343,7 @@ export type ItemAction = {
       justify-content: center;
       font-size: 0.7rem;
       font-weight: 600;
-      color: #fff;
+      color: var(--editor-on-accent);
       background: var(--accent);
     }
 
@@ -486,7 +491,7 @@ export type ItemAction = {
     <div
       class="list"
       [class.list--root]="collapsible"
-      [style.--accent]="props['accent']"
+      [style.--accent-base]="props['accent']"
     >
       <div
         #header

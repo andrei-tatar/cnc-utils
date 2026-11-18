@@ -8,6 +8,24 @@
       content="Browser-based CAM: design shapes, set up tools and operations, preview toolpaths in 3D and download G-code."
     />
     <base href="/" />
+    <!-- The theme picked (`Theme`, src/app/theme.ts), before anything is
+         drawn: the splash has its colours, and nothing flashes light. -->
+    <script>
+      (function () {
+        var theme = "system";
+        try {
+          theme = localStorage.getItem("ui.theme") || theme;
+        } catch (e) {}
+        var dark =
+          theme === "dark" ||
+          (theme !== "light" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.setAttribute(
+          "data-bs-theme",
+          dark ? "dark" : "light",
+        );
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!-- ICO for older browsers; sizes="32x32" stops Chrome preferring it. -->
     <link rel="icon" href="favicon.ico" sizes="32x32" />
@@ -53,6 +71,14 @@
         border-top-color: #2f80ed;
         border-radius: 50%;
         animation: app-splash-spin 0.8s linear infinite;
+      }
+      [data-bs-theme="dark"] .app-splash {
+        background: #14181f;
+        color: #a3adbd;
+      }
+      [data-bs-theme="dark"] .app-splash_spinner {
+        border-color: #323a48;
+        border-top-color: #2f80ed;
       }
       @keyframes app-splash-spin {
         to {

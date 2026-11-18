@@ -37,6 +37,38 @@ body {
   --code-function: #1a7f37;
   --code-operator: #6e7781;
   --code-error: #cf222e;
+  // A value that can't be worked out, in the tip over an expression (which
+  // is dark on a light page and light on a dark one).
+  --code-tip-error: #ff9b9b;
+
+  // How much of a section's accent colour is kept (the rest is white, so it
+  // reads on a dark page), and what's written on it.
+  --editor-accent-strength: 100%;
+  --editor-on-accent: #fff;
+}
+
+// The dark theme (Bootstrap's colour mode: `Theme` in `src/app/theme.ts`).
+[data-bs-theme="dark"] {
+  --editor-panel-bg: #14181f;
+  --editor-section-bg: #1b2029;
+  --editor-card-bg: #222834;
+  --editor-nested-bg: #181d25;
+  --editor-border: #323a48;
+  --editor-hover-bg: rgba(255, 255, 255, 0.06);
+  --editor-chip-bg: #2a3140;
+  --editor-label-color: #a3adbd;
+
+  --code-number: #79c0ff;
+  --code-unit: #56d4dd;
+  --code-variable: #c4a5ff;
+  --code-constant: #ffa657;
+  --code-function: #7ee787;
+  --code-operator: #8b949e;
+  --code-error: #ff7b72;
+  --code-tip-error: #b3261e;
+
+  --editor-accent-strength: 60%;
+  --editor-on-accent: #10141a;
 }
 
 // One field per row: fixed-width label on the left, control on the right.

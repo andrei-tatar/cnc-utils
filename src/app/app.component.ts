@@ -34,6 +34,7 @@ import {
 } from './model-editor/components/collapsed-sections';
 import { CamPoint } from '../cam/types';
 import { generateId } from '../util';
+import { Theme } from './theme';
 import { WebMcp } from './webmcp/webmcp.service';
 import { droppedFileKind, isSvg, readAsDataUrl } from './project-file';
 import { ModelType } from './model-editor/model';
@@ -69,6 +70,7 @@ export class AppComponent {
   readonly cam = inject(CamService);
   readonly cncjs = inject(Cncjs);
   readonly history = inject(ModelHistory);
+  readonly theme = inject(Theme);
   readonly isWorking$ = inject(WorkTracker).isWorking$;
 
   /** More things to do with the job, in the G-code menu. */

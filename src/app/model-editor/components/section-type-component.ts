@@ -17,7 +17,12 @@ import {
     }
 
     .section {
-      --accent: var(--bs-secondary);
+      --accent-base: var(--bs-secondary);
+      --accent: color-mix(
+        in srgb,
+        var(--accent-base) var(--editor-accent-strength, 100%),
+        #fff
+      );
       border-radius: 10px;
       background: var(--editor-section-bg);
       border: 1px solid var(--editor-border);
@@ -93,7 +98,7 @@ import {
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   template: `
-    <div class="section" [style.--accent]="props['accent']">
+    <div class="section" [style.--accent-base]="props['accent']">
       <div
         class="section_header"
         role="button"

@@ -6,6 +6,8 @@
     [cloudUser]="store.cloud.user$ | async"
     [cloudProjects]="store.cloud.projects$ | async"
     [pending]="(store.pending$ | async) ?? false"
+    [theme]="theme.choice()"
+    (themeChange)="theme.set($event)"
     [canUndo]="(history.state$ | async)?.canUndo ?? false"
     [canRedo]="(history.state$ | async)?.canRedo ?? false"
     (undo)="history.undo()"
@@ -43,6 +45,7 @@
     <app-editor-divider [(width)]="editorWidth" [(resizing)]="resizing" />
 
     <app-viewer
+      [dark]="theme.dark()"
       [shapes]="cam.shapes$"
       [paths]="cam.paths$"
       [highlight]="(cam.highlight$ | async) ?? NO_HIGHLIGHT"

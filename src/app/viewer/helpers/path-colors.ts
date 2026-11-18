@@ -1,23 +1,28 @@
 import { Color } from 'three';
 
-/** Surface → deepest cut: pale cyan, blue, magenta. */
-export const DEPTH_STOPS = ['#b3f0ff', '#2f80ed', '#e040fb'];
-/** Slowest → fastest feed: red, amber, green. */
-const FEED_STOPS = ['#ef5350', '#ffca28', '#66bb6a'];
-const DEPTH_COLORS = DEPTH_STOPS.map((hex) => new Color(hex));
-const FEED_COLORS = FEED_STOPS.map((hex) => new Color(hex));
+/** A gradient's colours along it, and the same for the HTML legend. */
+export type ColorScale = { colors: Color[]; css: string };
 
-/** The same gradients for the HTML legend. */
-export const DEPTH_GRADIENT_CSS = `linear-gradient(to right, ${DEPTH_STOPS.join(', ')})`;
-export const FEED_GRADIENT_CSS = `linear-gradient(to right, ${FEED_STOPS.join(', ')})`;
+/** The scale through `stops` (CSS colours). */
+export function colorScale(stops: string[]): ColorScale {
+  return {
+    colors: stops.map((hex) => new Color(hex)),
+    css: `linear-gradient(to right, ${stops.join(', ')})`,
+  };
+}
 
 /**
  * Colour for a cut at height `z` (≤ 0) when the job's deepest cut is at
  * `deepest` (≤ 0). Anything at or above the surface gets the surface colour.
  */
-export function depthColor(z: number, deepest: number, target = new Color()) {
+export function depthColor(
+  scale: ColorScale,
+  z: number,
+  deepest: number,
+  target = new Color(),
+) {
   const t = deepest < 0 ? z / deepest : 0;
-  return gradient(DEPTH_COLORS, t, target);
+  return gradient(scale.colors, t, target);
 }
 
 /**
@@ -25,13 +30,14 @@ export function depthColor(z: number, deepest: number, target = new Color()) {
  * `max`. With only one feed in the job, every cut gets the fastest colour.
  */
 export function feedColor(
+  scale: ColorScale,
   feed: number,
   min: number,
   max: number,
   target = new Color(),
 ) {
   const t = max > min ? (feed - min) / (max - min) : 1;
-  return gradient(FEED_COLORS, t, target);
+  return gradient(scale.colors, t, target);
 }
 
 /** The colour `t` (clamped to 0 – 1) of the way along `stops`. */

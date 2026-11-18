@@ -53,7 +53,6 @@ import {
   BehaviorSubject,
   combineLatest,
   combineLatestWith,
-  debounceTime,
   distinctUntilChanged,
   fromEvent,
   map,
@@ -73,9 +72,8 @@ import {
 import { AdaptiveGrid } from './helpers/adaptive-grid';
 import { loadView, saveView } from './helpers/saved-view';
 import {
-  DEPTH_GRADIENT_CSS,
+  colorScale,
   depthColor,
-  FEED_GRADIENT_CSS,
   feedColor,
   loadPathColoring,
   PathColoring,
@@ -120,12 +118,12 @@ import {
   wrappedPointOnBlank,
 } from '../../cam/rotary';
 import { shapeLook$ } from './helpers/shape-look';
+import { PreviewPalette, previewPalette } from './helpers/preview-palette';
 import { ShapeEditor } from './helpers/shape-editor';
 import type { EditHandle, ShapeEditing } from '../model-editor/shape-editing';
 
 /** The measuring line, drawn over everything. */
 const MEASURE_MATERIAL = new LineBasicMaterial({
-  color: '#ffd54f',
   depthTest: false,
   transparent: true,
 });
@@ -159,6 +157,7 @@ type PathFrames = {
     <canvas #canvas></canvas>
     <div class="labels" #labels aria-hidden="true"></div>
     <app-cube-preview
+      [dark]="palette$.value === DARK_PALETTE"
       [camera]="camera"
       [controls]="controls"
     ></app-cube-preview>
@@ -353,10 +352,49 @@ type PathFrames = {
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
+  host: { '[class.light]': 'palette$.value !== DARK_PALETTE' },
   styles: `
+    // The colours of what's laid over the scene, dark and (the host's
+    // \`light\` class) light; the scene's own are in \`preview-palette.ts\`.
     :host {
       position: relative;
       overflow: hidden;
+
+      --pv-label: #8a8a8a;
+      --pv-halo: #000;
+      --pv-border: #3a3a3a;
+      --pv-border-hover: #666;
+      --pv-panel: rgba(30, 30, 30, 0.85);
+      --pv-panel-solid: rgba(30, 30, 30, 0.92);
+      --pv-hud: rgba(20, 20, 20, 0.75);
+      --pv-select: #1e1e1e;
+      --pv-text: #bbb;
+      --pv-list-text: #ccc;
+      --pv-strong: #fff;
+      --pv-accent: #ffd54f;
+      --pv-edit: #4fc3f7;
+      --pv-warn: #ffb4a2;
+      --pv-warn-border: #5a3b2e;
+      --pv-warn-bg: rgba(30, 20, 18, 0.9);
+    }
+
+    :host(.light) {
+      --pv-label: #7a828f;
+      --pv-halo: #fff;
+      --pv-border: #cfd4dc;
+      --pv-border-hover: #8a93a3;
+      --pv-panel: rgba(255, 255, 255, 0.88);
+      --pv-panel-solid: rgba(255, 255, 255, 0.95);
+      --pv-hud: rgba(255, 255, 255, 0.8);
+      --pv-select: #fff;
+      --pv-text: #4b5563;
+      --pv-list-text: #374151;
+      --pv-strong: #111827;
+      --pv-accent: #b45309;
+      --pv-edit: #0369a1;
+      --pv-warn: #b3361a;
+      --pv-warn-border: #e7b8a8;
+      --pv-warn-bg: rgba(255, 243, 238, 0.95);
     }
 
     canvas {
@@ -373,7 +411,7 @@ type PathFrames = {
         SFMono-Regular,
         Menlo,
         monospace;
-      color: #8a8a8a;
+      color: var(--pv-label);
     }
 
     .tools {
@@ -389,20 +427,20 @@ type PathFrames = {
         height: 30px;
         display: grid;
         place-items: center;
-        border: 1px solid #3a3a3a;
+        border: 1px solid var(--pv-border);
         border-radius: 6px;
-        background: rgba(30, 30, 30, 0.85);
-        color: #bbb;
+        background: var(--pv-panel);
+        color: var(--pv-text);
         cursor: pointer;
 
         &:hover {
-          color: #fff;
-          border-color: #666;
+          color: var(--pv-strong);
+          border-color: var(--pv-border-hover);
         }
 
         &.active {
-          color: #ffd54f;
-          border-color: #ffd54f;
+          color: var(--pv-accent);
+          border-color: var(--pv-accent);
         }
       }
 
@@ -421,10 +459,10 @@ type PathFrames = {
         flex-direction: column;
         gap: 6px;
         padding: 8px 10px;
-        border: 1px solid #3a3a3a;
+        border: 1px solid var(--pv-border);
         border-radius: 6px;
-        background: rgba(30, 30, 30, 0.92);
-        color: #ccc;
+        background: var(--pv-panel-solid);
+        color: var(--pv-list-text);
         font:
           12px/1.2 system-ui,
           sans-serif;
@@ -439,16 +477,16 @@ type PathFrames = {
 
         input {
           margin: 0;
-          accent-color: #ffd54f;
+          accent-color: var(--pv-accent);
         }
 
         select {
           height: 26px;
           max-width: 170px;
-          border: 1px solid #3a3a3a;
+          border: 1px solid var(--pv-border);
           border-radius: 5px;
-          background: #1e1e1e;
-          color: #ddd;
+          background: var(--pv-select);
+          color: var(--pv-list-text);
           font: inherit;
         }
       }
@@ -456,18 +494,18 @@ type PathFrames = {
       .tools_quality {
         height: 30px;
         padding: 0 6px;
-        border: 1px solid #3a3a3a;
+        border: 1px solid var(--pv-border);
         border-radius: 6px;
-        background: rgba(30, 30, 30, 0.85);
-        color: #bbb;
+        background: var(--pv-panel);
+        color: var(--pv-text);
         font:
           12px/1 system-ui,
           sans-serif;
         cursor: pointer;
 
         &:hover {
-          color: #fff;
-          border-color: #666;
+          color: var(--pv-strong);
+          border-color: var(--pv-border-hover);
         }
       }
 
@@ -490,8 +528,8 @@ type PathFrames = {
       gap: 12px;
       padding: 4px 8px;
       border-radius: 6px;
-      background: rgba(20, 20, 20, 0.75);
-      color: #bbb;
+      background: var(--pv-hud);
+      color: var(--pv-text);
       font:
         11px/1.4 ui-monospace,
         SFMono-Regular,
@@ -520,17 +558,17 @@ type PathFrames = {
     }
 
     .checks_toggle {
-      border: 1px solid #5a3b2e;
+      border: 1px solid var(--pv-warn-border);
       border-radius: 6px;
-      background: rgba(30, 20, 18, 0.9);
-      color: #ffb4a2;
+      background: var(--pv-warn-bg);
+      color: var(--pv-warn);
       padding: 3px 10px;
       cursor: pointer;
 
       &.checks_toggle--notes {
-        border-color: #3a3a3a;
-        background: rgba(30, 30, 30, 0.85);
-        color: #ccc;
+        border-color: var(--pv-border);
+        background: var(--pv-panel);
+        color: var(--pv-list-text);
       }
     }
 
@@ -539,26 +577,26 @@ type PathFrames = {
       padding: 6px 10px 6px 26px;
       max-height: 40vh;
       overflow-y: auto;
-      border: 1px solid #3a3a3a;
+      border: 1px solid var(--pv-border);
       border-radius: 6px;
-      background: rgba(20, 20, 20, 0.92);
-      color: #ccc;
+      background: var(--pv-panel-solid);
+      color: var(--pv-list-text);
 
       li {
         margin: 3px 0;
       }
 
       .checks_warning {
-        color: #ffb4a2;
+        color: var(--pv-warn);
       }
     }
 
     .hud_measure {
-      color: #ffd54f;
+      color: var(--pv-accent);
     }
 
     .hud_edit {
-      color: #4fc3f7;
+      color: var(--pv-edit);
     }
 
     .hud_legend {
@@ -574,7 +612,7 @@ type PathFrames = {
       pointer-events: auto;
 
       &:hover {
-        color: #fff;
+        color: var(--pv-strong);
       }
 
       &[hidden] {
@@ -695,6 +733,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
   controls!: OrbitControls;
   /** Draw the next frame (the preview only draws when asked). */
   private requestRender = () => {};
+  /** Draw now (resizing: the canvas must be drawn again before it's shown). */
+  private renderNow = () => {};
 
   @Input()
   set shapes(value: Observable<CamShape[]>) {
@@ -803,6 +843,19 @@ export class ViewerComponent implements OnInit, OnDestroy {
   }
   private hiddenShapes$ = new BehaviorSubject<string[]>([]);
 
+  /** The theme: the preview's colours follow it. */
+  @Input()
+  set dark(value: boolean) {
+    const palette = previewPalette(value);
+    if (palette !== this.palette$.value) {
+      this.palette$.next(palette);
+    }
+  }
+  readonly DARK_PALETTE = previewPalette(true);
+  readonly palette$ = new BehaviorSubject<PreviewPalette>(this.DARK_PALETTE);
+  private depthScale = colorScale(this.DARK_PALETTE.depthStops);
+  private feedScale = colorScale(this.DARK_PALETTE.feedStops);
+
   constructor(private host: ElementRef) {}
 
   ngOnInit(): void {
@@ -822,7 +875,6 @@ export class ViewerComponent implements OnInit, OnDestroy {
         distinctUntilChanged(
           (a, b) => a.width === b.width && a.height === b.height,
         ),
-        debounceTime(100),
         tap(({ width, height }) => {
           const aspect = width / height;
           this.camera.left = (frustumSize * aspect) / -2;
@@ -833,7 +885,9 @@ export class ViewerComponent implements OnInit, OnDestroy {
           this.camera.far = 1e6;
           this.camera.updateProjectionMatrix();
           renderer.setSize(width, height);
-          this.requestRender();
+          // Drawn right away, before the browser paints: resizing clears the
+          // canvas, so a frame's wait would show as a flicker.
+          this.renderNow();
         }),
         takeUntil(this.destroy$),
       )
@@ -877,7 +931,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe(save);
 
-    const grid = new AdaptiveGrid();
+    const grid = new AdaptiveGrid(this.palette$.value.grid);
     scene.add(grid);
     scene.add(this.content);
     scene.add(this.measureGroup);
@@ -918,25 +972,21 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const stockBox = this.stockBox;
     this.content.add(stockBox);
     const stockEdges = new LineBasicMaterial({
-      color: '#c9a227',
       transparent: true,
       opacity: 0.7,
     });
     const stockTop = new MeshBasicMaterial({
-      color: '#c9a227',
       transparent: true,
       opacity: 0.06,
       depthWrite: false,
     });
     const stockSkin = new MeshBasicMaterial({
-      color: '#c9a227',
       transparent: true,
       opacity: 0.06,
       depthWrite: false,
       side: DoubleSide,
     });
     const rotaryAxis = new LineDashedMaterial({
-      color: '#c9a227',
       dashSize: 4,
       gapSize: 3,
     });
@@ -1102,6 +1152,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
 
     // Draw only when something changed, at most once per frame: an idle
     // preview costs nothing.
+    this.renderNow = frame;
     let renderPending = false;
     this.requestRender = () => {
       if (renderPending) {
@@ -1122,28 +1173,22 @@ export class ViewerComponent implements OnInit, OnDestroy {
     // by pixel (in steps, as their depths round differently).
     const material = new LineBasicMaterial({
       transparent: true,
-      color: 'orange',
-      opacity: 0.2,
       depthWrite: false,
     });
-    const materialHighlight = new LineBasicMaterial({
-      color: 'orange',
-    });
+    const materialHighlight = new LineBasicMaterial();
     const nullMaterial = new LineBasicMaterial({
       opacity: 0,
       transparent: true,
       depthWrite: false,
     });
-    const clampEdges = new LineBasicMaterial({ color: '#ef4444' });
+    const clampEdges = new LineBasicMaterial();
     const clampFaces = new MeshBasicMaterial({
-      color: '#ef4444',
       transparent: true,
       opacity: 0.25,
       depthWrite: false,
     });
-    const tabEdges = new LineBasicMaterial({ color: '#4dd0e1' });
+    const tabEdges = new LineBasicMaterial();
     const tabFaces = new MeshBasicMaterial({
-      color: '#4dd0e1',
       transparent: true,
       opacity: 0.3,
       depthWrite: false,
@@ -1156,23 +1201,50 @@ export class ViewerComponent implements OnInit, OnDestroy {
     });
     const pathTravelMaterial = new LineBasicMaterial({
       transparent: true,
-      color: 'salmon',
       opacity: 0,
     });
     const highlightPathCarveMaterial = new LineBasicMaterial({
       vertexColors: true,
     });
     const highlightPathTravelMaterial = new LineBasicMaterial({
-      color: 'salmon',
       transparent: true,
       opacity: 0.5,
     });
     // White, tinted per arrow by depth (instance colours).
     const arrowCarveMaterial = new MeshBasicMaterial({ color: 'white' });
     const arrowTravelMaterial = new MeshBasicMaterial({
-      color: 'salmon',
       transparent: true,
       opacity: 0.7,
+    });
+
+    // The theme's colours, on everything drawn here.
+    this.palette$.pipe(takeUntil(this.destroy$)).subscribe((palette) => {
+      renderer.setClearColor(palette.background);
+      grid.colors = palette.grid;
+      viewKey = '';
+      for (const stock of [stockEdges, stockTop, stockSkin, rotaryAxis]) {
+        stock.color.copy(palette.stock);
+      }
+      material.color.copy(palette.shape);
+      material.opacity = palette.shapeOpacity;
+      materialHighlight.color.copy(palette.shape);
+      clampEdges.color.copy(palette.clamp);
+      clampFaces.color.copy(palette.clamp);
+      tabEdges.color.copy(palette.tab);
+      tabFaces.color.copy(palette.tab);
+      for (const travel of [
+        pathTravelMaterial,
+        highlightPathTravelMaterial,
+        arrowTravelMaterial,
+      ]) {
+        travel.color.copy(palette.travel);
+      }
+      MEASURE_MATERIAL.color.copy(palette.measure);
+      this.shapeEditor.setColors(palette.handles);
+      this.depthScale = colorScale(palette.depthStops);
+      this.feedScale = colorScale(palette.feedStops);
+      this.updateLegend();
+      this.requestRender();
     });
 
     this.shapes$
@@ -1526,15 +1598,15 @@ export class ViewerComponent implements OnInit, OnDestroy {
     const to = this.legendTo.nativeElement;
     if (this.coloring === 'depth') {
       from.textContent = 'depth 0';
-      bar.style.background = DEPTH_GRADIENT_CSS;
+      bar.style.background = this.depthScale.css;
       to.textContent = `${formatMm(this.deepest$.value)} mm`;
     } else {
       const { min, max } = this.feeds$.value;
       const single = min === max;
       from.textContent = single ? 'feed' : `feed ${Math.round(min)}`;
       bar.style.background = single
-        ? feedColor(max, min, max).getStyle()
-        : FEED_GRADIENT_CSS;
+        ? feedColor(this.feedScale, max, min, max).getStyle()
+        : this.feedScale.css;
       to.textContent = `${Math.round(max)} mm/min`;
     }
   }
@@ -2015,20 +2087,31 @@ export class ViewerComponent implements OnInit, OnDestroy {
               const colors = new Float32Array(positions.length);
               geometry.setAttribute('color', new BufferAttribute(colors, 3));
               const color = new Color();
-              const scale$ = this.coloring$.pipe(
-                switchMap((coloring) =>
+              // (The theme's scales are set before this hears of it: its
+              // subscription to the palette came first.)
+              const scale$ = combineLatest([
+                this.coloring$,
+                this.palette$,
+              ]).pipe(
+                switchMap(([coloring]) =>
                   coloring === 'depth'
                     ? this.deepest$.pipe(
                         map(
                           (deepest) => (_feed: number, z: number) =>
-                            depthColor(z, deepest, color),
+                            depthColor(this.depthScale, z, deepest, color),
                         ),
                       )
                     : this.feeds$.pipe(
                         map(
                           ({ min, max }) =>
                             (feed: number, _z: number) =>
-                              feedColor(feed || max, min, max, color),
+                              feedColor(
+                                this.feedScale,
+                                feed || max,
+                                min,
+                                max,
+                                color,
+                              ),
                         ),
                       ),
                 ),

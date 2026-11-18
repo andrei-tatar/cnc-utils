@@ -19,6 +19,7 @@ import {
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { groupTemplates, listTemplates, Template } from '../templates';
 import { Project, sameProject } from '../projects';
+import { THEMES, ThemeChoice } from '../theme';
 import type { CloudUser } from '../projects/cloud-projects.service';
 
 /**
@@ -425,6 +426,60 @@ export type JobAction = {
         </svg>
         <span class="label secondary-label">Load .nc</span>
       </button>
+      <div
+        ngbDropdown
+        placement="bottom-end bottom-start"
+        class="d-inline-block"
+      >
+        <button
+          ngbDropdownToggle
+          class="btn btn-sm btn-outline-secondary toolbar_button theme-button"
+          type="button"
+          title="Theme: light or dark"
+          aria-label="Theme"
+        >
+          <ng-container
+            [ngTemplateOutlet]="themeIcon"
+            [ngTemplateOutletContext]="{ $implicit: theme() }"
+          />
+        </button>
+        <div ngbDropdownMenu class="theme-menu">
+          @for (option of THEMES; track option.id) {
+            <button
+              ngbDropdownItem
+              type="button"
+              class="theme-menu_item"
+              role="menuitemradio"
+              [attr.aria-checked]="theme() === option.id"
+              [class.active]="theme() === option.id"
+              (click)="themeChange.emit(option.id)"
+            >
+              <ng-container
+                [ngTemplateOutlet]="themeIcon"
+                [ngTemplateOutletContext]="{ $implicit: option.id }"
+              />
+              {{ option.name }}
+            </button>
+          }
+        </div>
+        <ng-template #themeIcon let-id>
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            @switch (id) {
+              @case ('light') {
+                <path
+                  d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"
+                />
+              }
+              @case ('dark') {
+                <path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z" />
+              }
+              @default {
+                <path d="M2 3h12v8H2zM6 13.5h4M8 11v2.5" />
+              }
+            }
+          </svg>
+        </ng-template>
+      </div>
       <span class="separator" aria-hidden="true"></span>
       <div
         class="btn-group download"
@@ -596,6 +651,10 @@ export type JobAction = {
       align-items: center;
       gap: 5px;
       white-space: nowrap;
+      // As tall with only an icon as with a label beside it.
+      min-height: calc(
+        1.5em + 2 * var(--bs-btn-padding-y) + 2 * var(--bs-btn-border-width)
+      );
     }
 
     // The project's name, as a menu: looks like a title until hovered.
@@ -645,6 +704,26 @@ export type JobAction = {
       color: var(--bs-danger);
       border-color: var(--bs-danger-border-subtle);
       background: var(--bs-danger-bg-subtle);
+    }
+
+    // The theme picker: only its icon, no caret.
+    .theme-button {
+      --bs-btn-padding-x: 0.4rem;
+
+      &::after {
+        display: none;
+      }
+    }
+
+    .theme-menu {
+      min-width: 0;
+    }
+
+    .theme-menu_item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
     }
 
     .working {
@@ -947,6 +1026,10 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
       this.templateGroups().find((g) => g.group === this.openGroup()) ?? null,
   );
   private readonly submenu = viewChild<ElementRef<HTMLElement>>('submenu');
+  readonly THEMES = THEMES;
+  /** The theme picked (`system` follows the device). */
+  readonly theme = input<ThemeChoice>('system');
+  readonly themeChange = output<ThemeChoice>();
   /** A computation is running: shows the spinner, blocks the download. */
   readonly working = input(false);
   /** The projects saved in this browser, most recent first. */

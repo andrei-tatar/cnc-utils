@@ -29,9 +29,8 @@ const REACH_PX = 8;
 /** How far (px) the pointer must move for a press to be a drag. */
 const DRAG_PX = 3;
 
-const POINT_COLOR = new Color('#4fc3f7');
-const CONTROL_COLOR = new Color('#ffb74d');
-const LOCKED_COLOR = new Color('#8a8f98');
+/** The handles' colours: points, curves' control points, ones that don't drag. */
+export type HandleColors = { point: Color; control: Color; locked: Color };
 const HANDLE_MATERIAL = new PointsMaterial({
   size: 9,
   sizeAttenuation: false,
@@ -71,6 +70,7 @@ export class ShapeEditor {
   /** Each shape's drawing, by shape id: what a drag moves. */
   private drawings = new Map<string, Set<Object3D>>();
   private points: Points | null = null;
+  private colors: HandleColors | null = null;
 
   private raycaster = new Raycaster();
   private plane = new Plane(new Vector3(0, 0, 1), 0);
@@ -108,6 +108,12 @@ export class ShapeEditor {
     };
   }
 
+  /** The handles' colours (the theme's). */
+  setColors(colors: HandleColors) {
+    this.colors = colors;
+    this.drawHandles();
+  }
+
   private drawHandles() {
     if (this.points) {
       this.handles.remove(this.points);
@@ -121,11 +127,11 @@ export class ShapeEditor {
       handles.forEach((h, i) => {
         positions.set([h.x, h.y, 0], i * 3);
         const color = h.locked
-          ? LOCKED_COLOR
+          ? this.colors?.locked
           : h.control
-            ? CONTROL_COLOR
-            : POINT_COLOR;
-        color.toArray(colors, i * 3);
+            ? this.colors?.control
+            : this.colors?.point;
+        color?.toArray(colors, i * 3);
       });
       const geometry = new BufferGeometry();
       geometry.setAttribute('position', new BufferAttribute(positions, 3));

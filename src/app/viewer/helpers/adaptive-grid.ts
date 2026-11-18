@@ -26,10 +26,13 @@ const MIN_MINOR_PX = 18;
 /** Safety cap so a grazing view can't produce millions of lines. */
 const MAX_LINES_PER_AXIS = 400;
 
-const MINOR_COLOR = new Color(0x262626);
-const MAJOR_COLOR = new Color(0x4a4a4a);
-const X_AXIS_COLOR = new Color(0x8a3030);
-const Y_AXIS_COLOR = new Color(0x2f7a2f);
+/** The grid's colours: its lines, and the two through the origin. */
+export type GridColors = {
+  minor: Color;
+  major: Color;
+  xAxis: Color;
+  yAxis: Color;
+};
 
 /**
  * A millimetre grid on the XY plane that follows the camera: spacing snaps to
@@ -39,7 +42,10 @@ export class AdaptiveGrid extends LineSegments<
   BufferGeometry,
   LineBasicMaterial
 > {
-  constructor() {
+  /** The lines' colours, as of the next `update`. */
+  colors: GridColors;
+
+  constructor(colors: GridColors) {
     super(
       new BufferGeometry(),
       new LineBasicMaterial({ vertexColors: true, toneMapped: false }),
@@ -47,6 +53,7 @@ export class AdaptiveGrid extends LineSegments<
     // Draw under shapes and toolpaths that sit at z = 0.
     this.renderOrder = -1;
     this.frustumCulled = false;
+    this.colors = colors;
   }
 
   /** Rebuild the lines for the visible bounds and scale (pixels per mm). */
@@ -75,14 +82,14 @@ export class AdaptiveGrid extends LineSegments<
       isMultiple(value, 0, minor)
         ? axis
         : isMultiple(value, major, minor)
-          ? MAJOR_COLOR
-          : MINOR_COLOR;
+          ? this.colors.major
+          : this.colors.minor;
 
     for (let x = x0; x <= x1 + minor / 2; x += minor) {
-      line(x, y0, x, y1, colorFor(x, Y_AXIS_COLOR));
+      line(x, y0, x, y1, colorFor(x, this.colors.yAxis));
     }
     for (let y = y0; y <= y1 + minor / 2; y += minor) {
-      line(x0, y, x1, y, colorFor(y, X_AXIS_COLOR));
+      line(x0, y, x1, y, colorFor(y, this.colors.xAxis));
     }
 
     this.geometry.dispose();

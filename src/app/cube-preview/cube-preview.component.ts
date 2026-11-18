@@ -46,6 +46,15 @@ export class CubePreviewComponent implements OnInit {
   @Input()
   camera!: Camera;
 
+  /** The theme: the cube's faces follow it. */
+  @Input()
+  set dark(value: boolean) {
+    this.isDark = value;
+    this.paint(value);
+  }
+  private isDark = true;
+  private paint: (dark: boolean) => void = () => {};
+
   @Input()
   controls!: OrbitControls;
 
@@ -102,63 +111,72 @@ export class CubePreviewComponent implements OnInit {
     canvas.width = size;
     canvas.height = size;
 
-    let mainColor = '#333';
-    let otherColor = '#111';
-
-    let bg = ctx.createLinearGradient(0, 0, 0, size);
-    bg.addColorStop(0, mainColor);
-    bg.addColorStop(1, otherColor);
-
     for (let i = 0; i < texts.length; i++) {
-      ctx.reset();
-
-      let angle: number | null = null;
-      switch (texts[i]) {
-        case 'BOTTOM':
-        case 'BACK':
-          angle = 180;
-          break;
-        case 'LEFT':
-          angle = 90;
-          break;
-        case 'RIGHT':
-          angle = -90;
-          break;
-      }
-
-      if (typeof angle === 'number') {
-        const m = new DOMMatrix()
-          .translate(size / 2, size / 2)
-          .rotate(angle)
-          .translate(-size / 2, -size / 2);
-        ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
-      }
-
-      ctx.font = 'bolder 12px "Open sans", Arial';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-
-      if (texts[i] == 'TOP') {
-        ctx.fillStyle = mainColor;
-      } else if (texts[i] == 'BOTTOM') {
-        ctx.fillStyle = otherColor;
-      } else {
-        ctx.fillStyle = bg;
-      }
-
-      ctx.fillRect(0, 0, size, size);
-      ctx.strokeStyle = '#aaa';
-      ctx.setLineDash([8, 8]);
-      ctx.lineWidth = 4;
-      ctx.strokeRect(0, 0, size, size);
-      ctx.fillStyle = '#999';
-      ctx.fillText(texts[i], size / 2, size / 2);
-      materials.push(
-        new MeshBasicMaterial({
-          map: textureLoader.load(canvas.toDataURL(), requestRender),
-        }),
-      );
+      materials.push(new MeshBasicMaterial());
     }
+
+    // Draws the faces in the theme's colours.
+    this.paint = (dark) => {
+      let mainColor = dark ? '#333' : '#cfd5de';
+      let otherColor = dark ? '#111' : '#a3adbb';
+
+      let bg = ctx.createLinearGradient(0, 0, 0, size);
+      bg.addColorStop(0, mainColor);
+      bg.addColorStop(1, otherColor);
+
+      for (let i = 0; i < texts.length; i++) {
+        ctx.reset();
+
+        let angle: number | null = null;
+        switch (texts[i]) {
+          case 'BOTTOM':
+          case 'BACK':
+            angle = 180;
+            break;
+          case 'LEFT':
+            angle = 90;
+            break;
+          case 'RIGHT':
+            angle = -90;
+            break;
+        }
+
+        if (typeof angle === 'number') {
+          const m = new DOMMatrix()
+            .translate(size / 2, size / 2)
+            .rotate(angle)
+            .translate(-size / 2, -size / 2);
+          ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+        }
+
+        ctx.font = 'bolder 12px "Open sans", Arial';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+
+        if (texts[i] == 'TOP') {
+          ctx.fillStyle = mainColor;
+        } else if (texts[i] == 'BOTTOM') {
+          ctx.fillStyle = otherColor;
+        } else {
+          ctx.fillStyle = bg;
+        }
+
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = dark ? '#aaa' : '#4b5563';
+        ctx.setLineDash([8, 8]);
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, size, size);
+        ctx.fillStyle = dark ? '#999' : '#1f2630';
+        ctx.fillText(texts[i], size / 2, size / 2);
+        materials[i].map?.dispose();
+        materials[i].map = textureLoader.load(
+          canvas.toDataURL(),
+          requestRender,
+        );
+        materials[i].needsUpdate = true;
+      }
+    };
+    this.paint(this.isDark);
 
     const planes: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
 
