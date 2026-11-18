@@ -23,6 +23,8 @@
     (openTemplate)="projects.openTemplate($event)"
     (load)="store.open()"
     (download)="cam.download()"
+    [sendByDefault]="cncjs.settings().byDefault"
+    (send)="cncjs.send()"
     (downloadPerTool)="cam.downloadPerTool()"
     [jobActions]="jobActions"
     (jobAction)="onJobAction($event)"

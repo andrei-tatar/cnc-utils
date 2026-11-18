@@ -429,13 +429,23 @@ export type JobAction = { id: string; label: string; description: string };
         <button
           class="btn btn-sm btn-primary toolbar_button"
           type="button"
-          title="Download the G-code (the project is embedded in it)"
-          aria-label="Download G-code"
+          [title]="
+            sendByDefault()
+              ? 'Send the G-code to cncjs (downloading it is in the menu)'
+              : 'Download the G-code (the project is embedded in it)'
+          "
+          [attr.aria-label]="
+            sendByDefault() ? 'Send G-code to cncjs' : 'Download G-code'
+          "
           [disabled]="working()"
-          (click)="download.emit()"
+          (click)="sendByDefault() ? send.emit() : download.emit()"
         >
           <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
+            @if (sendByDefault()) {
+              <path d="M2.5 8 13.5 2.5 10.5 13.5 8 9zM8 9l5.5-6.5" />
+            } @else {
+              <path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
+            }
           </svg>
           <span class="label">G-code</span>
         </button>
@@ -454,7 +464,9 @@ export type JobAction = { id: string; label: string; description: string };
             [disabled]="working()"
             (click)="download.emit()"
           >
-            <span class="menu_name">G-code</span>
+            <span class="menu_name">{{
+              sendByDefault() ? 'Download G-code' : 'G-code'
+            }}</span>
             <span class="menu_description"
               >One .nc file, the project embedded in it.</span
             >
@@ -914,6 +926,10 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
   readonly load = output();
   readonly openTemplate = output<Template>();
   readonly download = output();
+  /** The G-code button sends to cncjs instead of downloading. */
+  readonly sendByDefault = input(false);
+  /** Send the G-code to cncjs (the G-code button, when that's its default). */
+  readonly send = output();
   readonly downloadPerTool = output();
   /** More things to do with the job, in the G-code menu. */
   readonly jobActions = input<JobAction[]>([]);

@@ -20,6 +20,7 @@ import { ModelStore } from './services/model-store.service';
 import { CamService } from './services/cam.service';
 import { WorkTracker } from './services/work-tracker.service';
 import { ProjectCommands } from './projects/project-commands.service';
+import { Cncjs } from './cncjs/cncjs.service';
 import { ModelHistory } from './services/model-history.service';
 import {
   EditHandle,
@@ -66,11 +67,24 @@ export class AppComponent {
   readonly store = inject(ModelStore);
   readonly projects = inject(ProjectCommands);
   readonly cam = inject(CamService);
+  readonly cncjs = inject(Cncjs);
   readonly history = inject(ModelHistory);
   readonly isWorking$ = inject(WorkTracker).isWorking$;
 
   /** More things to do with the job, in the G-code menu. */
   readonly jobActions: JobAction[] = [
+    {
+      id: 'send-cncjs',
+      label: 'Send to cncjs',
+      description:
+        'Loads the G-code in cncjs running on your network, ready to run from there.',
+    },
+    {
+      id: 'cncjs-settings',
+      label: 'cncjs settings…',
+      description:
+        'Its address, and whether the G-code button sends to it instead of downloading.',
+    },
     {
       id: 'setup-sheet',
       label: 'Setup sheet',
@@ -249,6 +263,12 @@ export class AppComponent {
 
   onJobAction(id: string) {
     switch (id) {
+      case 'send-cncjs':
+        this.cncjs.send();
+        break;
+      case 'cncjs-settings':
+        this.cncjs.configure();
+        break;
       case 'setup-sheet':
         this.cam.openSetupSheet();
         break;
