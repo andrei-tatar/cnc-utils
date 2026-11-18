@@ -3,7 +3,7 @@ import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { ModelStore } from '../services/model-store.service';
 import { ConfirmDialogComponent } from '../model-editor/components/confirm-dialog.component';
 import { Template } from '../templates';
-import { Project } from '.';
+import { Project, sameProject } from '.';
 import { ProjectNameDialogComponent } from './project-name-dialog.component';
 import { ShareLinkDialogComponent } from './share-link-dialog.component';
 import {
@@ -126,7 +126,7 @@ export class ProjectCommands {
 
   /** Opens a saved project, asking first if there's unsaved work. */
   async openProject(project: Project) {
-    const reopening = project.id === this.store.project?.id;
+    const reopening = sameProject(project, this.store.project);
     const confirmed = reopening
       ? await this.confirmReplace(
           `Revert to the saved “${project.name}”?`,
@@ -158,8 +158,11 @@ export class ProjectCommands {
     );
   }
 
-  /** Saves the work as a new project, under a name the user gives. */
-  async saveAs() {
+  /**
+   * Saves the work as a new project, under a name the user gives: in this
+   * browser, or in Firebase with `cloud`.
+   */
+  async saveAs(cloud = false) {
     await this.store.refreshProjects();
     const current = this.store.project;
     const ref = this.modals.open(ProjectNameDialogComponent, {
@@ -167,26 +170,36 @@ export class ProjectCommands {
       centered: true,
       ariaLabelledBy: 'project-name-title',
     });
+    const taken = cloud
+      ? (this.store.cloud.projects$.value ?? [])
+      : this.store.projects$.value;
     Object.assign(ref.componentInstance, {
-      title: current ? 'Save as new project' : 'Save project',
+      title: cloud
+        ? 'Save project in Firebase'
+        : current
+          ? 'Save as new project'
+          : 'Save project',
       initialName: current ? `${current.name} (copy)` : '',
-      takenNames: this.store.projects$.value.map((project) => project.name),
+      takenNames: taken.map((project) => project.name),
     });
     const name: string | false = await ref.result.catch(() => false);
     if (name !== false) {
       await this.attempt('Couldn’t save the project', () =>
-        this.store.saveProject(name),
+        this.store.saveProject(name, cloud),
       );
     }
   }
 
   /** Deletes a saved project, once the user confirms. */
   async delete(project: Project) {
+    const removed = project.cloud
+      ? 'The project is removed from Firebase, for every browser you’re signed in from.'
+      : 'The project is removed from this browser.';
     const confirmed = await this.confirm(
       `Delete “${project.name}”?`,
-      project.id === this.store.project?.id
-        ? 'The project is removed from this browser. It stays open, as unsaved work.'
-        : 'The project is removed from this browser.',
+      sameProject(project, this.store.project)
+        ? `${removed} It stays open, as unsaved work.`
+        : removed,
       'Delete project',
     );
     if (confirmed) {
@@ -194,6 +207,53 @@ export class ProjectCommands {
         this.store.deleteProject(project),
       );
     }
+  }
+
+  /**
+   * Copies (or moves) a project saved in this browser to Firebase, or one
+   * there to this browser; asks first when it takes the place of a project
+   * of its name there.
+   */
+  async transfer(project: Project, move: boolean) {
+    const toCloud = !project.cloud;
+    const where = toCloud ? 'Firebase' : 'this browser';
+    if (!toCloud) {
+      await this.store.refreshProjects();
+    }
+    const there = toCloud
+      ? (this.store.cloud.projects$.value ?? [])
+      : this.store.projects$.value;
+    const replaced = there.find((other) => other.name === project.name);
+    if (
+      replaced &&
+      !(await this.confirm(
+        `Replace “${project.name}” in ${where}?`,
+        `There’s already a project of that name in ${where}: this one takes its place.` +
+          (sameProject(replaced, this.store.project) && this.store.pending
+            ? ' It’s the open project: its unsaved changes stay, as changes to this one.'
+            : ''),
+        move ? 'Replace and move' : 'Replace',
+      ))
+    ) {
+      return;
+    }
+    await this.attempt(
+      `Couldn’t ${move ? 'move' : 'copy'} the project to ${where}`,
+      () => this.store.transferProject(project, move),
+    );
+  }
+
+  /** Signs in to Firebase (with Google), for the projects kept there. */
+  async signIn() {
+    await this.attempt('Couldn’t sign in', () => this.store.cloud.signIn());
+  }
+
+  /**
+   * Signs out. Work that belongs to a project in Firebase stays open, as
+   * unsaved work.
+   */
+  async signOut() {
+    await this.attempt('Couldn’t sign out', () => this.store.cloud.signOut());
   }
 
   /**

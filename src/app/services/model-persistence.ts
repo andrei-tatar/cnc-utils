@@ -1,6 +1,7 @@
 import { emptyModel, ModelType } from '../model-editor/model';
 import { migrateModel, storedModel } from '../model-editor/migrations';
 import { reportError } from '../pipeline/errors';
+import type { Project } from '../projects';
 import {
   openAppDb,
   openedAppDb,
@@ -25,7 +26,14 @@ const MODEL_KEY = 'model';
  * The project as stored in IndexedDB, with the saved project (`projects/`)
  * it was opened from or saved as, if any.
  */
-type Saved = { model: unknown; savedAt: number; projectId?: string };
+type Saved = {
+  model: unknown;
+  savedAt: number;
+  projectId?: string;
+  /** The saved project is one kept in Firebase; its name, to show meanwhile. */
+  projectCloud?: true;
+  projectName?: string;
+};
 
 let preloaded: Saved | null = null;
 
@@ -64,22 +72,35 @@ export function loadModel(): ModelType {
 }
 
 /**
- * The id of the saved project the loaded one belongs to, or null (also when
- * the newer copy is the localStorage one, which doesn't keep it).
+ * The saved project the loaded one belongs to (its id, where it's kept and,
+ * for one in Firebase, its name; when it was saved isn't known), or null
+ * (also when the newer copy is the localStorage one, which doesn't keep it).
  */
-export function loadProjectId(): string | null {
+export function loadProjectRef(): Project | null {
   const fallback = readFallback();
-  return preloaded && (!fallback || preloaded.savedAt >= fallback.savedAt)
-    ? (preloaded.projectId ?? null)
-    : null;
+  if (
+    !preloaded?.projectId ||
+    (fallback && preloaded.savedAt < fallback.savedAt)
+  ) {
+    return null;
+  }
+  return {
+    id: preloaded.projectId,
+    name: preloaded.projectName ?? '',
+    savedAt: 0,
+    ...(preloaded.projectCloud ? { cloud: true as const } : {}),
+  };
 }
 
 /** Saves the project; starts at once if the database is already open. */
-export async function saveModel(model: ModelType, projectId: string | null) {
+export async function saveModel(model: ModelType, project: Project | null) {
   const saved: Saved = {
     model: storedModel(model),
     savedAt: Date.now(),
-    ...(projectId ? { projectId } : {}),
+    ...(project ? { projectId: project.id } : {}),
+    ...(project?.cloud
+      ? { projectCloud: true as const, projectName: project.name }
+      : {}),
   };
   const db = openedAppDb() ?? (await openAppDb());
   if (db) {

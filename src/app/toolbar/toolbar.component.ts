@@ -16,9 +16,10 @@ import {
   NgbDropdownMenu,
   NgbDropdownToggle,
 } from '@ng-bootstrap/ng-bootstrap';
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { groupTemplates, listTemplates, Template } from '../templates';
-import { Project } from '../projects';
+import { Project, sameProject } from '../projects';
+import type { CloudUser } from '../projects/cloud-projects.service';
 
 /**
  * The narrowest window (px) where a group's templates show beside the
@@ -43,6 +44,7 @@ export type JobAction = { id: string; label: string; description: string };
     NgbDropdownMenu,
     NgbDropdownItem,
     DatePipe,
+    NgTemplateOutlet,
   ],
   template: `
     <header #toolbar class="toolbar">
@@ -68,7 +70,7 @@ export type JobAction = { id: string; label: string; description: string };
           ngbDropdownToggle
           class="btn btn-sm project"
           type="button"
-          title="Projects saved in this browser: open, save as or delete"
+          title="Projects saved in this browser or in Firebase: open, save as, copy or delete"
           aria-label="Projects"
         >
           <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -89,16 +91,64 @@ export type JobAction = { id: string; label: string; description: string };
             <span class="menu_name">Save as new project…</span>
           </button>
           @for (saved of projects(); track saved.id) {
-            <div
-              class="menu_row"
-              [class.menu_row--current]="saved.id === project()?.id"
-            >
+            <ng-container
+              [ngTemplateOutlet]="row"
+              [ngTemplateOutletContext]="{ $implicit: saved }"
+            />
+          } @empty {
+            <p class="menu_empty">No saved projects yet.</p>
+          }
+
+          <h6 class="dropdown-header menu_header">Firebase</h6>
+          @if (cloudUser(); as user) {
+            <div class="menu_account">
+              <span class="menu_account_name" [title]="user.email">
+                {{ user.email || user.name }}
+              </span>
+              <button
+                ngbDropdownItem
+                type="button"
+                class="menu_sign-out"
+                (click)="signOut.emit()"
+              >
+                Sign out
+              </button>
+            </div>
+            <button ngbDropdownItem type="button" (click)="saveAsCloud.emit()">
+              <span class="menu_name">Save as new project…</span>
+            </button>
+            @if (cloudProjects(); as kept) {
+              @for (saved of kept; track saved.id) {
+                <ng-container
+                  [ngTemplateOutlet]="row"
+                  [ngTemplateOutletContext]="{ $implicit: saved }"
+                />
+              } @empty {
+                <p class="menu_empty">No projects in Firebase yet.</p>
+              }
+            } @else {
+              <p class="menu_empty">Reading the projects…</p>
+            }
+          } @else if (cloudUser() === null) {
+            <button ngbDropdownItem type="button" (click)="signIn.emit()">
+              <span class="menu_name">Sign in with Google</span>
+              <span class="menu_description"
+                >Projects kept in Firebase are there in every browser you sign
+                in from.</span
+              >
+            </button>
+          } @else {
+            <p class="menu_empty">Connecting…</p>
+          }
+
+          <ng-template #row let-saved>
+            <div class="menu_row" [class.menu_row--current]="isOpen(saved)">
               <button
                 ngbDropdownItem
                 type="button"
                 class="menu_open"
                 [title]="
-                  saved.id === project()?.id
+                  isOpen(saved)
                     ? 'Open again as last saved'
                     : 'Open (replaces the current project)'
                 "
@@ -106,7 +156,7 @@ export type JobAction = { id: string; label: string; description: string };
               >
                 <span class="menu_name">
                   {{ saved.name }}
-                  @if (saved.id === project()?.id) {
+                  @if (isOpen(saved)) {
                     <span class="menu_badge">
                       {{ pending() ? 'Open · unsaved changes' : 'Open' }}
                     </span>
@@ -116,12 +166,54 @@ export type JobAction = { id: string; label: string; description: string };
                   >Saved {{ saved.savedAt | date: 'd MMM y, HH:mm' }}</span
                 >
               </button>
+              @if (saved.cloud || cloudUser()) {
+                <button
+                  ngbDropdownItem
+                  type="button"
+                  class="menu_action"
+                  [attr.aria-label]="
+                    'Copy project ' + saved.name + ' to ' + other(saved)
+                  "
+                  [title]="'Copy to ' + other(saved)"
+                  (click)="
+                    transferProject.emit({ project: saved, move: false })
+                  "
+                >
+                  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M5.5 5.5h8v8h-8zM2.5 10.5v-8h8" />
+                  </svg>
+                </button>
+                <button
+                  ngbDropdownItem
+                  type="button"
+                  class="menu_action"
+                  [attr.aria-label]="
+                    'Move project ' + saved.name + ' to ' + other(saved)
+                  "
+                  [title]="'Move to ' + other(saved)"
+                  (click)="transferProject.emit({ project: saved, move: true })"
+                >
+                  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    @if (saved.cloud) {
+                      <path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
+                    } @else {
+                      <path
+                        d="M4.5 13.5a3 3 0 0 1-.4-5.97 4 4 0 0 1 7.8 0 3 3 0 0 1-.4 5.97M8 14V8.5M5.8 10.6 8 8.4l2.2 2.2"
+                      />
+                    }
+                  </svg>
+                </button>
+              }
               <button
                 ngbDropdownItem
                 type="button"
-                class="menu_delete"
+                class="menu_action menu_delete"
                 [attr.aria-label]="'Delete project ' + saved.name"
-                title="Delete this project"
+                [title]="
+                  saved.cloud
+                    ? 'Delete this project from Firebase'
+                    : 'Delete this project'
+                "
                 (click)="deleteProject.emit(saved)"
               >
                 <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -131,9 +223,7 @@ export type JobAction = { id: string; label: string; description: string };
                 </svg>
               </button>
             </div>
-          } @empty {
-            <p class="menu_empty">No saved projects yet.</p>
-          }
+          </ng-template>
         </div>
       </div>
 
@@ -721,19 +811,56 @@ export type JobAction = { id: string; label: string; description: string };
       min-width: 0;
     }
 
-    .menu .menu_delete {
+    .menu .menu_action {
       flex: none;
       width: auto;
       display: flex;
       align-items: center;
-      padding: 0 14px;
+      padding: 0 9px;
       color: var(--bs-secondary-color);
+
+      &:hover,
+      &:focus {
+        color: var(--bs-body-color);
+      }
+    }
+
+    .menu .menu_delete {
+      padding-right: 14px;
 
       &:hover,
       &:focus {
         color: var(--bs-danger);
         background: var(--bs-danger-bg-subtle);
       }
+    }
+
+    // Who's signed in to Firebase, and signing out.
+    .menu_account {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 6px 6px 14px;
+      font-size: 0.8rem;
+      color: var(--bs-secondary-color);
+    }
+
+    .menu_account_name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .menu .menu_sign-out {
+      flex: none;
+      width: auto;
+      padding: 2px 8px;
+      border-top: none;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: var(--bs-link-color);
     }
 
     .menu_badge {
@@ -769,8 +896,12 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
   private readonly submenu = viewChild<ElementRef<HTMLElement>>('submenu');
   /** A computation is running: shows the spinner, blocks the download. */
   readonly working = input(false);
-  /** The saved projects, most recent first. */
+  /** The projects saved in this browser, most recent first. */
   readonly projects = input<Project[]>([]);
+  /** Who's signed in to Firebase: null for nobody, undefined when not known yet. */
+  readonly cloudUser = input<CloudUser | null | undefined>(null);
+  /** Their projects kept there; null while they're being read. */
+  readonly cloudProjects = input<Project[] | null>(null);
   /** The saved project being worked on, if any. */
   readonly project = input<Project | null>(null);
   /** Whether there's work not saved as a project. */
@@ -790,6 +921,12 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
   /** Save over the current project (or as a new one, when there's none). */
   readonly save = output();
   readonly saveAs = output();
+  /** Save as a new project in Firebase. */
+  readonly saveAsCloud = output();
+  /** Copy or move a project between this browser and Firebase. */
+  readonly transferProject = output<{ project: Project; move: boolean }>();
+  readonly signIn = output();
+  readonly signOut = output();
   readonly openProject = output<Project>();
   readonly deleteProject = output<Project>();
   /** The projects menu was opened: time to read the list again. */
@@ -807,11 +944,11 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
     const project = this.project();
     if (!this.pending()) {
       return project
-        ? `All changes are saved to “${project.name}”`
+        ? `All changes are saved to “${project.name}”${project.cloud ? ' in Firebase' : ''}`
         : 'Nothing to save yet';
     }
     return project
-      ? `Save the changes to “${project.name}”`
+      ? `Save the changes to “${project.name}”${project.cloud ? ' in Firebase' : ''}`
       : 'Save as a project in this browser';
   });
 
@@ -821,6 +958,16 @@ export class ToolbarComponent implements AfterViewInit, OnDestroy {
 
   constructor() {
     listTemplates().then((templates) => this.templates.set(templates));
+  }
+
+  /** Whether a saved project is the one being worked on. */
+  isOpen(saved: Project): boolean {
+    return sameProject(saved, this.project());
+  }
+
+  /** Where a saved project isn't: where it can be copied or moved to. */
+  other(saved: Project): string {
+    return saved.cloud ? 'this browser' : 'Firebase';
   }
 
   /** What a group holds, for its item: its templates' names. */

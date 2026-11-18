@@ -17,7 +17,17 @@ export type Project = {
   id: string;
   name: string;
   savedAt: number;
+  /**
+   * Kept in Firebase (`CloudProjects`) instead of this browser. Never
+   * stored: it says which list a project came from.
+   */
+  cloud?: true;
 };
+
+/** Whether two list entries are the same saved project. */
+export function sameProject(a: Project | null, b: Project | null): boolean {
+  return !!a && !!b && a.id === b.id && !a.cloud === !b.cloud;
+}
 
 /** The saved projects, most recently saved first. */
 export async function listProjects(): Promise<Project[]> {
@@ -65,7 +75,8 @@ export async function putProject(project: Project, model: ModelType) {
     [PROJECTS_STORE, PROJECT_MODELS_STORE],
     'readwrite',
   );
-  tx.objectStore(PROJECTS_STORE).put(project, project.id);
+  const { id, name, savedAt } = project;
+  tx.objectStore(PROJECTS_STORE).put({ id, name, savedAt }, id);
   tx.objectStore(PROJECT_MODELS_STORE).put(storedModel(model), project.id);
   await transactionDone(tx);
 }

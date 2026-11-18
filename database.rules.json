@@ -1,0 +1,32 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "projects": {
+          "$project": {
+            ".validate": "newData.hasChildren(['name', 'savedAt'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "savedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "projectModels": {
+          "$project": {
+            ".validate": "newData.isString() && newData.val().length <= 10000000"
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

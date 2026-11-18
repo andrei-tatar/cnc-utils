@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 import {
   BehaviorSubject,
   catchError,
@@ -7,13 +7,16 @@ import {
   EMPTY,
   distinctUntilChanged,
   filter,
+  firstValueFrom,
   fromEvent,
   map,
   merge,
   Observable,
+  race,
   shareReplay,
   Subject,
   switchMap,
+  timer,
 } from 'rxjs';
 import { emptyModel, ModelFieldConfig, ModelType } from '../model-editor/model';
 import { sameWork } from '../model-editor/same-work';
@@ -27,14 +30,21 @@ import {
   loadProject,
   Project,
   putProject,
+  sameProject,
 } from '../projects';
+import { CloudProjects } from '../projects/cloud-projects.service';
 import { deepEqual, generateId } from '../../util';
 import { resolveStock } from '../../cam/stock';
 import { resolveGcodeOptions } from '../../cam/gcode-options';
-import { loadModel, loadProjectId, saveModel } from './model-persistence';
+import { loadModel, loadProjectRef, saveModel } from './model-persistence';
 import { reportError } from '../pipeline/errors';
 /** Saving waits for a pause in editing (and happens when leaving). */
 const SAVE_DELAY = 500;
+/**
+ * How long starting waits to hear from Firebase about the project the work
+ * belongs to (it's linked whenever that comes, also later).
+ */
+const CLOUD_WAIT = 5000;
 
 /**
  * The saved project the work belongs to (opened from or saved as), and its
@@ -87,8 +97,15 @@ export class ModelStore {
     shareReplay({ bufferSize: 1, refCount: true }),
   );
 
-  /** The saved projects, most recent first (see `refreshProjects`). */
+  /** The projects saved in this browser, most recent first (see `refreshProjects`). */
   readonly projects$ = new BehaviorSubject<Project[]>([]);
+
+  /** Projects kept in Firebase: who's signed in, and their list. */
+  readonly cloud = inject(CloudProjects);
+  /** Changes to saved projects under way: no time to follow Firebase's. */
+  private writes = 0;
+  /** The project whose newer copy is being read from Firebase. */
+  private following: SavedProject | null = null;
 
   /**
    * The work was replaced (opened, loaded, new): not edited, so the preview
@@ -126,8 +143,11 @@ export class ModelStore {
       )
       .subscribe((model) => this.replace(model, null));
 
-    this.ready = this.restoreProject(loadProjectId());
+    this.ready = this.restoreProject(loadProjectRef());
     this.refreshProjects();
+    merge(this.cloud.user$, this.cloud.projects$).subscribe(() =>
+      this.followCloud(),
+    );
   }
 
   /**
@@ -204,32 +224,41 @@ export class ModelStore {
 
   /**
    * Saves the work: under `name` when given (as a new project, or replacing
-   * the saved project of that name), otherwise over the project it belongs to.
+   * the saved project of that name) — in this browser, or in Firebase with
+   * `cloud` —, otherwise over the project it belongs to, where that is.
    */
-  async saveProject(name?: string) {
+  async saveProject(name?: string, cloud = false) {
     const model = snapshot(this.value);
     const current = this.project;
-    const existing =
-      name === undefined
-        ? current
-        : (await listProjects()).find((project) => project.name === name);
-    if (!existing && name === undefined) {
-      throw new Error('The work isn’t a saved project yet: give it a name.');
+    if (name === undefined) {
+      cloud = !!current?.cloud;
     }
-    const project: Project = {
-      id: existing?.id ?? (await generateId()),
-      name: name ?? existing!.name,
-      savedAt: Date.now(),
-    };
-    await putProject(project, model);
-    this.saved$.next({ project, model });
-    this.persist();
+    await this.writing(async () => {
+      const existing =
+        name === undefined
+          ? current
+          : (await this.savedIn(cloud)).find((p) => p.name === name);
+      if (!existing && name === undefined) {
+        throw new Error('The work isn’t a saved project yet: give it a name.');
+      }
+      const project = await this.put(
+        {
+          id: existing?.id ?? (await generateId()),
+          name: name ?? existing!.name,
+          savedAt: Date.now(),
+        },
+        cloud,
+        model,
+      );
+      this.saved$.next({ project, model });
+      this.persist();
+    });
     await this.refreshProjects();
   }
 
   /** Replaces the work with a saved project. */
   async openProject(project: Project) {
-    const stored = await loadProject(project.id);
+    const stored = await this.stored(project);
     if (stored === undefined) {
       await this.refreshProjects();
       throw new Error(`“${project.name}” is no longer saved.`);
@@ -242,12 +271,156 @@ export class ModelStore {
    * it's now unsaved work.
    */
   async deleteProject(project: Project) {
-    await deleteProject(project.id);
-    if (this.project?.id === project.id) {
+    await this.writing(async () => {
+      await this.remove(project);
+      if (sameProject(this.project, project)) {
+        this.saved$.next(null);
+        this.persist();
+      }
+    });
+    await this.refreshProjects();
+  }
+
+  /**
+   * Copies a project saved in this browser to Firebase, or one there to
+   * this browser — in place of the project of its name there, if any — and,
+   * to `move` it, deletes it where it was. Work that belongs to the moved
+   * project belongs to it where it is now.
+   */
+  async transferProject(project: Project, move: boolean) {
+    const toCloud = !project.cloud;
+    await this.writing(async () => {
+      const model = await this.stored(project);
+      if (model === undefined) {
+        throw new Error(`“${project.name}” is no longer saved.`);
+      }
+      const replaced = (await this.savedIn(toCloud)).find(
+        (p) => p.name === project.name,
+      );
+      const copy = await this.put(
+        {
+          id: replaced?.id ?? (await generateId()),
+          name: project.name,
+          savedAt: project.savedAt,
+        },
+        toCloud,
+        model,
+      );
+      const open = this.saved$.value;
+      if (replaced && sameProject(open?.project ?? null, replaced)) {
+        // The work is now changes to what was put in its project's place.
+        this.saved$.next({ project: copy, model: snapshot(model) });
+      }
+      if (move) {
+        await this.remove(project);
+        if (open && sameProject(open.project, project)) {
+          this.saved$.next({ project: copy, model: open.model });
+        }
+      }
+      this.persist();
+    });
+    await this.refreshProjects();
+  }
+
+  /** The projects saved in this browser, or those in Firebase. */
+  private async savedIn(cloud: boolean): Promise<Project[]> {
+    return cloud ? (this.cloud.projects$.value ?? []) : listProjects();
+  }
+
+  private stored(project: Project): Promise<ModelType | undefined> {
+    return project.cloud
+      ? this.cloud.load(project.id)
+      : loadProject(project.id);
+  }
+
+  /** Saves a project in this browser or in Firebase; gives it as it's there. */
+  private async put(
+    { id, name, savedAt }: Project,
+    cloud: boolean,
+    model: ModelType,
+  ): Promise<Project> {
+    const project: Project = cloud
+      ? { id, name, savedAt, cloud: true }
+      : { id, name, savedAt };
+    await (cloud ? this.cloud.put(project, model) : putProject(project, model));
+    return project;
+  }
+
+  private remove(project: Project): Promise<void> {
+    return project.cloud
+      ? this.cloud.delete(project.id)
+      : deleteProject(project.id);
+  }
+
+  /**
+   * Runs a change to the saved projects; what Firebase tells meanwhile (its
+   * list changes as soon as something is written to it, before the work is
+   * linked to what was written) is looked at once it's done.
+   */
+  private async writing(change: () => Promise<void>) {
+    this.writes++;
+    try {
+      await change();
+    } finally {
+      this.writes--;
+      this.followCloud();
+    }
+  }
+
+  /**
+   * Keeps work that belongs to a project in Firebase in step with it, as
+   * who's signed in and their list change: another browser may save, rename
+   * or delete it. A newer copy takes the work's place, unless there are
+   * changes here (saving then writes over the other browser's); with the
+   * project gone, or nobody signed in, the work stays open as unsaved work.
+   * On start it's what links the work to its project again.
+   */
+  private followCloud() {
+    const saved = this.saved$.value;
+    const user = this.cloud.user$.value;
+    const projects = this.cloud.projects$.value;
+    if (!saved?.project.cloud || this.writes || user === undefined) return;
+    if (user && !projects) return;
+    const remote = projects?.find((p) => p.id === saved.project.id);
+    if (!remote) {
       this.saved$.next(null);
       this.persist();
+      return;
     }
-    await this.refreshProjects();
+    if (saved.model !== null) {
+      const unchanged = remote.savedAt === saved.project.savedAt;
+      if (unchanged || this.pending) {
+        if (!unchanged || remote.name !== saved.project.name) {
+          this.saved$.next({ project: remote, model: saved.model });
+          this.persist();
+        }
+        return;
+      }
+    }
+    if (this.following === saved) return;
+    this.following = saved;
+    this.cloud
+      .load(remote.id)
+      .then((model) => {
+        this.following = null;
+        // Something else was opened (or saved) meanwhile.
+        if (this.saved$.value !== saved || model === undefined) return;
+        if (saved.model === null || this.pending) {
+          this.saved$.next({
+            project: remote,
+            model: saved.model ?? snapshot(model),
+          });
+          this.persist();
+        } else {
+          this.replace(model, remote);
+        }
+        // The list may have moved on while this was read.
+        this.followCloud();
+      })
+      .catch((error) => {
+        this.following = null;
+        reportError('reading the project from Firebase', error);
+      });
   }
 
   /** Puts `model` in place of the work, as the given saved project or none. */
@@ -260,17 +433,26 @@ export class ModelStore {
 
   /** Keeps the work (and the project it belongs to) for the next visit. */
   private persist(model = this.value) {
-    saveModel(model, this.project?.id ?? null);
+    saveModel(model, this.project);
   }
 
   /** On start, links the work again to the saved project it belonged to. */
-  private async restoreProject(id: string | null) {
-    if (!id) return;
-    const placeholder: SavedProject = {
-      project: { id, name: '', savedAt: 0 },
-      model: null,
-    };
+  private async restoreProject(ref: Project | null) {
+    if (!ref) return;
+    const { id } = ref;
+    const placeholder: SavedProject = { project: ref, model: null };
     this.saved$.next(placeholder);
+    if (ref.cloud) {
+      // `followCloud()` links it, once Firebase says what's there.
+      this.cloud.start();
+      await firstValueFrom(
+        race(
+          this.saved$.pipe(filter((saved) => saved !== placeholder)),
+          timer(CLOUD_WAIT),
+        ),
+      );
+      return;
+    }
     const [project, stored] = await Promise.all([
       getProject(id).catch(() => null),
       loadProject(id).catch(() => undefined),
