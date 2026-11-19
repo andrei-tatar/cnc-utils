@@ -172,6 +172,7 @@ function sameTool(a: any, b: any): boolean {
     'taperAngle',
     'headHeight',
     'fluteType',
+    'upcutLength',
   ];
   return keys.every(
     (k) => JSON.stringify(a?.[k] ?? null) === JSON.stringify(b?.[k] ?? null),

@@ -305,6 +305,43 @@ describe('flute types', () => {
     );
   });
 
+  it('feeds a compression bit like a downcut one, and wants its first pass past its tip', () => {
+    const feeds = (flute: 'downcut' | 'compression', depth: number) =>
+      feedsAndSpeeds(cut(flute, depth))!;
+    expect(feeds('compression', 3).chipLoad).toBe(feeds('downcut', 3).chipLoad);
+    expect(feeds('compression', 3).notes.join()).toContain(
+      'compression: fed 13% slower',
+    );
+    // Shallower than the bit is wide: the upcut tip cuts the top face.
+    expect(feeds('compression', 3).notes.join()).toContain('clean top edge');
+    expect(feeds('compression', 6).notes.join()).not.toContain(
+      'clean top edge',
+    );
+    expect(feeds('downcut', 3).notes.join()).not.toContain('clean top edge');
+    // A bit that says how long its tip is goes by that.
+    const mortise = (depth: number) =>
+      feedsAndSpeeds({ ...cut('compression', depth), upcutLength: 2 })!;
+    expect(mortise(3).notes.join()).not.toContain('clean top edge');
+    expect(mortise(1.5).notes.join()).toContain('its upcut tip (2 mm)');
+    expect(mortise(3).chipLoad).toBe(feeds('compression', 3).chipLoad);
+  });
+
+  it('feeds a straight-fluted bit slower in an enclosed cut, less so than a downcut one', () => {
+    const ratio = (flute: 'straight' | 'downcut') =>
+      feedsAndSpeeds(cut(flute, 3))!.chipLoad /
+      feedsAndSpeeds(cut('upcut', 3))!.chipLoad;
+    // A slot half the bit deep.
+    expect(ratio('straight')).toBeCloseTo(1 - 0.075, 6);
+    expect(ratio('straight')).toBeGreaterThan(ratio('downcut'));
+    expect(feedsAndSpeeds(cut('straight', 3))!.notes.join()).toContain(
+      'straight: fed 8% slower, the chips aren’t lifted out',
+    );
+    // Nothing in a light, shallow cut.
+    expect(feedsAndSpeeds(cut('straight', 0.5, 1))).toEqual(
+      feedsAndSpeeds(cut('upcut', 0.5, 1)),
+    );
+  });
+
   it('takes a heavier cut at full chip load with a roughing bit', () => {
     const heavy = 4;
     const upcut = feedsAndSpeeds(cut('upcut', heavy))!;

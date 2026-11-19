@@ -386,13 +386,25 @@ export function aluminiumMaterial(alloy: Machinable): Material {
 
 /**
  * How an end mill's flutes are made: spiralling up (lifting the chips out,
- * the usual), down (pressing them down, for a clean top edge) or serrated
- * to break the chips (a roughing, "corn cob" bit).
+ * the usual), down (pressing them down, for a clean top edge), both — up at
+ * the tip and down above it (a compression bit: clean on both faces of a
+ * sheet cut through in one pass) — or serrated to break the chips (a
+ * roughing, "corn cob" bit). Straight flutes don't spiral at all: the
+ * chips are neither lifted out nor pressed down.
  */
-export type FluteType = 'upcut' | 'downcut' | 'roughing';
+export type FluteType =
+  'upcut' | 'downcut' | 'compression' | 'straight' | 'roughing';
 
-/** A downcut bit fully enclosed in its cut is fed this much slower. */
+/**
+ * A downcut bit fully enclosed in its cut is fed this much slower (a
+ * compression bit too: all but its tip pushes the chips down).
+ */
 const DOWNCUT_SLOWER = 0.25;
+/**
+ * A straight-fluted bit fully enclosed in its cut is fed this much slower:
+ * nothing lifts its chips out, though nothing presses them in either.
+ */
+const STRAIGHT_SLOWER = 0.15;
 /** A roughing bit's serrations take this share of a plain bit's force. */
 const ROUGHING_FORCE = 0.75;
 
@@ -429,6 +441,11 @@ export type Cut =
       edge?: number;
       /** How the bit's flutes are made (an end mill's): see FluteType. */
       flute?: FluteType;
+      /**
+       * A compression bit: how far up from its tip its flutes spiral
+       * upwards (mm); as far as its diameter when it doesn't say.
+       */
+      upcutLength?: number;
     }
   | {
       kind: 'drill';
@@ -538,9 +555,20 @@ function milling(
   // (a slot, a deep pass) they pack and are cut again, heating the bit.
   // Slower the more the cut wraps round the bit (its width) and the deeper
   // it goes (up to the bit's diameter), never so slow it rubs.
-  if (cut.flute === 'downcut') {
+  // Straight flutes don't push them down, but don't lift them out either.
+  if (
+    cut.flute === 'downcut' ||
+    cut.flute === 'compression' ||
+    cut.flute === 'straight'
+  ) {
+    const name = cut.flute;
+    const why =
+      name === 'straight'
+        ? 'the chips aren’t lifted out of the cut'
+        : 'the chips pack in the cut';
     const enclosed = (loadWidth / d) * clamp(depth / size, 0, 1);
-    const slower = DOWNCUT_SLOWER * enclosed;
+    const slower =
+      (name === 'straight' ? STRAIGHT_SLOWER : DOWNCUT_SLOWER) * enclosed;
     if (slower >= 0.05) {
       const eased = Math.max(
         chip * (1 - slower),
@@ -548,10 +576,22 @@ function milling(
       );
       notes.push(
         eased < chip * 0.99
-          ? `downcut: fed ${percent(1 - eased / chip)} slower, the chips pack in the cut (shallower steps clear them better)`
-          : `downcut: the chips pack in the cut, shallower steps clear them better`,
+          ? `${name}: fed ${percent(1 - eased / chip)} slower, ${why} (shallower steps clear them better)`
+          : `${name}: ${why}, shallower steps clear them better`,
       );
       chip = eased;
+    }
+  }
+  // A compression bit's tip cuts upwards: a pass no deeper than that tip
+  // (about the bit's diameter, when it doesn't say) cuts the top face with
+  // it, and chips it.
+  if (cut.flute === 'compression') {
+    const known = (cut.upcutLength ?? 0) > 0;
+    const tip = known ? cut.upcutLength! : size;
+    if (depth < tip - 1e-9) {
+      notes.push(
+        `compression: the first pass has to go deeper than its upcut tip (${known ? '' : 'about '}${mm(tip)}) for a clean top edge`,
+      );
     }
   }
 

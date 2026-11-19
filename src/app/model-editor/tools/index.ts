@@ -33,6 +33,8 @@ export const ROUND_CUTTERS: readonly BitType[] = [
 export const FLUTE_TYPE_LABELS: Record<FluteType, string> = {
   upcut: 'upcut',
   downcut: 'downcut',
+  compression: 'compression',
+  straight: 'straight',
   roughing: 'roughing',
 };
 
@@ -78,10 +80,16 @@ export type ToolType = {
   /** How many cutting edges it has (2 when not set): for feeds and speeds. */
   flutes?: number;
   /**
-   * End mill: upcut, downcut or roughing flutes (not set: cut as an
+   * End mill: upcut, downcut, compression, straight or roughing flutes (not set: cut as an
    * upcut): for feeds and speeds.
    */
   fluteType?: FluteType | null;
+  /**
+   * Compression end mill: how far up from the tip its flutes spiral
+   * upwards (mm; not set: taken as its diameter). A first pass no deeper
+   * than that is noted with the worked-out feeds.
+   */
+  upcutLength?: number | null;
   /** How long its cutting edge is (mm): deeper cuts are flagged. */
   fluteLength?: number | null;
   /**
@@ -502,14 +510,34 @@ export const field: FormlyFieldConfig = {
           label: 'flute type',
           placeholder: 'not set',
           description:
-            'for feeds and speeds: downcut is fed slower in slots and deep passes (the chips pack in), roughing takes heavier cuts (less force)',
+            'for feeds and speeds: downcut, compression and (less so) straight are fed slower in slots and deep passes (the chips pack in), roughing takes heavier cuts (less force)',
           options: [
             { value: 'upcut', label: 'upcut' },
             { value: 'downcut', label: 'downcut' },
+            {
+              value: 'compression',
+              label: 'compression (up at the tip, down above)',
+            },
+            { value: 'straight', label: 'straight (no spiral)' },
             { value: 'roughing', label: 'roughing (chipbreaker)' },
           ],
         },
         expressions: { hide: hideUnlessBit('end-mill') },
+      },
+      {
+        key: 'upcutLength',
+        type: 'number',
+        props: {
+          min: 0,
+          label: 'upcut length',
+          description:
+            'mm from the tip that spiral upwards; the first pass has to go deeper for a clean top edge (blank: the bit’s diameter)',
+        },
+        expressions: {
+          hide: (field: FormlyFieldConfig) =>
+            hideUnlessBit('end-mill')(field) ||
+            field.model?.fluteType !== 'compression',
+        },
       },
       {
         key: 'fluteLength',

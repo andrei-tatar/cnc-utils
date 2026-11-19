@@ -174,12 +174,18 @@ function edgeOf(
   }
 }
 
-/** An end mill's flute type, when it says. */
+/** An end mill's flute type, when it says (and a compression bit's tip). */
 function fluteOf(
   tool: Partial<ToolType> | undefined,
-): { flute: FluteType } | {} {
+): { flute: FluteType; upcutLength?: number } | {} {
   const bit = tool?.bitType ?? 'end-mill';
-  return bit === 'end-mill' && tool?.fluteType ? { flute: tool.fluteType } : {};
+  if (bit !== 'end-mill' || !tool?.fluteType) {
+    return {};
+  }
+  const upcut = tool.upcutLength ?? 0;
+  return tool.fluteType === 'compression' && upcut > 0
+    ? { flute: tool.fluteType, upcutLength: upcut }
+    : { flute: tool.fluteType };
 }
 
 /** How wide the bit cuts `depth` deep. */

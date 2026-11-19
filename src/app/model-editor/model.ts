@@ -64,6 +64,7 @@ export type ToolParameters = OmitUnion<
   | 'stickout'
   | 'flutes'
   | 'fluteType'
+  | 'upcutLength'
 >;
 export const ModelFieldConfig: FormlyFieldConfig[] = [
   variablesField,
