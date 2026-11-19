@@ -3,7 +3,10 @@ import { AbstractControl } from '@angular/forms';
 import { numberIn, resolvedItem, resolvedModelOf } from '../variables/field';
 import { rootModel } from '../shapes/describe';
 import { toolFeedsAndSpeeds } from './feeds-and-speeds';
-import type { HeaderAction } from '../components/array-type-component';
+import type {
+  HeaderAction,
+  ItemDialog,
+} from '../components/array-type-component';
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import type { FluteType } from '../../../cam/feeds-speeds';
 
@@ -255,6 +258,11 @@ export const field: FormlyFieldConfig = {
       typeof tool?.index === 'number' ? `T${tool.index}` : '',
     accent: '#ea580c',
     collapsible: true,
+    // Edited in a dialog, beside a drawing of the bit.
+    itemDialog: {
+      aside: () =>
+        import('./tool-preview.component').then((m) => m.ToolPreviewComponent),
+    } satisfies ItemDialog,
     headerActions: [
       {
         label: 'Library',

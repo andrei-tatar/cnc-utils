@@ -7,16 +7,26 @@ import {
   Injector,
   OnDestroy,
   OnInit,
+  TemplateRef,
+  Type,
   ViewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { NgComponentOutlet } from '@angular/common';
 import {
   FieldArrayType,
   FormlyFieldConfig,
+  FormlyFormOptions,
   FormlyModule,
 } from '@ngx-formly/core';
+import { FormGroup } from '@angular/forms';
+import { pristine } from '../pristine-config';
 import { generateId } from '../../../util';
-import { NgbCollapseModule, NgbModal } from '@ng-bootstrap/ng-bootstrap';
+import {
+  NgbCollapseModule,
+  NgbModal,
+  NgbModalRef,
+} from '@ng-bootstrap/ng-bootstrap';
 import { rootModel } from '../shapes/describe';
 import { resolvedItem } from '../variables/field';
 import { ConfirmDialogComponent } from './confirm-dialog.component';
@@ -66,8 +76,18 @@ export type ItemAction = {
   }): void;
 };
 
+/**
+ * `props.itemDialog`: the list's items are edited in a dialog instead of in
+ * the list (tools) — a click on an item opens it, with the item's fields
+ * and, beside them, `aside`: a component given the item, its expressions
+ * worked out, as its `item` input (a drawing of the tool).
+ */
+export type ItemDialog = {
+  aside?: () => Promise<Type<unknown>>;
+};
+
 @Component({
-  imports: [FormlyModule, NgbCollapseModule, DragDropModule],
+  imports: [FormlyModule, NgbCollapseModule, DragDropModule, NgComponentOutlet],
   styles: `
     :host {
       display: block;
@@ -477,6 +497,65 @@ export type ItemAction = {
       padding: 0 2px 6px;
     }
 
+    // The dialog is outside the list: it has the list's accent itself.
+    .item-dialog_title,
+    .item-dialog {
+      --accent-base: var(--bs-secondary);
+      --accent: color-mix(
+        in srgb,
+        var(--accent-base) var(--editor-accent-strength, 100%),
+        #fff
+      );
+    }
+
+    .item-dialog_title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+
+      .item_name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+
+    .item-dialog {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .item-dialog_aside {
+      flex: none;
+      width: 300px;
+      position: sticky;
+      top: 0;
+    }
+
+    .item-dialog_form {
+      flex: 1;
+      min-width: 0;
+    }
+
+    @media (max-width: 767.98px) {
+      .item-dialog {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .item-dialog_aside {
+        position: static;
+        width: auto;
+        max-width: 300px;
+        align-self: center;
+      }
+    }
+
     .item_body {
       display: none;
       padding: 8px 10px 4px;
@@ -488,154 +567,116 @@ export type ItemAction = {
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   template: `
-    <div
-      class="list"
-      [class.list--root]="collapsible"
-      [style.--accent-base]="props['accent']"
-    >
+    @if (only) {
+      <!-- A dialog's draft of the list: just the item it edits. -->
+      @if (onlyField; as item) {
+        <formly-field [field]="item"></formly-field>
+      }
+    } @else {
       <div
-        #header
-        class="list_header"
-        [class.list_header--toggle]="foldable && !collapsible"
-        (click)="foldable && toggleCollapsed()"
-        [attr.role]="foldable ? 'button' : null"
-        [attr.aria-expanded]="foldable ? !collapsed : null"
+        class="list"
+        [class.list--root]="collapsible"
+        [style.--accent-base]="props['accent']"
       >
-        @if (foldable) {
-          <span class="chevron" [class.open]="!collapsed"
-            ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M6 3.5 10.5 8 6 12.5" /></svg
-          ></span>
-        }
-        <span class="list_title">{{ props.label }}</span>
-        <span class="list_count">{{ field.fieldGroup?.length ?? 0 }}</span>
-        @if (invalidCount; as count) {
-          <span
-            class="issue-chip"
-            [title]="
-              count +
-              ' ' +
-              (count === 1 ? itemLabel : props.label) +
-              ' need attention'
-            "
-            >⚠ {{ count }}<span class="button-label"> to fix</span></span
-          >
-        }
-        <span class="list_spacer"></span>
-        @for (action of headerActions; track action.label) {
+        <div
+          #header
+          class="list_header"
+          [class.list_header--toggle]="foldable && !collapsible"
+          (click)="foldable && toggleCollapsed()"
+          [attr.role]="foldable ? 'button' : null"
+          [attr.aria-expanded]="foldable ? !collapsed : null"
+        >
+          @if (foldable) {
+            <span class="chevron" [class.open]="!collapsed"
+              ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M6 3.5 10.5 8 6 12.5" /></svg
+            ></span>
+          }
+          <span class="list_title">{{ props.label }}</span>
+          <span class="list_count">{{ field.fieldGroup?.length ?? 0 }}</span>
+          @if (invalidCount; as count) {
+            <span
+              class="issue-chip"
+              [title]="
+                count +
+                ' ' +
+                (count === 1 ? itemLabel : props.label) +
+                ' need attention'
+              "
+              >⚠ {{ count }}<span class="button-label"> to fix</span></span
+            >
+          }
+          <span class="list_spacer"></span>
+          @for (action of headerActions; track action.label) {
+            <button
+              class="btn btn-sm add-button"
+              type="button"
+              (click)="$event.stopPropagation(); runAction(action)"
+              [title]="action.title"
+              [attr.aria-label]="action.title"
+            >
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  [attr.d]="
+                    action.icon ??
+                    'M3 2.5h3v11H3zM7 2.5h3v11H7zM11 3.2l2.6-.7 2.4 10.6-2.6.7z'
+                  "
+                />
+              </svg>
+              <span class="button-label">{{ action.label }}</span>
+            </button>
+          }
           <button
             class="btn btn-sm add-button"
             type="button"
-            (click)="$event.stopPropagation(); runAction(action)"
-            [title]="action.title"
-            [attr.aria-label]="action.title"
+            (click)="$event.stopPropagation(); addNewItem()"
+            [disabled]="!isValid"
+            [title]="
+              isValid
+                ? 'Add ' + itemLabel
+                : 'Fix the invalid fields before adding'
+            "
+            [attr.aria-label]="'Add ' + itemLabel"
           >
             <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                [attr.d]="
-                  action.icon ??
-                  'M3 2.5h3v11H3zM7 2.5h3v11H7zM11 3.2l2.6-.7 2.4 10.6-2.6.7z'
-                "
-              />
+              <path d="M8 3v10M3 8h10" />
             </svg>
-            <span class="button-label">{{ action.label }}</span>
+            <span class="button-label">Add {{ itemLabel }}</span>
           </button>
-        }
-        <button
-          class="btn btn-sm add-button"
-          type="button"
-          (click)="$event.stopPropagation(); addNewItem()"
-          [disabled]="!isValid"
-          [title]="
-            isValid
-              ? 'Add ' + itemLabel
-              : 'Fix the invalid fields before adding'
-          "
-          [attr.aria-label]="'Add ' + itemLabel"
-        >
-          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 3v10M3 8h10" />
-          </svg>
-          <span class="button-label">Add {{ itemLabel }}</span>
-        </button>
-        <button
-          class="btn btn-sm clear-button"
-          type="button"
-          (click)="$event.stopPropagation(); confirmClear()"
-          [disabled]="!field.fieldGroup?.length"
-          [title]="'Remove all ' + props.label"
-          [attr.aria-label]="'Clear all ' + props.label"
-        >
-          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-          <span class="button-label">Clear</span>
-        </button>
-      </div>
+          <button
+            class="btn btn-sm clear-button"
+            type="button"
+            (click)="$event.stopPropagation(); confirmClear()"
+            [disabled]="!field.fieldGroup?.length"
+            [title]="'Remove all ' + props.label"
+            [attr.aria-label]="'Clear all ' + props.label"
+          >
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+            <span class="button-label">Clear</span>
+          </button>
+        </div>
 
-      <div
-        class="list_items"
-        [class.collapsed]="foldable && collapsed"
-        cdkDropList
-        cdkDropListLockAxis="y"
-        (cdkDropListDropped)="drop($event)"
-      >
-        @if (inline && props.description) {
-          <div class="list_description">{{ props.description }}</div>
-        }
-        @for (field of field.fieldGroup; track $index) {
-          @let problems = issues(field);
-          @if (inline) {
-            <div
-              class="item item--inline"
-              [class.item--invalid]="problems.length"
-              cdkDrag
-            >
-              <span class="drag-handle" cdkDragHandle title="drag to reorder"
-                ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                  <g class="dots">
-                    <circle cx="6" cy="4" r="1.2" />
-                    <circle cx="10" cy="4" r="1.2" />
-                    <circle cx="6" cy="8" r="1.2" />
-                    <circle cx="10" cy="8" r="1.2" />
-                    <circle cx="6" cy="12" r="1.2" />
-                    <circle cx="10" cy="12" r="1.2" />
-                  </g></svg
-              ></span>
-              <div class="item_inline-fields">
-                <formly-field [field]="field"></formly-field>
-              </div>
-              <button
-                class="btn btn-sm remove-button"
-                type="button"
-                [title]="'Remove ' + itemLabel"
-                [attr.aria-label]="
-                  'Remove ' + itemLabel + ' ' + itemName(field.model)
-                "
-                (click)="confirmRemove($index)"
+        <div
+          class="list_items"
+          [class.collapsed]="foldable && collapsed"
+          cdkDropList
+          cdkDropListLockAxis="y"
+          (cdkDropListDropped)="drop($event)"
+        >
+          @if (inline && props.description) {
+            <div class="list_description">{{ props.description }}</div>
+          }
+          @for (field of field.fieldGroup; track $index) {
+            @let problems = issues(field);
+            @if (inline) {
+              <div
+                class="item item--inline"
+                [class.item--invalid]="problems.length"
+                cdkDrag
               >
-                <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                  <path
-                    d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
-                  />
-                </svg>
-              </button>
-            </div>
-          } @else {
-            <div
-              class="item"
-              [attr.data-item-id]="field.model.id"
-              [class.item--expanded]="field.model.expanded"
-              [class.item--invalid]="problems.length"
-              [class.item--off]="isOff(field.model)"
-              cdkDrag
-            >
-              <div class="item_header" (click)="toggleExpanded($index)">
-                <span
-                  class="drag-handle"
-                  cdkDragHandle
-                  title="drag to reorder"
-                  (click)="$event.stopPropagation()"
+                <span class="drag-handle" cdkDragHandle title="drag to reorder"
                   ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
                     <g class="dots">
                       <circle cx="6" cy="4" r="1.2" />
@@ -646,140 +687,280 @@ export type ItemAction = {
                       <circle cx="10" cy="12" r="1.2" />
                     </g></svg
                 ></span>
-                <span class="chevron" [class.open]="field.model.expanded"
-                  ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M6 3.5 10.5 8 6 12.5" /></svg
-                ></span>
-                <span class="item_index">{{
-                  itemPrefix(field.model) || $index + 1
-                }}</span>
-                <span
-                  class="item_name"
-                  [class.item_name--auto]="!field.model?.name && describeItem"
-                  >{{ ownName(field.model) }}</span
+                <div class="item_inline-fields">
+                  <formly-field [field]="field"></formly-field>
+                </div>
+                <button
+                  class="btn btn-sm remove-button"
+                  type="button"
+                  [title]="'Remove ' + itemLabel"
+                  [attr.aria-label]="
+                    'Remove ' + itemLabel + ' ' + itemName(field.model)
+                  "
+                  (click)="confirmRemove($index)"
                 >
-                @if (itemType(field.model); as type) {
-                  <span class="item_type">{{ type }}</span>
-                }
-                @if (itemTag(field.model); as tag) {
-                  <span class="item_type item_tag">{{ tag }}</span>
-                }
-                @if (problems.length) {
+                  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
+                    />
+                  </svg>
+                </button>
+              </div>
+            } @else {
+              <div
+                class="item"
+                [attr.data-item-id]="field.model.id"
+                [class.item--expanded]="!dialog && field.model.expanded"
+                [class.item--invalid]="problems.length"
+                [class.item--off]="isOff(field.model)"
+                cdkDrag
+              >
+                <div
+                  class="item_header"
+                  (click)="
+                    dialog ? openItem(field.model.id) : toggleExpanded($index)
+                  "
+                >
                   <span
-                    class="issue-chip"
-                    role="img"
-                    [attr.aria-label]="
-                      'Needs attention: ' + problems.join(', ')
-                    "
-                    [title]="'Needs attention: ' + problems.join(', ')"
-                    >⚠ {{ problems.length }}</span
+                    class="drag-handle"
+                    cdkDragHandle
+                    title="drag to reorder"
+                    (click)="$event.stopPropagation()"
+                    ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                      <g class="dots">
+                        <circle cx="6" cy="4" r="1.2" />
+                        <circle cx="10" cy="4" r="1.2" />
+                        <circle cx="6" cy="8" r="1.2" />
+                        <circle cx="10" cy="8" r="1.2" />
+                        <circle cx="6" cy="12" r="1.2" />
+                        <circle cx="10" cy="12" r="1.2" />
+                      </g></svg
+                  ></span>
+                  @if (!dialog) {
+                    <span class="chevron" [class.open]="field.model.expanded"
+                      ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M6 3.5 10.5 8 6 12.5" /></svg
+                    ></span>
+                  }
+                  <span class="item_index">{{
+                    itemPrefix(field.model) || $index + 1
+                  }}</span>
+                  <span
+                    class="item_name"
+                    [class.item_name--auto]="!field.model?.name && describeItem"
+                    >{{ ownName(field.model) }}</span
                   >
-                }
-                @for (action of itemActions; track action.title) {
-                  <button
-                    class="btn btn-sm item-action-button"
-                    type="button"
-                    [title]="action.title"
-                    [attr.aria-label]="
-                      action.title + ': ' + itemName(field.model)
-                    "
-                    (click)="
-                      $event.stopPropagation();
-                      runItemAction(action, field.model)
-                    "
-                  >
-                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                      <path [attr.d]="action.icon" />
-                    </svg>
-                  </button>
-                }
-                @if (clonable) {
-                  <button
-                    class="btn btn-sm item-action-button"
-                    type="button"
-                    [title]="'Clone ' + itemLabel"
-                    [attr.aria-label]="
-                      'Clone ' + itemLabel + ' ' + itemName(field.model)
-                    "
-                    (click)="$event.stopPropagation(); cloneItem($index)"
-                  >
-                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                      <path d="M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3" />
-                    </svg>
-                  </button>
-                }
-                @if (toggle; as t) {
-                  <button
-                    class="btn btn-sm toggle-button"
-                    type="button"
-                    [class.off]="isOff(field.model)"
-                    [attr.aria-pressed]="!isOff(field.model)"
-                    [title]="isOff(field.model) ? t.offTitle : t.onTitle"
-                    [attr.aria-label]="
-                      (isOff(field.model) ? t.offTitle : t.onTitle) +
-                      ': ' +
-                      itemName(field.model)
-                    "
-                    (click)="$event.stopPropagation(); toggleFlag($index)"
-                  >
-                    @if (t.icon === 'eye') {
+                  @if (itemType(field.model); as type) {
+                    <span class="item_type">{{ type }}</span>
+                  }
+                  @if (itemTag(field.model); as tag) {
+                    <span class="item_type item_tag">{{ tag }}</span>
+                  }
+                  @if (problems.length) {
+                    <span
+                      class="issue-chip"
+                      role="img"
+                      [attr.aria-label]="
+                        'Needs attention: ' + problems.join(', ')
+                      "
+                      [title]="'Needs attention: ' + problems.join(', ')"
+                      >⚠ {{ problems.length }}</span
+                    >
+                  }
+                  @for (action of itemActions; track action.title) {
+                    <button
+                      class="btn btn-sm item-action-button"
+                      type="button"
+                      [title]="action.title"
+                      [attr.aria-label]="
+                        action.title + ': ' + itemName(field.model)
+                      "
+                      (click)="
+                        $event.stopPropagation();
+                        runItemAction(action, field.model)
+                      "
+                    >
+                      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path [attr.d]="action.icon" />
+                      </svg>
+                    </button>
+                  }
+                  @if (dialog) {
+                    <button
+                      class="btn btn-sm item-action-button"
+                      type="button"
+                      [title]="'Edit ' + itemLabel"
+                      [attr.aria-label]="
+                        'Edit ' + itemLabel + ' ' + itemName(field.model)
+                      "
+                      (click)="
+                        $event.stopPropagation(); openItem(field.model.id)
+                      "
+                    >
+                      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M10.5 3 13 5.5 5.5 13H3v-2.5zM9 4.5 11.5 7" />
+                      </svg>
+                    </button>
+                  }
+                  @if (clonable) {
+                    <button
+                      class="btn btn-sm item-action-button"
+                      type="button"
+                      [title]="'Clone ' + itemLabel"
+                      [attr.aria-label]="
+                        'Clone ' + itemLabel + ' ' + itemName(field.model)
+                      "
+                      (click)="$event.stopPropagation(); cloneItem($index)"
+                    >
+                      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3" />
+                      </svg>
+                    </button>
+                  }
+                  @if (toggle; as t) {
+                    <button
+                      class="btn btn-sm toggle-button"
+                      type="button"
+                      [class.off]="isOff(field.model)"
+                      [attr.aria-pressed]="!isOff(field.model)"
+                      [title]="isOff(field.model) ? t.offTitle : t.onTitle"
+                      [attr.aria-label]="
+                        (isOff(field.model) ? t.offTitle : t.onTitle) +
+                        ': ' +
+                        itemName(field.model)
+                      "
+                      (click)="$event.stopPropagation(); toggleFlag($index)"
+                    >
+                      @if (t.icon === 'eye') {
+                        <svg
+                          class="icon"
+                          viewBox="0 0 16 16"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"
+                          />
+                          <circle cx="8" cy="8" r="2" />
+                          @if (isOff(field.model)) {
+                            <path d="M2.5 13.5l11-11" />
+                          }
+                        </svg>
+                      } @else {
+                        <svg
+                          class="icon switch"
+                          viewBox="0 0 20 16"
+                          aria-hidden="true"
+                        >
+                          <rect x="1.5" y="4" width="17" height="8" rx="4" />
+                          <circle
+                            class="knob"
+                            [attr.cx]="isOff(field.model) ? 5.5 : 14.5"
+                            cy="8"
+                            r="2.6"
+                          />
+                        </svg>
+                      }
+                    </button>
+                  }
+                  @if (field.props?.['removable'] !== false) {
+                    <button
+                      class="btn btn-sm remove-button"
+                      type="button"
+                      [title]="'Remove ' + itemLabel"
+                      [attr.aria-label]="
+                        'Remove ' + itemLabel + ' ' + itemName(field.model)
+                      "
+                      (click)="$event.stopPropagation(); confirmRemove($index)"
+                    >
                       <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
                         <path
-                          d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"
-                        />
-                        <circle cx="8" cy="8" r="2" />
-                        @if (isOff(field.model)) {
-                          <path d="M2.5 13.5l11-11" />
-                        }
-                      </svg>
-                    } @else {
-                      <svg
-                        class="icon switch"
-                        viewBox="0 0 20 16"
-                        aria-hidden="true"
-                      >
-                        <rect x="1.5" y="4" width="17" height="8" rx="4" />
-                        <circle
-                          class="knob"
-                          [attr.cx]="isOff(field.model) ? 5.5 : 14.5"
-                          cy="8"
-                          r="2.6"
+                          d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
                         />
                       </svg>
-                    }
-                  </button>
-                }
-                @if (field.props?.['removable'] !== false) {
-                  <button
-                    class="btn btn-sm remove-button"
-                    type="button"
-                    [title]="'Remove ' + itemLabel"
-                    [attr.aria-label]="
-                      'Remove ' + itemLabel + ' ' + itemName(field.model)
-                    "
-                    (click)="$event.stopPropagation(); confirmRemove($index)"
-                  >
-                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
-                      <path
-                        d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.7 7v4M9.3 7v4"
-                      />
-                    </svg>
-                  </button>
-                }
-              </div>
+                    </button>
+                  }
+                </div>
 
-              <div class="item_body" [class.visible]="field.model.expanded">
-                <formly-field [field]="field"></formly-field>
+                <div
+                  class="item_body"
+                  [class.visible]="!dialog && field.model.expanded"
+                >
+                  <formly-field [field]="field"></formly-field>
+                </div>
               </div>
+            }
+          } @empty {
+            <div class="list_empty">
+              No {{ props.label }} yet — use “Add {{ itemLabel }}” above.
             </div>
           }
-        } @empty {
-          <div class="list_empty">
-            No {{ props.label }} yet — use “Add {{ itemLabel }}” above.
-          </div>
-        }
+        </div>
       </div>
-    </div>
+    }
+
+    <ng-template #itemDialog let-modal>
+      @if (draft; as draft) {
+        @let item = draftItem;
+        <div class="modal-header">
+          <h2
+            class="item-dialog_title"
+            id="item-dialog-title"
+            [style.--accent-base]="props['accent']"
+          >
+            @if (itemPrefix(item); as prefix) {
+              <span class="item_index">{{ prefix }}</span>
+            }
+            <span
+              class="item_name"
+              [class.item_name--auto]="!item?.name && describeItem"
+              >{{ ownName(item) }}</span
+            >
+          </h2>
+          <button
+            type="button"
+            class="btn-close"
+            aria-label="Cancel"
+            title="Cancel"
+            (click)="modal.dismiss()"
+          ></button>
+        </div>
+        <div class="modal-body">
+          <div class="item-dialog" [style.--accent-base]="props['accent']">
+            @if (dialogAside; as aside) {
+              <div class="item-dialog_aside">
+                <ng-container
+                  *ngComponentOutlet="aside; inputs: { item: resolved(item) }"
+                />
+              </div>
+            }
+            <div class="item-dialog_form">
+              <formly-form
+                [form]="draft.form"
+                [fields]="draft.fields"
+                [model]="draft.model"
+                [options]="draft.options"
+              ></formly-form>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            (click)="modal.dismiss()"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            (click)="modal.close(true)"
+          >
+            Save
+          </button>
+        </div>
+      }
+    </ng-template>
   `,
 })
 export class ArrayTypeComponent
@@ -793,9 +974,156 @@ export class ArrayTypeComponent
   private collapsedSync?: Subscription;
   collapsed = false;
 
-  @ViewChild('header', { static: true })
-  private header!: ElementRef<HTMLElement>;
+  @ViewChild('header')
+  private header?: ElementRef<HTMLElement>;
   private headerObservers: Array<ResizeObserver | MutationObserver> = [];
+
+  @ViewChild('itemDialog', { static: true })
+  private itemDialog!: TemplateRef<unknown>;
+  private dialogRef?: NgbModalRef;
+  /**
+   * What the dialog edits (`props.itemDialog`): a form of its own over a
+   * copy of the list, showing one item of it (`props.only`). The project
+   * only hears of it on Save.
+   */
+  draft: {
+    id: string;
+    /** Not in the list yet: where Save puts it (at the end when not set). */
+    added?: { at?: number };
+    form: FormGroup;
+    fields: FormlyFieldConfig[];
+    model: any;
+    options: FormlyFormOptions;
+  } | null = null;
+  /** What the dialog shows beside the item's fields, once it's loaded. */
+  dialogAside: Type<unknown> | null = null;
+
+  /** `props.itemDialog`: items are edited in a dialog, not in the list. */
+  get dialog(): ItemDialog | undefined {
+    return this.props['itemDialog'];
+  }
+
+  /**
+   * `props.only`: this list is a dialog's draft, and shows nothing but the
+   * fields of the item with this id.
+   */
+  get only(): string | undefined {
+    return this.props['only'];
+  }
+
+  get onlyField(): FormlyFieldConfig | undefined {
+    return this.field.fieldGroup?.find((f) => f.model?.id === this.only);
+  }
+
+  /** The item as it is in the dialog. */
+  get draftItem(): any {
+    const draft = this.draft;
+    return draft?.model[this.listKey]?.find(
+      (item: any) => item?.id === draft.id,
+    );
+  }
+
+  /** The item with its expressions worked out. */
+  resolved(model: any) {
+    return resolvedItem(this.field, model);
+  }
+
+  /**
+   * Open an item in the dialog: the one with this id, or a new one
+   * (`added`: the item, and where Save puts it). The dialog edits a copy —
+   * the list's own fields, built again over a copy of the project with a
+   * copy of the list, so what they look up (the other items, variables) is
+   * there —; Save puts the item in the list, anything else (Cancel, Esc)
+   * leaves the list as it is. For a list at the top of the model.
+   */
+  async openItem(id: string, added?: { item: object; at?: number }) {
+    const dialog = this.dialog;
+    if (!dialog || !id || this.dialogRef) {
+      return;
+    }
+    const items: any[] = structuredClone(this.model ?? []);
+    if (added) {
+      items.splice(added.at ?? items.length, 0, added.item);
+    }
+    const config = pristine(this.field);
+    const draft: NonNullable<ArrayTypeComponent['draft']> = {
+      id,
+      added: added && { at: added.at },
+      form: new FormGroup({}),
+      fields: [
+        {
+          ...config,
+          props: { ...config.props, itemDialog: undefined, only: id },
+        },
+      ],
+      model: { ...(rootModel(this.field) ?? {}), [this.listKey]: items },
+      options: { formState: this.options?.formState ?? {} },
+    };
+    const ref = this.modals.open(this.itemDialog, {
+      size: dialog.aside ? 'lg' : undefined,
+      centered: true,
+      scrollable: true,
+      // A click beside the dialog doesn't throw the edits away.
+      backdrop: 'static',
+      windowClass: 'editor-dialog',
+      ariaLabelledBy: 'item-dialog-title',
+    });
+    this.dialogRef = ref;
+    this.draft = draft;
+    const closed = (saved: boolean) => {
+      if (this.dialogRef === ref) {
+        this.dialogRef = undefined;
+        this.draft = null;
+        this.changes.markForCheck();
+      }
+      if (saved) {
+        this.applyDraft(draft);
+      }
+    };
+    ref.result.then(
+      (saved) => closed(saved === true),
+      () => closed(false),
+    );
+    if (dialog.aside && !this.dialogAside) {
+      this.dialogAside = await dialog.aside();
+      this.changes.markForCheck();
+    }
+  }
+
+  /** Put the dialog's item in the list: in place of the one it edited. */
+  private applyDraft(draft: NonNullable<ArrayTypeComponent['draft']>) {
+    const edited = draft.model[this.listKey]?.find(
+      (item: any) => item?.id === draft.id,
+    );
+    if (!edited) {
+      return;
+    }
+    const item = structuredClone(edited);
+    const count = this.model?.length ?? 0;
+    if (draft.added) {
+      this.add(Math.min(draft.added.at ?? count, count), item);
+      return;
+    }
+    // Find it again: the list may have changed while the dialog was open
+    // (gone: nothing to save to).
+    const index = (this.model ?? []).findIndex(
+      (other: any) => other?.id === draft.id,
+    );
+    if (
+      index === -1 ||
+      JSON.stringify(this.model[index]) === JSON.stringify(item)
+    ) {
+      return;
+    }
+    // Formly has no "replace": as in drop(), the item is made again from
+    // its model (same id, so its pipelines are reused).
+    this.remove(index, { markAsDirty: false });
+    this.add(index, item);
+  }
+
+  private get listKey() {
+    return String(this.field.key);
+  }
 
   get itemLabel(): string {
     return this.props['itemLabel'] ?? 'item';
@@ -904,7 +1232,10 @@ export class ArrayTypeComponent
   ngAfterViewInit() {
     // Refit when the header is resized or its contents change (the item
     // count or the "to fix" chip).
-    const header = this.header.nativeElement;
+    const header = this.header?.nativeElement;
+    if (!header) {
+      return;
+    }
     const fit = () => this.fitHeader();
     const resize = new ResizeObserver(fit);
     resize.observe(header);
@@ -919,6 +1250,7 @@ export class ArrayTypeComponent
   }
 
   ngOnDestroy() {
+    this.dialogRef?.dismiss();
     this.headerObservers.forEach((o) => o.disconnect());
     this.collapsedSync?.unsubscribe();
   }
@@ -928,7 +1260,10 @@ export class ArrayTypeComponent
    * full labels, then no "Clear" label, then icon-only buttons.
    */
   private fitHeader() {
-    const header = this.header.nativeElement;
+    const header = this.header?.nativeElement;
+    if (!header) {
+      return;
+    }
     const title = header.querySelector<HTMLElement>('.list_title');
     for (const level of ['0', '1', '2']) {
       header.dataset['compact'] = level;
@@ -1027,6 +1362,11 @@ export class ArrayTypeComponent
     this.collapseAllItems();
     this.collapsed = this.foldable ? false : this.collapsed;
     const id = await generateId();
+    if (this.dialog) {
+      // In the list once its dialog is saved.
+      this.openItem(id, { item: { id, expanded: false } });
+      return;
+    }
     this.add(undefined, this.inline ? { id } : { id, expanded: true });
   }
 
@@ -1053,6 +1393,10 @@ export class ArrayTypeComponent
     // Find it again: generating ids is asynchronous.
     const current = (this.model ?? []).indexOf(original);
     const at = (current === -1 ? index : current) + 1;
+    if (this.dialog) {
+      this.openItem(copy.id, { item: { ...copy, expanded: false }, at });
+      return;
+    }
     this.collapseAllItems();
     this.add(at, { ...copy, expanded: true });
   }

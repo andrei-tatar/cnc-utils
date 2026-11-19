@@ -71,6 +71,9 @@ body {
   --editor-on-accent: #10141a;
 }
 
+// The editor's fields are styled the same in a dialog that edits an item
+// (`.editor-dialog`, the window class of the lists' item dialog).
+
 // One field per row: fixed-width label on the left, control on the right.
 formly-wrapper-form-field > div {
   display: flex;
@@ -132,7 +135,7 @@ formly-wrapper-form-field > div {
   }
 }
 
-app-model-editor {
+:is(app-model-editor, .editor-dialog) {
   .form-control,
   .form-select {
     padding: 0.25rem 0.5rem;
@@ -157,7 +160,7 @@ formly-wrapper-form-field > div > formly-field-number {
   min-width: 0;
 }
 
-app-model-editor formly-field-number .input-group-text {
+:is(app-model-editor, .editor-dialog) formly-field-number .input-group-text {
   padding: 0.25rem 0.5rem;
   font-size: 0.8rem;
   color: var(--bs-secondary-color);
@@ -165,14 +168,14 @@ app-model-editor formly-field-number .input-group-text {
 
 // Inputs holding numbers to read as code (e.g. "x, y" point lists): the
 // same font as the expressions in number fields.
-app-model-editor .code-input .form-control {
+:is(app-model-editor, .editor-dialog) .code-input .form-control {
   font-family: var(--code-font);
   font-variant-ligatures: none;
 }
 
 // A path command: its letter, then its numbers (each after its name),
 // wrapping onto more lines for the curves and arcs.
-app-model-editor .path-command-row {
+:is(app-model-editor, .editor-dialog) .path-command-row {
   flex-wrap: wrap;
   row-gap: 4px;
 
@@ -237,11 +240,11 @@ app-model-editor .path-command-row {
 
 // A variable: "name  value" on one row, without labels; a boolean's shape:
 // "operation  shape" (the first shape has no operation); a point: "x  y".
-app-model-editor .variable-row,
-app-model-editor .operand-row,
-app-model-editor .nest-row,
-app-model-editor .point-row,
-app-model-editor .path-command-row {
+:is(app-model-editor, .editor-dialog) .variable-row,
+:is(app-model-editor, .editor-dialog) .operand-row,
+:is(app-model-editor, .editor-dialog) .nest-row,
+:is(app-model-editor, .editor-dialog) .point-row,
+:is(app-model-editor, .editor-dialog) .path-command-row {
   display: flex;
   align-items: flex-start;
   gap: 6px;

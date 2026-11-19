@@ -1,8 +1,9 @@
 import { inject, Injectable } from '@angular/core';
 import { FormGroup } from '@angular/forms';
-import { FormlyFieldConfig, FormlyFormBuilder } from '@ngx-formly/core';
+import { FormlyFormBuilder } from '@ngx-formly/core';
 import { ModelFieldConfig, ModelType } from '../model-editor/model';
 import { snapshot } from '../services/model-store.service';
+import { pristine } from '../model-editor/pristine-config';
 
 /**
  * Puts a model through the editor's form without showing it, so it comes
@@ -28,30 +29,4 @@ export class ModelNormalizer {
     });
     return copy;
   }
-}
-
-/**
- * A copy of a field config as written: its objects and arrays copied,
- * functions and anything else shared, a list's items (made by the form
- * from `fieldArray`) left out.
- */
-function pristine(field: FormlyFieldConfig): FormlyFieldConfig {
-  const copy: Record<string, unknown> = {};
-  for (const key of Object.keys(field)) {
-    if (key === 'fieldGroup' && field.fieldArray) continue;
-    copy[key] = copyConfig((field as Record<string, unknown>)[key]);
-  }
-  return copy as FormlyFieldConfig;
-}
-
-function copyConfig(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(copyConfig);
-  if (
-    typeof value === 'object' &&
-    value !== null &&
-    Object.getPrototypeOf(value) === Object.prototype
-  ) {
-    return pristine(value as FormlyFieldConfig);
-  }
-  return value;
 }
