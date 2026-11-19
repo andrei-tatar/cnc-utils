@@ -1,4 +1,4 @@
-import { simulateStock, toolProfile } from './simulate';
+import { simulateStock, taperedBallNose, toolProfile } from './simulate';
 import { CamPath } from './types';
 
 describe('simulateStock', () => {
@@ -63,6 +63,44 @@ describe('simulateStock', () => {
     const ball = toolProfile({ bitType: 'ball-nose', diameter: 6 });
     expect(ball(0)).toBe(0);
     expect(ball(3)).toBeCloseTo(3);
+  });
+
+  it('shapes a tapered ball nose: a ball, then a straight side', () => {
+    const tool = {
+      bitType: 'tapered-ball-nose',
+      diameter: 6,
+      tipRadius: 0.5,
+      taperAngle: 5,
+    };
+    const profile = toolProfile(tool);
+    const { reach, height, top } = taperedBallNose(tool);
+    const angle = (5 * Math.PI) / 180;
+    expect(profile(0)).toBe(0);
+    // On the ball below where the side starts.
+    expect(profile(0.3)).toBeCloseTo(0.5 - Math.sqrt(0.25 - 0.09));
+    expect(reach).toBeCloseTo(0.5 * Math.cos(angle));
+    expect(height).toBeCloseTo(0.5 * (1 - Math.sin(angle)));
+    // The side leaves the ball smoothly, 5° off the axis.
+    expect(profile(reach)).toBeCloseTo(height);
+    const slope = (from: number, to: number) =>
+      (profile(to) - profile(from)) / (to - from);
+    expect(slope(reach, reach + 1e-3)).toBeCloseTo(1 / Math.tan(angle), 6);
+    expect(slope(reach - 1e-5, reach)).toBeCloseTo(1 / Math.tan(angle), 0);
+    expect(profile(3)).toBeCloseTo(top);
+    expect(top).toBeCloseTo(height + (3 - reach) / Math.tan(angle));
+  });
+
+  it('takes a tapered ball nose with a ball as wide as it is for a ball nose', () => {
+    const tapered = toolProfile({
+      bitType: 'tapered-ball-nose',
+      diameter: 6,
+      tipRadius: 4,
+      taperAngle: 0,
+    });
+    const ball = toolProfile({ bitType: 'ball-nose', diameter: 6 });
+    for (const d of [0, 1, 2, 3]) {
+      expect(tapered(d)).toBeCloseTo(ball(d));
+    }
   });
 });
 

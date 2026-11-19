@@ -29,6 +29,18 @@ export function operationCut(
   tool: Partial<ToolType> | undefined,
   operations: readonly any[],
 ): Cut | null {
+  if (tool?.bitType === 'tapered-ball-nose') {
+    // What cuts is the ball at its tip: fed as a ball nose that wide (the
+    // taper above it only makes it stiffer).
+    tool = {
+      ...tool,
+      bitType: 'ball-nose',
+      diameter: Math.min(
+        tool.diameter ?? 0,
+        2 * Math.max(0, tool.tipRadius ?? 0),
+      ),
+    };
+  }
   const diameter = tool?.diameter ?? 0;
   if (!op || !(diameter > 0)) {
     return null;

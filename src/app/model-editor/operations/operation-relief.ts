@@ -1,7 +1,7 @@
 import { AbstractControl } from '@angular/forms';
 import { FormlyFieldConfig } from '@ngx-formly/core';
 import { numberIn } from '../variables/field';
-import { allTools } from '../tools';
+import { allTools, stepoverDiameter } from '../tools';
 import { imagePlacementField, ImagePlacementModel } from './image-placement';
 import { onRotary } from './rotation';
 import { allShapes } from '../shapes/describe';
@@ -339,16 +339,31 @@ function stepoverHint(field: FormlyFieldConfig): string {
   const op = field.model;
   const tool = allTools(field).find((t) => t.id === op?.toolId);
   const share = numberIn(field, op?.toolEngagement) ?? 0;
-  const diameter = numberIn(field, tool?.diameter) ?? 0;
+  const tapered = tool?.bitType === 'tapered-ball-nose';
+  // A tapered ball nose's stepover goes by the ball at its tip.
+  const diameter = stepoverDiameter({
+    bitType: tool?.bitType,
+    diameter: numberIn(field, tool?.diameter),
+    tipRadius: numberIn(field, tool?.tipRadius),
+  });
   if (!(diameter > 0) || !(share > 0)) {
-    return 'share of the bit’s diameter between lines';
+    return tapered
+      ? 'share of the diameter of the ball at the bit’s tip between lines'
+      : 'share of the bit’s diameter between lines';
   }
   const round = (value: number) => Math.round(value * 1000) / 1000;
   const step = share * diameter;
+  const r = diameter / 2;
+  if (tapered) {
+    // Lines further apart than the ball is wide leave the taper's ridges.
+    const angle = ((numberIn(field, tool?.taperAngle) ?? 0) * Math.PI) / 180;
+    return step / 2 > r * Math.cos(angle)
+      ? `${round(step)} mm between lines: wider than the Ø${round(diameter)} ball at the tip`
+      : `${round(step)} mm between lines (of the Ø${round(diameter)} ball at the tip); scallops ${round(r - Math.sqrt(Math.max(0, r * r - (step / 2) ** 2)))} mm high`;
+  }
   if (tool?.bitType !== 'ball-nose') {
     return `${round(step)} mm between lines`;
   }
-  const r = diameter / 2;
   const scallop = r - Math.sqrt(Math.max(0, r * r - (step / 2) ** 2));
   return `${round(step)} mm between lines; scallops ${round(scallop)} mm high`;
 }

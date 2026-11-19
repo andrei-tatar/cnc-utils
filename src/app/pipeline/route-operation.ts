@@ -18,6 +18,7 @@ import {
 import { pointLength } from '../model-editor/operations/operation-drill';
 import { depthPerStep } from '../model-editor/operations/depth-steps';
 import { operationLabel } from '../model-editor/operations';
+import { stepoverDiameter } from '../model-editor/tools';
 import { recover } from './errors';
 import { DowelHoles } from './flip';
 import { Rotary } from '../../cam/rotary';
@@ -402,8 +403,10 @@ function route({
           vAngle,
           tipDiameter,
           cornerRadius: tool.cornerRadius,
+          tipRadius: tool.tipRadius,
+          taperAngle: tool.taperAngle,
         },
-        spacing: op.toolEngagement * diameter,
+        spacing: op.toolEngagement * stepoverDiameter(tool),
         angle: op.rasterAngle ?? 0,
         oneWay: !!op.allPassesInSameDirection,
         crossPass: !!op.crossPass,

@@ -104,6 +104,24 @@ describe('operationCut', () => {
     expect((unlimited as any).depth).toBeCloseTo(6, 6);
   });
 
+  it('feeds a tapered ball nose as a ball nose as wide as its tip', () => {
+    const relief = { type: 'relief', reliefDepth: 8, toolEngagement: 0.1 };
+    const tapered = {
+      diameter: 6,
+      bitType: 'tapered-ball-nose' as const,
+      tipRadius: 0.5,
+      taperAngle: 5,
+      flutes: 2,
+    };
+    expect(operationCut(relief, tapered, [])).toEqual(
+      operationCut(
+        relief,
+        { diameter: 1, bitType: 'ball-nose', flutes: 2 },
+        [],
+      ),
+    );
+  });
+
   it('cuts a ball nose as wide as it goes in all, its edge sloping above', () => {
     const ball = { diameter: 6, bitType: 'ball-nose' as const, flutes: 3 };
     // A juice groove deeper than the radius: the ball's widest part cuts,

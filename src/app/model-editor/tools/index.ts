@@ -8,7 +8,13 @@ import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import type { FluteType } from '../../../cam/feeds-speeds';
 
 export type BitType =
-  'end-mill' | 'ball-nose' | 'bull-nose' | 'v-bit' | 'drill' | 'keyhole';
+  | 'end-mill'
+  | 'ball-nose'
+  | 'tapered-ball-nose'
+  | 'bull-nose'
+  | 'v-bit'
+  | 'drill'
+  | 'keyhole';
 
 /** Bits that cut sideways (everything but a drill). */
 export const SIDE_CUTTING: readonly BitType[] = [
@@ -33,6 +39,7 @@ export const FLUTE_TYPE_LABELS: Record<FluteType, string> = {
 export const BIT_TYPE_LABELS: Record<BitType, string> = {
   'end-mill': 'end mill',
   'ball-nose': 'ball nose',
+  'tapered-ball-nose': 'tapered ball nose',
   'bull-nose': 'bull nose',
   'v-bit': 'v-bit',
   drill: 'drill',
@@ -61,6 +68,13 @@ export type ToolType = {
   cornerRadius?: number;
   /** Drill: the angle of its point (degrees, 118 for most twist drills). */
   pointAngle?: number;
+  /**
+   * Tapered ball nose: the radius of the ball at its tip (mm). Its
+   * `diameter` is where the taper is widest (usually the shank's).
+   */
+  tipRadius?: number;
+  /** Tapered ball nose: how far its side leans off the axis (degrees). */
+  taperAngle?: number;
   /** How many cutting edges it has (2 when not set): for feeds and speeds. */
   flutes?: number;
   /**
@@ -143,6 +157,19 @@ export function numberedToolLabel(
     : label;
 }
 
+/**
+ * The diameter a relief's stepover is a share of: the ball at the tip of a
+ * tapered ball nose (that's what cuts the surface), else the bit's own.
+ */
+export function stepoverDiameter(
+  tool: Pick<Partial<ToolType>, 'bitType' | 'diameter' | 'tipRadius'>,
+): number {
+  const diameter = tool.diameter ?? 0;
+  return tool.bitType === 'tapered-ball-nose'
+    ? Math.min(diameter, 2 * Math.max(0, tool.tipRadius ?? 0))
+    : diameter;
+}
+
 /** The other tool with the same index as the one `field` belongs to. */
 function sameIndexTool(field: FormlyFieldConfig): ToolType | undefined {
   const index = numberIn(field, field.formControl?.value);
@@ -178,6 +205,15 @@ export function describeTool(tool: Partial<ToolType> | undefined): string {
       if (tool.cornerRadius) {
         parts.push(`r${tool.cornerRadius}`);
       }
+      break;
+    case 'tapered-ball-nose':
+      if (tool.tipRadius) {
+        parts.push(`R${tool.tipRadius}`);
+      }
+      if (tool.taperAngle) {
+        parts.push(`${tool.taperAngle}°`);
+      }
+      parts.push('tapered ball nose');
       break;
     case 'ball-nose':
     case 'drill':
@@ -308,6 +344,7 @@ export const field: FormlyFieldConfig = {
           options: [
             { value: 'end-mill', label: 'end mill (flat)' },
             { value: 'ball-nose', label: 'ball nose' },
+            { value: 'tapered-ball-nose', label: 'tapered ball nose' },
             { value: 'bull-nose', label: 'bull nose (rounded corners)' },
             { value: 'v-bit', label: 'v-bit / chamfer / engraving' },
             { value: 'drill', label: 'drill' },
@@ -323,6 +360,57 @@ export const field: FormlyFieldConfig = {
           label: 'diameter',
           required: true,
         },
+        expressions: {
+          'props.description': (field: FormlyFieldConfig) =>
+            field.model?.bitType === 'tapered-ball-nose'
+              ? 'mm, where the taper is widest (usually the shank’s)'
+              : field.model?.bitType === 'keyhole'
+                ? 'mm, across the head'
+                : undefined,
+        },
+      },
+      {
+        key: 'tipRadius',
+        type: 'number',
+        defaultValue: 0.5,
+        props: {
+          min: 0,
+          label: 'tip radius',
+          description: 'mm, the ball at the tip: R0.5 is a 1 mm ball',
+          required: true,
+        },
+        validators: {
+          withinDiameter: {
+            expression: (
+              control: AbstractControl,
+              field: FormlyFieldConfig,
+            ) => {
+              const radius = numberIn(field, control.value);
+              const diameter = numberIn(field, field.model?.diameter);
+              return (
+                radius === undefined ||
+                diameter === undefined ||
+                radius <= diameter / 2 + 1e-9
+              );
+            },
+            message: 'No more than half the diameter',
+          },
+        },
+        expressions: { hide: hideUnlessBit('tapered-ball-nose') },
+      },
+      {
+        key: 'taperAngle',
+        type: 'number',
+        defaultValue: 5,
+        props: {
+          min: 0,
+          max: 89,
+          label: 'taper angle',
+          description:
+            '° per side, between the bit’s side and its axis (half the included angle)',
+          required: true,
+        },
+        expressions: { hide: hideUnlessBit('tapered-ball-nose') },
       },
       {
         key: 'vAngle',
@@ -372,6 +460,30 @@ export const field: FormlyFieldConfig = {
         expressions: { hide: hideUnlessBit('drill') },
       },
       {
+        key: 'neckDiameter',
+        type: 'number',
+        defaultValue: 4.8,
+        props: {
+          min: 0,
+          label: 'neck diameter',
+          description: 'mm, the narrow part above the head: the slot’s width',
+          required: true,
+        },
+        expressions: { hide: hideUnlessBit('keyhole') },
+      },
+      {
+        key: 'headHeight',
+        type: 'number',
+        defaultValue: 3.2,
+        props: {
+          min: 0,
+          label: 'head height',
+          description: 'mm, how tall the cutting head is',
+          required: true,
+        },
+        expressions: { hide: hideUnlessBit('keyhole') },
+      },
+      {
         key: 'flutes',
         type: 'number',
         defaultValue: 2,
@@ -418,30 +530,6 @@ export const field: FormlyFieldConfig = {
           description:
             'mm from the collet nut to the tip; where the nut would meet the material is flagged (blank: not checked)',
         },
-      },
-      {
-        key: 'neckDiameter',
-        type: 'number',
-        defaultValue: 4.8,
-        props: {
-          min: 0,
-          label: 'neck diameter',
-          description: 'mm, the narrow part above the head: the slot’s width',
-          required: true,
-        },
-        expressions: { hide: hideUnlessBit('keyhole') },
-      },
-      {
-        key: 'headHeight',
-        type: 'number',
-        defaultValue: 3.2,
-        props: {
-          min: 0,
-          label: 'head height',
-          description: 'mm, how tall the cutting head is',
-          required: true,
-        },
-        expressions: { hide: hideUnlessBit('keyhole') },
       },
       toolFeedsAndSpeeds,
     ],

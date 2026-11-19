@@ -191,7 +191,7 @@ const allowedBits: Record<
     needs: 'an end mill',
   },
   [ReliefDefinition.type]: {
-    bits: SIDE_CUTTING,
+    bits: [...SIDE_CUTTING, 'tapered-ball-nose'],
     needs: 'a ball nose (or another cutter, not a drill)',
   },
   [ReliefRoughDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },

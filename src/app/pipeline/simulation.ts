@@ -76,6 +76,8 @@ export function simulationInput(
       tipDiameter: tool.tipDiameter,
       cornerRadius: tool.cornerRadius,
       pointAngle: tool.pointAngle,
+      tipRadius: tool.tipRadius,
+      taperAngle: tool.taperAngle,
     };
     widest = Math.max(widest, tool.diameter);
   }

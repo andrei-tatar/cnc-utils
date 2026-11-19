@@ -12,6 +12,10 @@ export type SimulatedTool = {
   cornerRadius?: number;
   /** Drill: the angle of its point (degrees). */
   pointAngle?: number;
+  /** Tapered ball nose: the radius of the ball at its tip (mm). */
+  tipRadius?: number;
+  /** Tapered ball nose: how far its side leans off the axis (degrees). */
+  taperAngle?: number;
 };
 
 /** The block of material to cut into, in design coordinates. */
@@ -123,9 +127,37 @@ export function toolProfile(tool: SimulatedTool): (d: number) => number {
       const tan = Math.tan((((tool.pointAngle ?? 118) / 2) * Math.PI) / 180);
       return (d) => d / Math.max(tan, 1e-6);
     }
+    case 'tapered-ball-nose': {
+      const { ball, reach, height, tan } = taperedBallNose(tool);
+      return (d) =>
+        d <= reach
+          ? ball - Math.sqrt(Math.max(0, ball * ball - d * d))
+          : height + (d - reach) / tan;
+    }
     default:
       return () => 0;
   }
+}
+
+/**
+ * A tapered ball nose's shape: the radius of its ball (`ball`, never wider
+ * than the bit), how far from the axis (`reach`) and how high above the tip
+ * (`height`) the ball ends and the straight side starts — where they're
+ * tangent —, the tangent of the side's angle off the axis (`tan`), and how
+ * high above the tip the side reaches the bit's full diameter (`top`).
+ */
+export function taperedBallNose(
+  tool: Pick<SimulatedTool, 'diameter' | 'tipRadius' | 'taperAngle'>,
+) {
+  const r = Math.max(0, tool.diameter / 2);
+  const ball = Math.min(Math.max(0, tool.tipRadius ?? 0), r);
+  const angle =
+    (Math.min(Math.max(tool.taperAngle ?? 0, 0), 89) * Math.PI) / 180;
+  const tan = Math.max(Math.tan(angle), 1e-6);
+  // Never past the bit's side: a ball as wide as the bit is a ball nose.
+  const reach = Math.min(ball * Math.cos(angle), r);
+  const height = ball - Math.sqrt(Math.max(0, ball * ball - reach * reach));
+  return { ball, reach, height, tan, top: height + (r - reach) / tan };
 }
 
 /** Lowers the material where the bit passes from `a` to `b`. */

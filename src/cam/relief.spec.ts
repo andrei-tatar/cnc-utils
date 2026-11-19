@@ -223,6 +223,12 @@ describe('dropCutter', () => {
       { bitType: 'v-bit', diameter: 2, vAngle: 60, tipDiameter: 0 },
       { bitType: 'bull-nose', diameter: 2, cornerRadius: 0.4 },
       { bitType: 'end-mill', diameter: 1.2 },
+      {
+        bitType: 'tapered-ball-nose',
+        diameter: 2,
+        tipRadius: 0.25,
+        taperAngle: 10,
+      },
     ];
     for (const tool of tools) {
       const tip = dropCutter(surface, tool);

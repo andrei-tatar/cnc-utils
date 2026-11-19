@@ -168,6 +168,8 @@ function sameTool(a: any, b: any): boolean {
     'tipDiameter',
     'cornerRadius',
     'pointAngle',
+    'tipRadius',
+    'taperAngle',
     'headHeight',
     'fluteType',
   ];
