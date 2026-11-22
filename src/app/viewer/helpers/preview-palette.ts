@@ -17,6 +17,8 @@ export type PreviewPalette = {
   measure: Color;
   /** The points a shape is reshaped by. */
   handles: { point: Color; control: Color; locked: Color };
+  /** The G-code lines selected beside the preview, and the bit's tip. */
+  gcode: { line: Color; tip: Color };
   /** Cuts by depth, surface → deepest, as CSS colours. */
   depthStops: string[];
   /** Cuts by feed, slowest → fastest. */
@@ -43,6 +45,7 @@ const DARK: PreviewPalette = {
     control: new Color('#ffb74d'),
     locked: new Color('#8a8f98'),
   },
+  gcode: { line: new Color('#ffffff'), tip: new Color('#ffd54f') },
   // Pale cyan, blue, magenta.
   depthStops: ['#b3f0ff', '#2f80ed', '#e040fb'],
   // Red, amber, green.
@@ -70,6 +73,7 @@ const LIGHT: PreviewPalette = {
     control: new Color('#d97706'),
     locked: new Color('#7b8494'),
   },
+  gcode: { line: new Color('#111827'), tip: new Color('#f59e0b') },
   depthStops: ['#5cc8f0', '#1d5fd6', '#c026d3'],
   feedStops: ['#dc2626', '#d99a06', '#16a34a'],
 };

@@ -11,6 +11,7 @@ import {
 } from 'rxjs';
 import { recover } from './errors';
 import { GCodeBuilder, JobTime } from '../../cam/gcode-builder';
+import { GcodeListing } from '../../cam/gcode-listing';
 import { resolveStock, stockOffset } from '../../cam/stock';
 import { GcodeOptions, resolveGcodeOptions } from '../../cam/gcode-options';
 import { GeometrySettings } from '../../cam/geometry';
@@ -616,6 +617,20 @@ export function buildProgram(
   descriptions?: OperationDescriptions,
 ): string {
   return wholeProgram(program, modelMetadata, descriptions).build(
+    program.options,
+  );
+}
+
+/**
+ * The program's G-code line by line, each with the move it makes in the
+ * preview (see `GCodeBuilder.toListing`): what `buildProgram` writes,
+ * without the embedded project.
+ */
+export function programListing(
+  program: Program,
+  descriptions?: OperationDescriptions,
+): GcodeListing {
+  return wholeProgram(program, undefined, descriptions).toListing(
     program.options,
   );
 }

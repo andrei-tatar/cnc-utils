@@ -49,6 +49,8 @@ export type ShapeEditorHost = {
   requestRender: () => void;
   /** What the pointer would do here, for the HUD ('' for nothing). */
   hint: (text: string) => void;
+  /** A click something else takes first (true: it isn't a shape's). */
+  pick?: (event: MouseEvent) => boolean;
   /** A shape clicked (null: none, clicked off every shape). */
   select: (shapeId: string | null) => void;
   moveShape: (shapeId: string, dx: number, dy: number) => void;
@@ -367,6 +369,7 @@ export class ShapeEditor {
       const moved =
         !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4;
       if (dragged || moved || !this.host.active()) return;
+      if (this.host.pick?.(event)) return;
       const at = this.pointAt(event);
       if (!at) return;
       const id = this.shapeAt(at);

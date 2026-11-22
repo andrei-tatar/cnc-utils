@@ -64,7 +64,24 @@
       (shapeSelect)="onShapeSelect($event)"
       (shapeMove)="onShapeMove($event)"
       (pointMove)="onPointMove($event)"
+      [gcodeShown]="(cam.gcodeShown$ | async) ?? false"
+      (gcodeShownChange)="showGcode($event)"
+      [gcode]="(cam.gcodeView$ | async)?.listing ?? null"
+      [gcodeLines]="gcodeLines()"
+      (gcodeLine)="gcodeView()?.reveal($event)"
     />
+
+    @if (cam.gcodeShown$ | async) {
+      <app-gcode-view
+        [view]="cam.gcodeView$ | async"
+        [dark]="theme.dark()"
+        [working]="(isWorking$ | async) ?? false"
+        [(width)]="gcodeWidth"
+        (lines)="gcodeLines.set($event)"
+        (close)="showGcode(false)"
+        (download)="cam.download()"
+      />
+    }
   </div>
 </div>
 

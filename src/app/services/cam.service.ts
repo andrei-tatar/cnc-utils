@@ -92,7 +92,13 @@ import {
   cutOperations,
   flatOperations,
 } from '../model-editor/operations/flatten';
-import { recover } from '../pipeline/errors';
+import { recover, reportError } from '../pipeline/errors';
+import {
+  GcodeView,
+  gcodeView,
+  loadGcodeShown,
+  saveGcodeShown,
+} from '../pipeline/gcode-view';
 
 /**
  * Wires the reactive graph: model → shapes → G-code → toolpaths, plus what
@@ -269,6 +275,51 @@ export class CamService implements ShapeExporter {
                   )
                 : of(null),
             ),
+          ),
+    ),
+    shareReplay({ bufferSize: 1, refCount: true }),
+  );
+
+  /** Whether the G-code is shown beside the preview (see `gcodeView$`). */
+  readonly gcodeShown$ = new BehaviorSubject(loadGcodeShown());
+
+  showGcode(shown: boolean) {
+    saveGcodeShown(shown);
+    this.gcodeShown$.next(shown);
+  }
+
+  /**
+   * While the G-code is shown: the program written out line by line, each
+   * with the move it makes in the preview (as downloaded, less the
+   * embedded project). Null otherwise: nothing is written for it.
+   */
+  readonly gcodeView$: Observable<GcodeView | null> = this.gcodeShown$.pipe(
+    distinctUntilChanged(),
+    switchMap((shown) =>
+      !shown
+        ? of(null)
+        : combineLatest([this.program$, this.model$]).pipe(
+            // Operations settle one after the other: write it once they have.
+            debounceTime(200),
+            map(([program, model]) => ({
+              program,
+              descriptions: operationDescriptions(model),
+            })),
+            // Edits that change neither the moves nor what's said of them.
+            distinctUntilChanged(
+              (a, b) =>
+                a.program === b.program &&
+                JSON.stringify(a.descriptions) ===
+                  JSON.stringify(b.descriptions),
+            ),
+            map(({ program, descriptions }) => {
+              try {
+                return gcodeView(program, descriptions);
+              } catch (error) {
+                reportError('writing the G-code', error);
+                return null;
+              }
+            }),
           ),
     ),
     shareReplay({ bufferSize: 1, refCount: true }),

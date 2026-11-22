@@ -40,7 +40,15 @@
                 "output": "templates"
               }
             ],
-            "styles": ["src/styles.scss"],
+            "styles": [
+              "src/styles.scss",
+              {
+                "input": "node_modules/monaco-editor/min/vs/editor/editor.main.css",
+                "bundleName": "monaco",
+                "inject": false
+              }
+            ],
+            "loader": { ".css": "empty" },
             "stylePreprocessorOptions": {
               "sass": { "silenceDeprecations": ["import"] }
             },

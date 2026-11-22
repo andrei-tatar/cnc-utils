@@ -12,6 +12,7 @@ import {
   wrapShift,
 } from './rotary';
 import { CamPath, CamPoint, CamPoint3 } from './types';
+import { GcodeListing, ListingRun } from './gcode-listing';
 
 export class GCodeBuilder {
   private _instructions: PathInstruction[] = [];
@@ -351,31 +352,266 @@ export class GCodeBuilder {
 
   build(options: Partial<GcodeOptions> = {}): string {
     const o = resolveGcodeOptions(options);
-    const reversed = o.rotaryReversed;
     const gcode: string[] = [];
     this.walk(
       options,
       {
         line: (text) => gcode.push(text),
         cycle: (text) => gcode.push(text),
-        move: (code, changed) => {
-          const coords: string[] = [];
-          if (changed.x !== undefined) coords.push(`X${changed.x}`);
-          if (changed.y !== undefined) coords.push(`Y${changed.y}`);
-          if (changed.z !== undefined) coords.push(`Z${changed.z}`);
-          if (changed.a !== undefined) {
-            const a = (reversed ? -changed.a : changed.a) || 0;
-            coords.push(`${o.rotaryAxis}${a}`);
-          }
-          if (changed.i !== undefined) coords.push(`I${changed.i}`);
-          if (changed.j !== undefined) coords.push(`J${changed.j}`);
-          if (changed.feed !== undefined) coords.push(`F${changed.feed}`);
-          gcode.push(`${code} ${coords.join(' ')}`);
-        },
+        move: (code, changed) => gcode.push(moveText(o, code, changed)),
       },
       o.arcs,
     );
     return gcode.join('\n');
+  }
+
+  /**
+   * The G-code `build(options)` writes, line by line, with the move each
+   * line makes where the preview draws it (as `toPaths` gives it: the
+   * design's coordinates whatever the G-code's zero, turned paths in their
+   * own frame), so a line can be shown on the toolpaths and a toolpath's
+   * line found.
+   */
+  toListing(options: Partial<GcodeOptions> = {}): GcodeListing {
+    const o = resolveGcodeOptions(options);
+    const base = o.offset ?? { x: 0, y: 0, z: 0 };
+    const rotary = o.rotary;
+    const lines: string[] = [];
+    const starts: number[] = [];
+    const ends: number[] = [];
+    const operationOf: number[] = [];
+    const operations = [''];
+    const operationIndex = new Map<string, number>([['', 0]]);
+    let operation = 0;
+    const points: number[] = [];
+    const runs: ListingRun[] = [];
+    /** The last point (of the run being added to). */
+    let tail: CamPoint3 | null = null;
+    // Where the tool is, as the G-code says (see `toPaths` for the rest).
+    type At = CamPoint3 & { a?: number; turns?: number };
+    // (From the design's origin, as the preview draws it.)
+    let last: At = { ...base };
+    let rotation = 0;
+    let shift = 0;
+    let wrapping = false;
+    let flip: 'x' | 'y' | null = null;
+    /** The turn `rotate` announced, drawn by the move that makes it. */
+    let turn: CamPoint3[] | null = null;
+    let turned = false;
+
+    const push = (p: CamPoint3) => {
+      points.push(p.x, p.y, p.z);
+      tail = p;
+    };
+    /** A run in the frame moves are in now (`plain`: none, at 0°). */
+    const startRun = (p: CamPoint3, plain = false) => {
+      const run: ListingRun = { start: points.length / 3 };
+      if (!plain) {
+        if (wrapping) {
+          run.wrapped = true;
+          run.rotation = rotation;
+        } else if (isTurned(rotation)) {
+          run.rotation = rotation;
+        } else if (flip) {
+          run.rotation = 180;
+          run.flip = flip;
+        }
+      }
+      runs.push(run);
+      push(p);
+    };
+    const addLine = (text: string, start = -1) => {
+      lines.push(text);
+      starts.push(start);
+      ends.push(points.length / 3 - 1);
+      operationOf.push(operation);
+    };
+    /** In design coordinates, at 0°. */
+    const design = (p: CamPoint3): CamPoint3 => ({
+      x: p.x - base.x,
+      y: p.y - base.y,
+      z: p.z - base.z,
+    });
+    /** A point the machine reaches, in the operation's frame. */
+    const local = (at: At): CamPoint3 => {
+      const p = design(at);
+      if (wrapping && rotary) {
+        const across =
+          rotary.across +
+          wrapDirection(rotary) *
+            ((at.a ?? 0) - (at.turns ?? 0) - rotation) *
+            (Math.PI / 180) *
+            wrapRadius(rotary);
+        const z = p.z - shift;
+        return rotary.along === 'x'
+          ? { x: p.x, y: across, z }
+          : { x: across, y: p.y, z };
+      }
+      return { x: p.x, y: p.y, z: p.z - shift };
+    };
+    const same = (a: CamPoint3, b: CamPoint3) =>
+      a.x === b.x && a.y === b.y && a.z === b.z;
+    /** The points a move starts from, in a new run unless it carries on. */
+    const startFrom = (from: CamPoint3) => {
+      if (!tail || !same(tail, from)) startRun(from);
+      return points.length / 3 - 1;
+    };
+    const wrapStep = rotary
+      ? Math.max(0.5, wrapRadius(rotary) * ((3 * Math.PI) / 180))
+      : Infinity;
+
+    this.walk(
+      options,
+      {
+        line: (text) => addLine(text),
+        source: (kind, id) => {
+          if (kind !== 'operation') return;
+          let index = operationIndex.get(id);
+          if (index === undefined) {
+            index = operations.length;
+            operations.push(id);
+            operationIndex.set(id, index);
+          }
+          operation = index;
+        },
+        side: (back, along) => {
+          flip = back ? along : null;
+          tail = null;
+        },
+        rotate: (angle, newShift, wrap, fromA, toA) => {
+          turn = null;
+          if (rotary && toA !== fromA) {
+            // The turn itself, round the axis where the bit is.
+            const steps = Math.max(1, Math.ceil(Math.abs(toA - fromA) / 5));
+            turn = [];
+            for (let k = 0; k <= steps; k++) {
+              const at = fromA + ((toA - fromA) * k) / steps;
+              turn.push(onBlank(rotary, at, design(last)));
+            }
+          }
+          rotation = angle;
+          shift = newShift;
+          wrapping = wrap;
+          turned = true;
+          tail = null;
+        },
+        cycle: (text, hole) => {
+          const start = startFrom(local(last));
+          last = { ...last, x: hole.x, y: hole.y, z: hole.top };
+          push(local(last));
+          push(local({ ...last, z: hole.bottom }));
+          push(local(last));
+          addLine(text, start);
+        },
+        move: (code, changed, at) => {
+          const text = moveText(o, code, changed);
+          const turning = turned;
+          turned = false;
+          if (
+            turning &&
+            changed.x === undefined &&
+            changed.y === undefined &&
+            changed.z === undefined &&
+            changed.feed === undefined
+          ) {
+            // The turn itself: drawn on the blank as it is at 0°.
+            last = { ...last, a: at.a, turns: at.turns };
+            if (turn) {
+              startRun(turn[0], true);
+              const start = points.length / 3 - 1;
+              turn.slice(1).forEach(push);
+              addLine(text, start);
+              tail = null;
+            } else {
+              addLine(text);
+            }
+            turn = null;
+            return;
+          }
+          // Both ends unrolled with the end's whole turns (see `toPaths`).
+          const from = local({ ...last, turns: at.turns });
+          const start = startFrom(from);
+          const center =
+            changed.i !== undefined && changed.j !== undefined
+              ? { x: last.x + changed.i, y: last.y + changed.j }
+              : null;
+          const before = last;
+          // (An axis the G-code hasn't set yet stays where it's drawn.)
+          last = {
+            x: changed.x ?? last.x,
+            y: changed.y ?? last.y,
+            z: changed.z ?? last.z,
+            a: at.a,
+            turns: at.turns,
+          };
+          const to = local(last);
+          if (center && (code === 'G2' || code === 'G3')) {
+            // An arc: points along it, within the curve tolerance.
+            const radius = Math.hypot(before.x - center.x, before.y - center.y);
+            const a0 = Math.atan2(before.y - center.y, before.x - center.x);
+            let sweep = Math.atan2(last.y - center.y, last.x - center.x) - a0;
+            if (code === 'G2' && sweep >= 0) sweep -= 2 * Math.PI;
+            if (code === 'G3' && sweep <= 0) sweep += 2 * Math.PI;
+            const chord =
+              radius > o.curveTolerance
+                ? 2 * Math.acos(1 - o.curveTolerance / radius)
+                : Math.PI / 2;
+            const pieces = Math.max(
+              1,
+              Math.min(256, Math.ceil(Math.abs(sweep) / chord)),
+            );
+            for (let k = 1; k < pieces; k++) {
+              const t = k / pieces;
+              push(
+                local({
+                  x: center.x + radius * Math.cos(a0 + sweep * t),
+                  y: center.y + radius * Math.sin(a0 + sweep * t),
+                  z: before.z + (last.z - before.z) * t,
+                }),
+              );
+            }
+            push(to);
+          } else {
+            // Wrapped, a move is straight in the unrolled surface.
+            const pieces = wrapping
+              ? Math.max(
+                  1,
+                  Math.min(
+                    1000,
+                    Math.ceil(
+                      Math.hypot(to.x - from.x, to.y - from.y) / wrapStep,
+                    ),
+                  ),
+                )
+              : 1;
+            for (let k = 1; k <= pieces; k++) {
+              const t = k / pieces;
+              push(
+                k === pieces
+                  ? to
+                  : {
+                      x: from.x + (to.x - from.x) * t,
+                      y: from.y + (to.y - from.y) * t,
+                      z: from.z + (to.z - from.z) * t,
+                    },
+              );
+            }
+          }
+          addLine(text, start);
+        },
+      },
+      o.arcs,
+    );
+
+    return {
+      lines,
+      points: Float32Array.from(points),
+      starts: Int32Array.from(starts),
+      ends: Int32Array.from(ends),
+      operationOf: Uint16Array.from(operationOf),
+      operations,
+      runs,
+    };
   }
 
   /**
@@ -825,8 +1061,9 @@ export class GCodeBuilder {
           break;
 
         case 'source-operation':
-          gcode.push(`; source-operation=${instruction.id}`);
+          // (First: the line saying so is the operation's own.)
           out.source?.('operation', instruction.id);
+          gcode.push(`; source-operation=${instruction.id}`);
           break;
 
         case 'carve-feedrate':
@@ -969,11 +1206,16 @@ export class GCodeBuilder {
           feedRate = plungeFeedRate;
           words.push(`F${plungeFeedRate}`);
         }
-        out.cycle(`${cycleActive ? '' : 'G98 '}${code} ${words.join(' ')}`);
-        cycleActive = true;
         x = round(cycle.x + off.x);
         y = round(cycle.y + off.y);
         z = round(top + off.z);
+        out.cycle(`${cycleActive ? '' : 'G98 '}${code} ${words.join(' ')}`, {
+          x,
+          y,
+          top: z,
+          bottom: round(cycle.depth + off.z),
+        });
+        cycleActive = true;
         return;
       }
       // The moves the controller makes: pecks out to R (G83) or lifting a
@@ -1366,8 +1608,32 @@ type GcodeSink = {
    * A canned cycle as one line. Without it, cycles are handed to `move` as
    * the moves they make (for the preview).
    */
-  cycle?(text: string): void;
+  cycle?(
+    text: string,
+    /** The hole, as the G-code has it: where, and from `top` to `bottom`. */
+    hole: { x: number; y: number; top: number; bottom: number },
+  ): void;
 };
+
+/** A move as a line of G-code: the words for what it changes. */
+function moveText(
+  o: ReturnType<typeof resolveGcodeOptions>,
+  code: string,
+  changed: MoveChange,
+): string {
+  const coords: string[] = [];
+  if (changed.x !== undefined) coords.push(`X${changed.x}`);
+  if (changed.y !== undefined) coords.push(`Y${changed.y}`);
+  if (changed.z !== undefined) coords.push(`Z${changed.z}`);
+  if (changed.a !== undefined) {
+    const a = (o.rotaryReversed ? -changed.a : changed.a) || 0;
+    coords.push(`${o.rotaryAxis}${a}`);
+  }
+  if (changed.i !== undefined) coords.push(`I${changed.i}`);
+  if (changed.j !== undefined) coords.push(`J${changed.j}`);
+  if (changed.feed !== undefined) coords.push(`F${changed.feed}`);
+  return `${code} ${coords.join(' ')}`;
+}
 
 export type PathInstruction =
   | { type: 'plunge'; depth: number }

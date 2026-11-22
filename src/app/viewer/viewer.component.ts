@@ -45,8 +45,20 @@ import {
   Line,
   LineDashedMaterial,
   CylinderGeometry,
+  CanvasTexture,
+  Points,
+  PointsMaterial,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import {
+  GcodeListing,
+  linesOfPoints,
+  listingPaths,
+  listingTip,
+} from '../../cam/gcode-listing';
 import { CubePreviewComponent } from '../cube-preview/cube-preview.component';
 import { pointsEqual, watchElementResize } from '../../util';
 import {
@@ -95,6 +107,7 @@ import { hasArcs, polygonPoints } from '../../cam/arcs';
 import {
   CamPath,
   CamPoint,
+  CamPoint3,
   CamPolygon,
   CamShape,
   CamTab,
@@ -154,6 +167,72 @@ type PathFrames = {
   rotary: Rotary | null;
   flips: Record<'x' | 'y', Rotary> | null;
 };
+
+/** G-code lines (from 0, both included). */
+export type LineRange = { first: number; last: number };
+
+/** How near a toolpath a click finds its G-code line (pixels). */
+const GCODE_PICK_PX = 6;
+
+/** Where a path's points are drawn: on the blank, for one cut turned. */
+function pointsOnBlank(path: CamPath, frames: PathFrames | null): CamPoint3[] {
+  const rotary = frames?.rotary;
+  const flipped = path.flip && frames?.flips?.[path.flip];
+  if (flipped) {
+    return path.points.map((p) => operationPointOnBlank(flipped, 180, p));
+  }
+  return !rotary
+    ? path.points
+    : path.wrapped
+      ? path.points.map((p) =>
+          wrappedPointOnBlank(rotary, path.rotation ?? 0, p),
+        )
+      : path.rotation !== undefined
+        ? path.points.map((p) =>
+            operationPointOnBlank(rotary, path.rotation!, p),
+          )
+        : path.points;
+}
+
+/** Every point of `listing` where it's drawn (x y z each). */
+function listingOnBlank(
+  listing: GcodeListing,
+  frames: PathFrames | null,
+): Float32Array {
+  const placed = listing.points.slice();
+  listing.runs.forEach((run, i) => {
+    if (run.rotation === undefined && !run.wrapped && !run.flip) return;
+    const end = listing.runs[i + 1]?.start ?? placed.length / 3;
+    const points: CamPoint3[] = [];
+    for (let k = run.start; k < end; k++) {
+      points.push({
+        x: placed[k * 3],
+        y: placed[k * 3 + 1],
+        z: placed[k * 3 + 2],
+      });
+    }
+    pointsOnBlank(
+      { ...run, points, sourceShapeId: '', type: 'carve' },
+      frames,
+    ).forEach((p, k) => placed.set([p.x, p.y, p.z], (run.start + k) * 3));
+  });
+  return placed;
+}
+
+/** A disc with a dark rim: the bit's tip (tinted by its material). */
+function tipTexture(): CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  context.beginPath();
+  context.arc(32, 32, 26, 0, 2 * Math.PI);
+  context.fillStyle = '#fff';
+  context.fill();
+  context.lineWidth = 8;
+  context.strokeStyle = '#000';
+  context.stroke();
+  return new CanvasTexture(canvas);
+}
 
 @Component({
   selector: 'app-viewer',
@@ -232,6 +311,18 @@ type PathFrames = {
           </select>
         }
       </div>
+      <button
+        type="button"
+        title="G-code: show it beside the preview (N). Its selected lines are marked on the toolpaths; click a toolpath to find its line."
+        aria-label="G-code"
+        [class.active]="gcodeShown"
+        [attr.aria-pressed]="gcodeShown"
+        (click)="gcodeShownChange.emit(!gcodeShown)"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4M9 3 7 13" />
+        </svg>
+      </button>
       <div class="tools_row tools_row--top">
         <button
           type="button"
@@ -737,6 +828,35 @@ export class ViewerComponent implements OnInit, OnDestroy {
   private shownArrows = new WeakMap<DirectionArrows, Set<number>>();
   controls!: OrbitControls;
   /** Draw the next frame (the preview only draws when asked). */
+  /** The G-code is shown beside the preview (the tools' button, N). */
+  @Input() gcodeShown = false;
+  @Output() gcodeShownChange = new EventEmitter<boolean>();
+  /** The G-code shown there, line by line with its moves (else null). */
+  @Input()
+  set gcode(value: GcodeListing | null) {
+    this.gcode$.next(value);
+  }
+  private gcode$ = new BehaviorSubject<GcodeListing | null>(null);
+  /** The lines selected there: their moves are marked on the toolpaths. */
+  @Input()
+  set gcodeLines(value: LineRange | null) {
+    this.gcodeLines$.next(value);
+  }
+  private gcodeLines$ = new BehaviorSubject<LineRange | null>(null);
+  /** A toolpath clicked while the G-code is shown: its line (from 0). */
+  @Output() gcodeLine = new EventEmitter<number>();
+  /** The selected lines' moves and the bit's tip, over everything. */
+  private gcodeGroup = new Group();
+  /** Where turned paths are drawn (see `PathFrames`). */
+  private pathFrames: PathFrames | null = null;
+  private highlighted: Highlight = { shapes: [], operations: [] };
+  /** The listing's points as drawn, worked out when a click needs them. */
+  private gcodePlaced: {
+    listing: GcodeListing;
+    frames: PathFrames | null;
+    positions: Float32Array;
+    lines: Int32Array;
+  } | null = null;
   private requestRender = () => {};
   /** Draw now (resizing: the canvas must be drawn again before it's shown). */
   private renderNow = () => {};
@@ -947,6 +1067,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
     scene.add(this.content);
     scene.add(this.measureGroup);
     this.content.add(this.pathsGroup);
+    // (Not part of the content: it doesn't count when fitting the view.)
+    scene.add(this.gcodeGroup);
     this.shapeEditor = new ShapeEditor({
       canvas: renderer.domElement,
       camera: () => this.camera,
@@ -956,6 +1078,11 @@ export class ViewerComponent implements OnInit, OnDestroy {
       requestRender: () => this.requestRender(),
       hint: (text) => {
         this.editReadout.nativeElement.textContent = this.measuring ? '' : text;
+      },
+      pick: (event) => {
+        const line = this.gcodeLineAt(event);
+        if (line >= 0) this.gcodeLine.emit(line);
+        return line >= 0;
       },
       select: (id) => this.shapeSelect.emit(id),
       moveShape: (shapeId, dx, dy) => this.shapeMove.emit({ shapeId, dx, dy }),
@@ -1248,6 +1375,20 @@ export class ViewerComponent implements OnInit, OnDestroy {
       opacity: 0.7,
     });
 
+    // The G-code lines selected beside the preview: drawn over everything.
+    const traceMaterial = new LineMaterial({
+      linewidth: 3,
+      transparent: true,
+      depthTest: false,
+    });
+    const tipMaterial = new PointsMaterial({
+      size: 13,
+      sizeAttenuation: false,
+      map: tipTexture(),
+      transparent: true,
+      depthTest: false,
+    });
+
     // The theme's colours, on everything drawn here.
     this.palette$.pipe(takeUntil(this.destroy$)).subscribe((palette) => {
       renderer.setClearColor(palette.background);
@@ -1272,6 +1413,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
         travel.color.copy(palette.travel);
       }
       MEASURE_MATERIAL.color.copy(palette.measure);
+      traceMaterial.color.copy(palette.gcode.line);
+      tipMaterial.color.copy(palette.gcode.tip);
       this.shapeEditor.setColors(palette.handles);
       this.depthScale = colorScale(palette.depthStops);
       this.feedScale = colorScale(palette.feedStops);
@@ -1462,6 +1605,136 @@ export class ViewerComponent implements OnInit, OnDestroy {
         takeUntil(this.destroy$),
       )
       .subscribe();
+
+    // The moves of the G-code lines selected beside the preview, and the
+    // bit's tip where the last of them leaves it.
+    this.highlight$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((highlight) => (this.highlighted = highlight));
+    let trace: LineSegmentsGeometry | null = null;
+    let tip: BufferGeometry | null = null;
+    combineLatest([this.gcode$, this.gcodeLines$, rotary$])
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(([listing, lines, frames]) => {
+        this.pathFrames = frames;
+        this.gcodeGroup.clear();
+        trace?.dispose();
+        tip?.dispose();
+        trace = tip = null;
+        this.requestRender();
+        if (!listing || !lines) return;
+
+        const positions: number[] = [];
+        for (const path of listingPaths(listing, lines.first, lines.last)) {
+          const points = pointsOnBlank(path, frames);
+          for (let i = 1; i < points.length; i++) {
+            const a = points[i - 1];
+            const b = points[i];
+            positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+          }
+        }
+        if (positions.length) {
+          trace = new LineSegmentsGeometry().setPositions(positions);
+          const line = new LineSegments2(trace, traceMaterial);
+          line.renderOrder = 10;
+          this.gcodeGroup.add(line);
+        }
+        const end = listingTip(listing, lines.last);
+        if (end) {
+          const [at] = pointsOnBlank(end, frames);
+          tip = new BufferGeometry().setAttribute(
+            'position',
+            new BufferAttribute(new Float32Array([at.x, at.y, at.z]), 3),
+          );
+          const point = new Points(tip, tipMaterial);
+          point.renderOrder = 11;
+          this.gcodeGroup.add(point);
+        }
+      });
+  }
+
+  /**
+   * The G-code line whose move is drawn under the pointer (the nearest
+   * within a few pixels; of those as near, the one in front), -1 for none
+   * or when the G-code isn't shown.
+   */
+  private gcodeLineAt(event: MouseEvent): number {
+    const listing = this.gcode$.value;
+    if (!listing) return -1;
+    if (
+      this.gcodePlaced?.listing !== listing ||
+      this.gcodePlaced.frames !== this.pathFrames
+    ) {
+      this.gcodePlaced = {
+        listing,
+        frames: this.pathFrames,
+        positions: listingOnBlank(listing, this.pathFrames),
+        lines: linesOfPoints(listing),
+      };
+    }
+    const { positions, lines } = this.gcodePlaced;
+    const canvas = this.canvas.nativeElement;
+    const e = new Matrix4().multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse,
+    ).elements;
+    const halfWidth = canvas.clientWidth / 2;
+    const halfHeight = canvas.clientHeight / 2;
+    const px = event.offsetX;
+    const py = event.offsetY;
+    // Only the operations shown, when the editor has some open.
+    const shown = this.highlighted.operations.length
+      ? listing.operations.map((id) => this.highlighted.operations.includes(id))
+      : null;
+
+    let best = -1;
+    let bestDistance = GCODE_PICK_PX;
+    let bestDepth = Infinity;
+    // A cut before a rapid passing over it.
+    let bestRapid = true;
+    // The point before, on screen (an orthographic view: no perspective).
+    let ax = 0;
+    let ay = 0;
+    let az = 0;
+    for (let k = 0; k < lines.length; k++) {
+      const x = positions[k * 3];
+      const y = positions[k * 3 + 1];
+      const z = positions[k * 3 + 2];
+      const bx = (e[0] * x + e[4] * y + e[8] * z + e[12] + 1) * halfWidth;
+      const by = (1 - (e[1] * x + e[5] * y + e[9] * z + e[13])) * halfHeight;
+      const bz = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const line = lines[k];
+      if (line >= 0 && (!shown || shown[listing.operationOf[line]])) {
+        const dx = bx - ax;
+        const dy = by - ay;
+        const length = dx * dx + dy * dy;
+        const t = length
+          ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / length))
+          : 0;
+        const distance = Math.hypot(ax + dx * t - px, ay + dy * t - py);
+        const depth = az + (bz - az) * t;
+        if (distance <= GCODE_PICK_PX) {
+          const rapid = listing.lines[line].startsWith('G0');
+          if (
+            best < 0 ||
+            (rapid !== bestRapid
+              ? bestRapid
+              : distance < bestDistance - 0.75 ||
+                (distance <= bestDistance + 0.75 && depth < bestDepth))
+          ) {
+            best = line;
+            bestDistance =
+              rapid === bestRapid ? Math.min(bestDistance, distance) : distance;
+            bestDepth = depth;
+            bestRapid = rapid;
+          }
+        }
+      }
+      ax = bx;
+      ay = by;
+      az = bz;
+    }
+    return best;
   }
 
   /**
@@ -1735,7 +2008,9 @@ export class ViewerComponent implements OnInit, OnDestroy {
       event.ctrlKey ||
       event.metaKey ||
       event.altKey ||
-      target?.closest('input, textarea, select, [contenteditable], .modal')
+      target?.closest(
+        'input, textarea, select, [contenteditable], .modal, .monaco-editor',
+      )
     ) {
       return;
     }
@@ -1751,6 +2026,8 @@ export class ViewerComponent implements OnInit, OnDestroy {
       this.toggleColoring();
     } else if (event.key === 'g' || event.key === 'G') {
       this.setViewOption('grid', !this.viewOptions.grid);
+    } else if (event.key === 'n' || event.key === 'N') {
+      this.gcodeShownChange.emit(!this.gcodeShown);
     } else if (event.key === 'Escape' && this.measuring) {
       this.toggleMeasure();
     }
@@ -2048,26 +2325,7 @@ export class ViewerComponent implements OnInit, OnDestroy {
             // Each segment's feed rate (NaN where it isn't known).
             const feeds = new Float32Array(segments);
             // Where each path's points are drawn.
-            const drawn = o.paths.map((path) => {
-              const rotary = o.rotary?.rotary;
-              const flipped = path.flip && o.rotary?.flips?.[path.flip];
-              if (flipped) {
-                return path.points.map((p) =>
-                  operationPointOnBlank(flipped, 180, p),
-                );
-              }
-              return !rotary
-                ? path.points
-                : path.wrapped
-                  ? path.points.map((p) =>
-                      wrappedPointOnBlank(rotary, path.rotation ?? 0, p),
-                    )
-                  : path.rotation !== undefined
-                    ? path.points.map((p) =>
-                        operationPointOnBlank(rotary, path.rotation!, p),
-                      )
-                    : path.points;
-            });
+            const drawn = o.paths.map((path) => pointsOnBlank(path, o.rotary));
             let at = 0;
             let segment = 0;
             o.paths.forEach((path, k) => {

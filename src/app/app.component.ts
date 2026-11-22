@@ -7,9 +7,9 @@ import {
 } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { fromEvent } from 'rxjs';
+import { distinctUntilChanged, fromEvent, map } from 'rxjs';
 import { Highlight } from '../cam/types';
-import { ViewerComponent } from './viewer/viewer.component';
+import { LineRange, ViewerComponent } from './viewer/viewer.component';
 import { ModelEditorComponent } from './model-editor/model-editor.component';
 import { JobAction, ToolbarComponent } from './toolbar/toolbar.component';
 import { EditorDividerComponent } from './editor-divider/editor-divider.component';
@@ -40,6 +40,8 @@ import { droppedFileKind, isSvg, readAsDataUrl } from './project-file';
 import { ModelType } from './model-editor/model';
 import { reportError } from './pipeline/errors';
 import { parseModelFile } from '../cam/threemf';
+import { GcodeViewComponent } from './gcode-view/gcode-view.component';
+import { loadGcodeWidth } from './pipeline/gcode-view';
 
 @Component({
   selector: 'app-root',
@@ -51,6 +53,7 @@ import { parseModelFile } from '../cam/threemf';
     EditorDividerComponent,
     ErrorToastComponent,
     UpdateNoticeComponent,
+    GcodeViewComponent,
   ],
   templateUrl: './app.component.html',
   host: {
@@ -75,6 +78,12 @@ export class AppComponent {
 
   /** More things to do with the job, in the G-code menu. */
   readonly jobActions: JobAction[] = [
+    {
+      id: 'view-gcode',
+      label: 'View G-code',
+      description:
+        'The G-code beside the preview: the lines you select are marked on the toolpaths, and a click on a toolpath finds its line.',
+    },
     {
       id: 'send-cncjs',
       label: 'Send to cncjs',
@@ -111,6 +120,11 @@ export class AppComponent {
   /** Files are being dragged over the window. */
   readonly dropping = signal(false);
 
+  /** The G-code panel's width, and the lines selected in it. */
+  readonly gcodeWidth = signal(loadGcodeWidth());
+  readonly gcodeLines = signal<LineRange | null>(null);
+  readonly gcodeView = viewChild(GcodeViewComponent);
+
   private readonly viewer = viewChild.required(ViewerComponent);
 
   constructor() {
@@ -119,6 +133,14 @@ export class AppComponent {
     this.store.replaced$
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.viewer().refit());
+    // An operation opened in the editor: the G-code panel goes to it.
+    this.cam.highlight$
+      .pipe(
+        map(({ operations }) => (operations.length === 1 ? operations[0] : '')),
+        distinctUntilChanged(),
+        takeUntilDestroyed(),
+      )
+      .subscribe((id) => id && this.gcodeView()?.revealOperation(id));
     // Opened from a share link, or one pasted into this tab's address.
     this.projects.openLinked();
     fromEvent(window, 'hashchange')
@@ -262,8 +284,17 @@ export class AppComponent {
     }
   }
 
+  /** Shows or hides the G-code beside the preview. */
+  showGcode(shown: boolean) {
+    this.cam.showGcode(shown);
+    if (!shown) this.gcodeLines.set(null);
+  }
+
   onJobAction(id: string) {
     switch (id) {
+      case 'view-gcode':
+        this.showGcode(!this.cam.gcodeShown$.value);
+        break;
       case 'send-cncjs':
         this.cncjs.send();
         break;
