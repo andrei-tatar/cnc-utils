@@ -29,6 +29,12 @@ export type SurfaceClearingOptions = {
   rampAngle?: number | null;
   /** Pocket the separate areas in the order that keeps travel short. */
   optimizeTravel?: boolean;
+  /**
+   * The surface is where the bit's axis may go (how low, over each cell)
+   * rather than what it mustn't cut into: the areas outlined are then the
+   * bit's centre's, not drawn in by its radius.
+   */
+  centres?: boolean;
 };
 
 /**
@@ -127,7 +133,7 @@ export async function clearOverSurface(
     from: number,
     to: number,
   ) => {
-    const area = await inflate(polygons, -radius);
+    const area = options.centres ? polygons : await inflate(polygons, -radius);
     if (!area.length) return;
     const inside = area.map((p) => polygonPoints(p, curveTolerance()));
     // The rings, each piece under the piece of the ring outside it.

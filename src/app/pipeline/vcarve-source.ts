@@ -334,6 +334,11 @@ export function carvedModel(
   shapeId: string | null;
   turns: boolean;
   /**
+   * Wrapped, and the model turns with the stock: carved all round as the
+   * stock turns under the bit, from the angle it's turned to.
+   */
+  around: boolean;
+  /**
    * Without a shape to carve within: the margin round the model's own
    * rectangle that's carved.
    */
@@ -352,6 +357,7 @@ export function carvedModel(
     : {
         shapeId,
         turns: !!relief.modelTurns && !relief.wrap,
+        around: !!relief.modelTurns && !!relief.wrap,
         ...(relief.shapeId ? {} : { margin: +relief.reliefMargin || 0 }),
       };
 }

@@ -21,6 +21,49 @@ export type CutBefore = {
 const COARSE = 0.4;
 
 /**
+ * A relief's surface as the stock turned to `angle` shows it (in that
+ * angle's frame), on cells about `COARSE` across: what the cuts at other
+ * angles need of it, small enough to hand to each of them. `high` is the
+ * highest the surface gets over each cell (so what a cut there is sure to
+ * have cleared can be read off it), `mean` its height there.
+ */
+export type SideSurface = { angle: number; high: Heightmap; mean: Heightmap };
+
+/** `surface` (at `angle`) on coarse cells, for the cuts at other angles. */
+export function sideSurface(surface: Heightmap, angle: number): SideSurface {
+  const factor = Math.max(1, Math.round(COARSE / surface.cell));
+  const nx = Math.ceil(surface.nx / factor);
+  const ny = Math.ceil(surface.ny / factor);
+  const high = new Float32Array(nx * ny).fill(-Infinity);
+  const sum = new Float32Array(nx * ny);
+  const count = new Uint16Array(nx * ny);
+  for (let j = 0; j < surface.ny; j++) {
+    const row = Math.floor(j / factor) * nx;
+    for (let i = 0; i < surface.nx; i++) {
+      const z = surface.heights[j * surface.nx + i];
+      const k = row + Math.floor(i / factor);
+      if (z > high[k]) high[k] = z;
+      sum[k] += z;
+      count[k]++;
+    }
+  }
+  const mean = new Float32Array(nx * ny);
+  for (let k = 0; k < mean.length; k++) mean[k] = sum[k] / count[k];
+  const grid = { ...surface, cell: surface.cell * factor, nx, ny };
+  return {
+    angle,
+    high: { ...grid, heights: high },
+    mean: { ...grid, heights: mean },
+  };
+}
+
+/** Whether two angles (degrees) turn the stock the same way up. */
+export function sameAngle(a: number, b: number): boolean {
+  const d = (((a - b) % 360) + 360) % 360;
+  return d < 1e-6 || d > 360 - 1e-6;
+}
+
+/**
  * Above what height a cut over `surface` (the relief at its angle, in its
  * frame) is sure to have left nothing, per cell: the highest the surface
  * comes within the bit's reach — a bit gets at least that low, whatever its

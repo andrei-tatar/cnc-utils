@@ -32,6 +32,17 @@ export interface ModelType extends ImagePlacementModel {
    */
   modelTurns?: boolean;
   /**
+   * With the model turning, cut at several angles: each finishes only what
+   * faces it more squarely than any other (on unless turned off; see
+   * `leftToOtherAngles`).
+   */
+  modelSectors?: boolean;
+  /**
+   * Carved all round (wrapped, the model turning): in raster lines, or one
+   * spiral round the stock from end to end. Lines when left out.
+   */
+  aroundPattern?: 'lines' | 'spiral';
+  /**
    * The height-map image, as a data URL. (Reliefs made before 3D model
    * shapes may hold an STL file here: still carved as it was, seen from
    * above and laid out like an image.)
@@ -125,12 +136,51 @@ const field: FormlyFieldConfig = {
       defaultValue: false,
       props: {
         label: 'the model turns with the stock',
+      },
+      expressions: {
+        'props.description': (field: FormlyFieldConfig) =>
+          field.model?.wrap
+            ? 'carved all round in one go: the model is on the blank as at 0°, and the stock turns under the bit as it carves (lines at 0° run along the axis, at 90° round it); whatever shape is picked, from one end of the model to the other and the margin past them'
+            : 'carved in the round: the model is on the blank as at 0°, and at each angle the stock is turned to (rotate steps, a rotary repeat) the side that’s up is carved; wrapped round the stock as well, it’s carved all round in one go instead',
+        hide: (field: FormlyFieldConfig) =>
+          !carvesModel(field) || !onRotary(field),
+      },
+    },
+    {
+      key: 'aroundPattern',
+      type: 'enum',
+      defaultValue: 'lines',
+      props: {
+        label: 'all round in',
+        required: true,
+        options: [
+          { value: 'lines', label: 'lines, at the line angle' },
+          { value: 'spiral', label: 'a spiral round the stock' },
+        ],
+      },
+      expressions: {
+        'props.description': (field: FormlyFieldConfig) =>
+          field.model?.aroundPattern === 'spiral'
+            ? 'one cut from end to end, the stock turning the same way all along, a stepover further along each turn (the line angle and the options below aren’t used). The axis is turned back all those turns when the job ends'
+            : 'lines at 0° run along the axis, the stock turning a step between them; at 90° they’re rings, a turn one way and a turn back',
+        hide: (field: FormlyFieldConfig) => !carvesAround(field),
+      },
+    },
+    {
+      key: 'modelSectors',
+      type: 'boolean',
+      defaultValue: true,
+      props: {
+        label: 'each angle finishes only what faces it',
         description:
-          'carved in the round: the model is on the blank as at 0°, and at each angle the stock is turned to (rotate steps, a rotary repeat) the side that’s up is carved',
+          'cut at several angles, each leaves the sides another angle faces more squarely (and whose bit gets there) to that one: quicker, and a better finish than a bit leaves on what it meets side on',
       },
       expressions: {
         hide: (field: FormlyFieldConfig) =>
-          !carvesModel(field) || !onRotary(field) || !!field.model?.wrap,
+          !carvesModel(field) ||
+          !onRotary(field) ||
+          !field.model?.modelTurns ||
+          !!field.model?.wrap,
       },
     },
     {
@@ -273,6 +323,16 @@ const field: FormlyFieldConfig = {
 /** The model's 3D model shapes, from any field of the form. */
 function modelShapes(field: FormlyFieldConfig) {
   return allShapes(field).filter((s) => s.type === 'model');
+}
+
+/** Whether a field's relief carves its model all round as the stock turns. */
+function carvesAround(field: FormlyFieldConfig): boolean {
+  return (
+    carvesModel(field) &&
+    onRotary(field) &&
+    !!field.model?.modelTurns &&
+    !!field.model?.wrap
+  );
 }
 
 /** Whether the relief a field belongs to carves a 3D model shape. */

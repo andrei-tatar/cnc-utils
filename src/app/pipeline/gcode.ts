@@ -73,6 +73,14 @@ type EntryInputs = OperationInputs & {
    * the same relief the program makes before that one (see `cutsBefore`).
    */
   before: Record<string, CutBefore[]> | null;
+  /** Its model is carved all round as the stock turns (see `carvedModel`). */
+  around: boolean;
+  /**
+   * For those too: the angles the relief is finished at, when each only
+   * finishes what faces it, and how far round the relief any of its cuts
+   * reaches (see `reliefAngles`).
+   */
+  angles: ReliefAngles | null;
 };
 
 /** A long-lived pipeline for one operation, kept across model emissions. */
@@ -182,6 +190,9 @@ export function generateGcodeFromOperations(
       const before = rotary
         ? cutsBefore(model, all)
         : new Map<string, Record<string, CutBefore[]>>();
+      const angles = rotary
+        ? reliefAngles(model, all)
+        : new Map<string, ReliefAngles>();
       return all
         .filter((operation) => !NO_TOOL.has(operation.type!))
         .map((operation) => {
@@ -198,8 +209,10 @@ export function generateGcodeFromOperations(
                 : null,
             modelShapeId: carves ? carves.shapeId : undefined,
             modelMargin: carves?.margin,
-            turn: rotary && carves?.turns ? rotary : null,
+            turn: rotary && (carves?.turns || carves?.around) ? rotary : null,
+            around: !!carves?.around,
             before: before.get(operation.id) ?? null,
+            angles: angles.get(operation.id) ?? null,
           };
           const existing = ctx.find((e) => e.id === operation.id);
           if (existing) {
@@ -334,6 +347,60 @@ export function cutsBefore(
   return result;
 }
 
+/** How a relief whose 3D model turns with the stock is cut, all told. */
+export type ReliefAngles = {
+  /**
+   * The angles it's finished at, when each of them only finishes what
+   * faces it (the relief's `modelSectors`); none for its roughing.
+   */
+  shared: number[];
+  /** The widest bit cutting it: its radius (mm). */
+  reach: number;
+};
+
+/**
+ * For each operation carving or roughing out a relief whose 3D model
+ * turns with the stock (by operation id): the angles that relief is
+ * finished at and the widest bit cutting it.
+ */
+export function reliefAngles(
+  model: ModelType,
+  all: readonly any[],
+): Map<string, ReliefAngles> {
+  const tools = model.tools ?? [];
+  // By the relief's id: its cuts' operations, and the above.
+  const reliefs = new Map<string, { ops: Set<string>; angles: ReliefAngles }>();
+  for (const step of programSteps(model.operations, true, true)) {
+    const op = all.find((o) => o.id === step.id);
+    if (!op || !carvedModel(op, all, model.shapes ?? [])?.turns) continue;
+    const rough = op.type === 'relief-rough';
+    const id: string = rough ? op.reliefOperationId : op.id;
+    const relief = reliefs.get(id) ?? {
+      ops: new Set<string>(),
+      angles: { shared: [], reach: 0 },
+    };
+    reliefs.set(id, relief);
+    relief.ops.add(op.id);
+    const diameter = +(tools.find((t) => t.id === op.toolId)?.diameter ?? 0);
+    relief.angles.reach = Math.max(relief.angles.reach, diameter / 2 || 0);
+    const angle = angleKey(step.rotation ?? 0);
+    if (
+      !rough &&
+      op.modelSectors !== false &&
+      !relief.angles.shared.includes(angle)
+    ) {
+      relief.angles.shared.push(angle);
+    }
+  }
+  const result = new Map<string, ReliefAngles>();
+  for (const [id, { ops, angles }] of reliefs) {
+    for (const op of ops) {
+      result.set(op, op === id ? angles : { shared: [], reach: angles.reach });
+    }
+  }
+  return result;
+}
+
 /** The tabs on what an operation cuts, and which way up the stock is. */
 type FramedTabs = { frame: string; tabs: CamTab[] };
 
@@ -456,8 +523,22 @@ function createOperationEntry(
           map((before) => before?.[angleKey(angle)] ?? []),
           distinctJson(),
         ),
+        input('angles').pipe(distinctJson()),
+        input('around').pipe(distinctUntilChanged()),
       ]).pipe(
-        map(([rotary, before]) => (rotary ? { rotary, angle, before } : null)),
+        map(([rotary, before, angles, around]) =>
+          rotary
+            ? {
+                rotary,
+                angle,
+                ...(around ? { around } : {}),
+                before,
+                // Finished at one angle only, there's nothing to share out.
+                shared: (angles?.shared.length ?? 0) > 1 ? angles!.shared : [],
+                reach: angles?.reach ?? 0,
+              }
+            : null,
+        ),
       ),
       op: input('operationParameters').pipe(distinctJson()),
       tool: input('toolParameters').pipe(distinctJson()),

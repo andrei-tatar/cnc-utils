@@ -1,4 +1,9 @@
-import { clearedAbove, materialTop } from './rotary-remaining';
+import {
+  clearedAbove,
+  materialTop,
+  sameAngle,
+  sideSurface,
+} from './rotary-remaining';
 import { Rotary } from './rotary';
 import { Heightmap } from './simulate';
 
@@ -69,5 +74,29 @@ describe('material left on a rotary axis', () => {
     );
     // −6.5 is reached by the level at −6.
     expect(rough.heights[305]).toBeCloseTo(-6, 6);
+  });
+
+  it('hands other angles a coarser surface: each cell’s highest and mean', () => {
+    const fine: Heightmap = {
+      minX: 0,
+      minY: 0,
+      cell: 0.1,
+      nx: 8,
+      ny: 4,
+      heights: new Float32Array(32).fill(-2),
+      top: 0,
+      bottom: -5,
+    };
+    fine.heights[0] = -1;
+    const side = sideSurface(fine, 90);
+    expect(side.angle).toBe(90);
+    expect(side.high.cell).toBeCloseTo(0.4, 9);
+    expect([side.high.nx, side.high.ny]).toEqual([2, 1]);
+    expect(side.high.heights[0]).toBeCloseTo(-1, 6);
+    expect(side.mean.heights[0]).toBeCloseTo(-2 + 1 / 16, 6);
+    expect(side.high.heights[1]).toBeCloseTo(-2, 6);
+    expect(sameAngle(0, 360)).toBeTrue();
+    expect(sameAngle(-90, 270)).toBeTrue();
+    expect(sameAngle(90, 270)).toBeFalse();
   });
 });

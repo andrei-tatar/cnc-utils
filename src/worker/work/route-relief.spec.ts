@@ -1,9 +1,15 @@
 import { CamPoint, CamShape } from '../../cam/types';
 import { simulateStock } from '../../cam/simulate';
 import { binaryStl, PYRAMID } from '../../cam/stl.spec';
+import { GCodeBuilder } from '../../cam/gcode-builder';
+import { Rotary } from '../../cam/rotary';
 import {
+  carvingOf,
+  prepareRelief,
+  ReliefOptions,
   ReliefSourceOptions,
   routeRelief,
+  routeReliefBand,
   routeReliefRough,
 } from './route-relief';
 
@@ -129,5 +135,81 @@ describe('routeReliefRough', () => {
     // Down to 2: below that, the bit's 4 mm doesn't fit in what's left to
     // clear (3.2 or more deep, 0.5 above the relief), 2 mm from the walls.
     expect(deepest).toBeCloseTo(-2, 3);
+  });
+});
+
+describe('a relief’s carving shared out between workers', () => {
+  /** Carved in `shares` parts, put end to end as the app does. */
+  async function inShares(options: ReliefOptions, shares: number) {
+    const prepared = (await prepareRelief(shape, options))!;
+    expect(prepared.units).toBeGreaterThan(shares * 4);
+    const bands: GCodeBuilder[] = [];
+    for (let k = 0; k < shares; k++) {
+      bands.push(
+        await routeReliefBand(
+          prepared,
+          carvingOf(options),
+          Math.floor((prepared.units * k) / shares),
+          Math.floor((prepared.units * (k + 1)) / shares),
+        ),
+      );
+    }
+    return new GCodeBuilder()
+      .sourceShapeId('s')
+      .concat(GCodeBuilder.concatAll(bands))
+      .goToSafeHeight();
+  }
+
+  it('gives the very G-code one worker carving it all gives', async () => {
+    const options: ReliefOptions = {
+      relief: relief(),
+      tool: ball,
+      spacing: 0.4,
+      angle: 30,
+      oneWay: false,
+      crossPass: true,
+    };
+    const whole = (await routeRelief(shape, options)).build();
+    expect(whole.split('\n').length).toBeGreaterThan(500);
+    for (const shares of [2, 3, 7]) {
+      expect((await inShares(options, shares)).build())
+        .withContext(`${shares} shares`)
+        .toBe(whole);
+    }
+  });
+
+  it('and so for a spiral round the stock', async () => {
+    // The pyramid's mesh in a Ø30 blank along X, carved all round.
+    const rotary: Rotary = {
+      along: 'x',
+      across: 10,
+      halfWidth: 15,
+      halfThickness: 15,
+      round: true,
+    };
+    const mesh = new Float32Array(PYRAMID.flat(2).length);
+    PYRAMID.flat(2).forEach((v: number, i: number) => {
+      mesh[i] = i % 3 === 2 ? v - 12 : v;
+    });
+    const options: ReliefOptions = {
+      relief: {
+        ...relief(),
+        file: '',
+        mesh,
+        depth: 10,
+        resolution: 0.1,
+        margin: 2,
+        turned: { rotary, angle: 0, around: true },
+      },
+      tool: ball,
+      spacing: 0.3,
+      angle: 0,
+      oneWay: false,
+      crossPass: false,
+      spiral: true,
+    };
+    const whole = (await routeRelief(shape, options)).build();
+    expect(whole.split('\n').length).toBeGreaterThan(200);
+    expect((await inShares(options, 3)).build()).toBe(whole);
   });
 });

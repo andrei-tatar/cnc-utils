@@ -1,4 +1,13 @@
-import { map, Observable, of, race } from 'rxjs';
+import {
+  defaultIfEmpty,
+  forkJoin,
+  map,
+  Observable,
+  of,
+  race,
+  shareReplay,
+  switchMap,
+} from 'rxjs';
 import { GCodeBuilder } from '../../cam/gcode-builder';
 import { GeometrySettings } from '../../cam/geometry';
 import { CamShape } from '../../cam/types';
@@ -22,7 +31,8 @@ import { stepoverDiameter } from '../model-editor/tools';
 import { recover } from './errors';
 import { DowelHoles } from './flip';
 import { Rotary } from '../../cam/rotary';
-import { CutBefore } from '../../cam/rotary-remaining';
+import type { ReliefOptions } from '../../worker/work/route-relief';
+import { CutBefore, sameAngle, SideSurface } from '../../cam/rotary-remaining';
 
 /** Everything that decides an operation's toolpath. */
 export type RoutingInputs = {
@@ -39,7 +49,17 @@ export type RoutingInputs = {
    * For a relief whose model turns with the stock (and its roughing): the
    * rotary axis and the angle this is routed for.
    */
-  turned: { rotary: Rotary; angle: number; before?: CutBefore[] } | null;
+  turned: {
+    rotary: Rotary;
+    angle: number;
+    before?: CutBefore[];
+    /** Carved all round as the stock turns, unrolled from `angle`. */
+    around?: boolean;
+    /** The angles the relief is finished at, each what faces it. */
+    shared?: number[];
+    /** The widest bit cutting the relief: its radius (mm). */
+    reach?: number;
+  } | null;
   /**
    * For a relief that carves a 3D model shape (and its roughing): the
    * shape's mesh, null while there's none. Left out for any other.
@@ -96,9 +116,175 @@ function carved(
         file: '',
         mesh: model.mesh,
         ...(model.margin === undefined ? {} : { margin: model.margin }),
-        ...(turned ? { turned } : {}),
+        ...(turned
+          ? {
+              turned: {
+                rotary: turned.rotary,
+                angle: turned.angle,
+                before: turned.before,
+                shared: turned.shared,
+                ...(turned.around ? { around: true } : {}),
+              },
+            }
+          : {}),
       }
     : relief;
+}
+
+/** A relief's carving is shared out between at most this many workers. */
+const MOST_SHARES = 8;
+/** A share is at least this many of the carving's parts. */
+const LEAST_SHARE = 4;
+
+/**
+ * Carves a relief with the work shared out between workers: one prepares
+ * it (`prepareRelief`: its surface, what's left to carve), then each
+ * carves a run of its raster lines (`routeReliefBand`) — exactly what one
+ * worker carving it all would give for them — and their G-code is put end
+ * to end.
+ */
+function sharedOut(
+  shape: CamShape[],
+  options: ReliefOptions,
+): Observable<GCodeBuilder> {
+  const { relief: _, ...carving } = options;
+  const start = () => new GCodeBuilder().sourceShapeId(shape[0]?.sourceShapeId);
+  return worker.prepareRelief(shape, options).pipe(
+    defaultIfEmpty(null),
+    switchMap((prepared) => {
+      if (!prepared || !(prepared.units > 0)) {
+        return of(start());
+      }
+      const workers = Math.max(
+        1,
+        Math.min(
+          MOST_SHARES,
+          (globalThis.navigator?.hardwareConcurrency || 4) - 1,
+        ),
+      );
+      const shares = Math.max(
+        1,
+        Math.min(workers, Math.floor(prepared.units / LEAST_SHARE)),
+      );
+      const bands = Array.from({ length: shares }, (_, k) =>
+        worker.routeReliefBand(
+          prepared,
+          carving,
+          Math.floor((prepared.units * k) / shares),
+          Math.floor((prepared.units * (k + 1)) / shares),
+        ),
+      );
+      return forkJoin(bands).pipe(
+        map((cut) =>
+          start().concat(GCodeBuilder.concatAll(cut)).goToSafeHeight(),
+        ),
+      );
+    }),
+  );
+}
+
+/** Numbers standing for objects, to tell them apart in a key. */
+const identities = new WeakMap<object, number>();
+let nextIdentity = 1;
+function identity(value: object | null | undefined): number {
+  if (!value) return 0;
+  let id = identities.get(value);
+  if (!id) identities.set(value, (id = nextIdentity++));
+  return id;
+}
+
+/** The last side surfaces asked for, by what they're worked out from. */
+const sideJobs = new Map<string, Observable<SideSurface | null>>();
+const SIDE_JOBS_KEPT = 64;
+
+/**
+ * A relief whose model turns with the stock as the stock turned to `angle`
+ * shows it (the worker's `reliefSide`). Every cut of the relief that needs
+ * it — its roughing and finishing at the other angles — gets the same one.
+ */
+function sideSurfaceAt(
+  shape: CamShape[],
+  relief: ReliefSource['relief'],
+  angle: number,
+  reach: number,
+  geometry: GeometrySettings,
+): Observable<SideSurface | null> {
+  const { mesh, turned, ...rest } = relief;
+  const key = JSON.stringify([
+    shape.map(identity),
+    identity(mesh),
+    rest,
+    turned?.rotary,
+    angle,
+    reach,
+    geometry,
+  ]);
+  let job$ = sideJobs.get(key);
+  // Asked for again: the last to go.
+  sideJobs.delete(key);
+  if (!job$) {
+    job$ = worker
+      .reliefSide(
+        shape,
+        { ...rest, mesh, turned: { rotary: turned!.rotary, angle } },
+        reach,
+        geometry,
+      )
+      .pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  }
+  sideJobs.set(key, job$);
+  for (const old of sideJobs.keys()) {
+    if (sideJobs.size <= SIDE_JOBS_KEPT) break;
+    sideJobs.delete(old);
+  }
+  return job$;
+}
+
+/**
+ * Routes a relief whose model turns with the stock (`route`, given the
+ * relief to carve), with the relief as the other angles show it: those of
+ * the cuts made before, and those its finishing is shared out between.
+ */
+function withSides(
+  shape: CamShape[],
+  relief: ReliefSource['relief'],
+  turned: RoutingInputs['turned'],
+  geometry: GeometrySettings,
+  route: (relief: ReliefSource['relief']) => Observable<GCodeBuilder>,
+): Observable<GCodeBuilder> {
+  const own = relief.turned;
+  if (!own || !turned || !relief.mesh?.length) {
+    return route(relief);
+  }
+  const angles: number[] = [];
+  for (const angle of [
+    ...(own.before ?? []).map((cut) => cut.angle),
+    ...(own.shared ?? []),
+  ]) {
+    if (!sameAngle(angle, own.angle) && !angles.includes(angle)) {
+      angles.push(angle);
+    }
+  }
+  if (!angles.length) {
+    return route(relief);
+  }
+  return forkJoin(
+    angles.map((angle) =>
+      sideSurfaceAt(shape, relief, angle, turned.reach ?? 0, geometry).pipe(
+        defaultIfEmpty(null),
+      ),
+    ),
+  ).pipe(
+    switchMap((sides) =>
+      route({
+        ...relief,
+        turned: {
+          ...own,
+          sides: sides.filter((side): side is SideSurface => !!side),
+        },
+      }),
+    ),
+  );
 }
 
 /** The worker call for the operation's type, or null for nothing to cut. */
@@ -394,38 +580,53 @@ function route({
       if (bitType === 'drill' || bitType === 'keyhole') {
         return null;
       }
-      return worker.routeRelief(shape, {
+      return withSides(
+        shape,
+        carved(reliefOptions(op), model, turned),
+        turned,
         geometry,
-        relief: carved(reliefOptions(op), model, turned),
-        tool: {
-          bitType: bitType ?? 'end-mill',
-          diameter,
-          vAngle,
-          tipDiameter,
-          cornerRadius: tool.cornerRadius,
-          tipRadius: tool.tipRadius,
-          taperAngle: tool.taperAngle,
-        },
-        spacing: op.toolEngagement * stepoverDiameter(tool),
-        angle: op.rasterAngle ?? 0,
-        oneWay: !!op.allPassesInSameDirection,
-        crossPass: !!op.crossPass,
-      });
+        (carving) =>
+          sharedOut(shape, {
+            geometry,
+            relief: carving,
+            tool: {
+              bitType: bitType ?? 'end-mill',
+              diameter,
+              vAngle,
+              tipDiameter,
+              cornerRadius: tool.cornerRadius,
+              tipRadius: tool.tipRadius,
+              taperAngle: tool.taperAngle,
+            },
+            spacing: op.toolEngagement * stepoverDiameter(tool),
+            angle: op.rasterAngle ?? 0,
+            oneWay: !!op.allPassesInSameDirection,
+            crossPass: !!op.crossPass,
+            spiral: op.aroundPattern === 'spiral',
+          }),
+      );
 
     case 'relief-rough':
       if (!relief || bitType === 'v-bit' || bitType === 'drill') {
         return null;
       }
-      return worker.routeReliefRough(shape, {
+      return withSides(
+        shape,
+        carved(relief.relief, model, turned),
+        turned,
         geometry,
-        optimizeTravel,
-        relief: carved(relief.relief, model, turned),
-        toolSize: diameter,
-        toolEngagement: op.toolEngagement,
-        depthPerStep: op.depthPerStep,
-        leaveStock: op.leaveStock ?? 0,
-        rampAngle,
-      });
+        (carving) =>
+          worker.routeReliefRough(shape, {
+            geometry,
+            optimizeTravel,
+            relief: carving,
+            toolSize: diameter,
+            toolEngagement: op.toolEngagement,
+            depthPerStep: op.depthPerStep,
+            leaveStock: op.leaveStock ?? 0,
+            rampAngle,
+          }),
+      );
 
     case 'rest':
       if (!rest || bitType === 'v-bit' || bitType === 'drill') {

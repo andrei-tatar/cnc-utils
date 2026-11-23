@@ -232,10 +232,25 @@ export function rasterRuns(
   depth: (p: CamPoint) => number,
   options: RasterRunOptions,
 ): EngraveRun[] {
-  if (!loops.length || !(options.spacing > 0) || !(options.sampleStep > 0)) {
-    return [];
-  }
+  return rasterRunsIn(loops, depth, options, 0, Infinity).runs;
+}
 
+/**
+ * How many stretches `rasterRuns` cuts (a line's part inside the area
+ * each): what its work can be shared out by (see `rasterRunsIn`).
+ */
+export function rasterStretches(
+  loops: CamPoint[][],
+  options: Omit<RasterRunOptions, 'sampleStep' | 'tolerance'>,
+): number {
+  return rasterFrame(loops, options).stretches.length;
+}
+
+/** The lines' stretches, in the order they're cut, in the lines' frame. */
+function rasterFrame(
+  loops: CamPoint[][],
+  options: Omit<RasterRunOptions, 'sampleStep' | 'tolerance'>,
+) {
   // Work in a frame where the lines run along X.
   const angle = ((options.angle || 0) * Math.PI) / 180;
   const cos = Math.cos(angle);
@@ -248,23 +263,59 @@ export function rasterRuns(
     x: p.x * cos - p.y * sin,
     y: p.x * sin + p.y * cos,
   });
-
-  const frameLoops = loops.map((loop) => loop.map(toFrame));
-  const lines = rasterLines(frameLoops, 'x', options.spacing);
-  const start = toFrame(options.start);
-  const paths = rasterPaths(lines, frameLoops, 'x', start, options.oneWay);
-
-  const runs: CamPoint3[][] = [];
-  for (const path of paths) {
-    // Pairs of points: each a stretch along a line (the moves between them
-    // step over to the next line).
-    for (let i = 0; i + 1 < path.length; i += 2) {
-      runs.push(...carveStretch(path[i], path[i + 1]));
+  const stretches: [CamPoint, CamPoint][] = [];
+  if (loops.length && options.spacing > 0) {
+    const frameLoops = loops.map((loop) => loop.map(toFrame));
+    const lines = rasterLines(frameLoops, 'x', options.spacing);
+    const start = toFrame(options.start);
+    for (const path of rasterPaths(
+      lines,
+      frameLoops,
+      'x',
+      start,
+      options.oneWay,
+    )) {
+      // Pairs of points: each a stretch along a line (the moves between
+      // them step over to the next line).
+      for (let i = 0; i + 1 < path.length; i += 2) {
+        stretches.push([path[i], path[i + 1]]);
+      }
     }
+  }
+  return { stretches, fromFrame };
+}
+
+/**
+ * The runs of `rasterRuns` that stretches `from` up to `to` (of its
+ * `rasterStretches`) give, exactly as it gives them, and the run before
+ * them (`before`: null at the start): so the work can be shared out — each
+ * share only needs the run before its own to carry on from.
+ */
+export function rasterRunsIn(
+  loops: CamPoint[][],
+  depth: (p: CamPoint) => number,
+  options: RasterRunOptions,
+  from: number,
+  to: number,
+): { before: EngraveRun | null; runs: EngraveRun[] } {
+  if (!loops.length || !(options.spacing > 0) || !(options.sampleStep > 0)) {
+    return { before: null, runs: [] };
+  }
+  const { stretches, fromFrame } = rasterFrame(loops, options);
+
+  // The run before: the last of the nearest stretch before that has any.
+  let before: CamPoint3[] | null = null;
+  for (let i = Math.min(from, stretches.length) - 1; i >= 0 && !before; i--) {
+    const runs = carveStretch(stretches[i][0], stretches[i][1]);
+    if (runs.length) before = runs[runs.length - 1];
+  }
+  const runs: CamPoint3[][] = [];
+  for (let i = Math.max(0, from); i < Math.min(to, stretches.length); i++) {
+    runs.push(...carveStretch(stretches[i][0], stretches[i][1]));
   }
 
   const linked: EngraveRun[] = [];
-  let previous: CamPoint3 | null = null;
+  let previous: CamPoint3 | null = before ? before[before.length - 1] : null;
   for (const points of runs) {
     const first = points[0];
     linked.push({
@@ -276,7 +327,11 @@ export function rasterRuns(
     });
     previous = points[points.length - 1];
   }
-  return linked;
+  // (Whether the run before is itself linked isn't known, nor needed.)
+  return {
+    before: before ? { points: before, linked: false } : null,
+    runs: linked,
+  };
 
   /** The stretch from `a` to `b` (frame), split where it's long at the surface. */
   function carveStretch(a: CamPoint, b: CamPoint): CamPoint3[][] {
