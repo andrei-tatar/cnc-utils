@@ -55,6 +55,8 @@ export type RoutingInputs = {
     before?: CutBefore[];
     /** Carved all round as the stock turns, unrolled from `angle`. */
     around?: boolean;
+    /** For rounding the stock: its ends along the rotary axis. */
+    ends?: { from: number; to: number };
     /** The angles the relief is finished at, each what faces it. */
     shared?: number[];
     /** The widest bit cutting the relief: its radius (mm). */
@@ -335,6 +337,32 @@ function route({
         cycles: false,
       },
     );
+  }
+  // Rounding the stock cuts the stock itself: no shape either.
+  if (op.type === 'rotary-round') {
+    if (
+      !tool ||
+      !turned?.ends ||
+      tool.bitType === 'v-bit' ||
+      tool.bitType === 'drill'
+    ) {
+      return null;
+    }
+    return worker.routeRotaryRound({
+      geometry,
+      rotary: turned.rotary,
+      angle: turned.angle,
+      from: op.roundFrom ?? turned.ends.from,
+      to: op.roundTo ?? turned.ends.to,
+      stockFrom: turned.ends.from,
+      stockTo: turned.ends.to,
+      diameter: op.roundDiameter,
+      toolSize: tool.diameter,
+      toolEngagement: op.toolEngagement,
+      depthPerStep: op.depthPerStep,
+      strategy: op.roundStrategy === 'around' ? 'around' : 'along',
+      rampAngle: tool.ramp ? tool.rampAngle : null,
+    });
   }
   // No (or a deleted) tool or shape: nothing to cut. Routing functions
   // expect at least one shape (a shape of only tabs has nothing to cut).

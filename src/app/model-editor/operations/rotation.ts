@@ -35,7 +35,8 @@ export function operationWrap(
   depth = 0,
 ): boolean {
   const key = FOLLOWS[operation?.type];
-  if (!key) return !!operation?.wrap;
+  // Rounding the stock is cut turning it: always wrapped.
+  if (!key) return !!operation?.wrap || operation?.type === 'rotary-round';
   const other = operations.find((o) => o?.id === operation[key]);
   return depth < 3 && !!other && operationWrap(other, operations, depth + 1);
 }

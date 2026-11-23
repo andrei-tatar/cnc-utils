@@ -60,6 +60,7 @@ export function jobChecks(
       op.type === 'v-carve-clear' ||
       op.type === 'image-engrave-clear' ||
       op.type === 'relief-rough' ||
+      op.type === 'rotary-round' ||
       op.type === 'relief' ||
       op.type === 'helix'
         ? (op.toolEngagement ?? null)

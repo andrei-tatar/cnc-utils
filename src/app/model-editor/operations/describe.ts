@@ -97,6 +97,9 @@ export function describeOperation(
       what = `turn the board over along ${along}, dowel holes first`;
       break;
     }
+    case 'rotary-round':
+      what = `round the stock to Ø${Math.round((+operation.roundDiameter || 0) * 100) / 100}`;
+      break;
     case 'rotate':
       return `rotate to ${Math.round((+operation.angle || 0) * 1000) / 1000}°`;
     case 'rotary-repeat': {

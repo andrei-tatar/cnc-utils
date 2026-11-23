@@ -18,6 +18,7 @@ import { GeometrySettings } from '../../cam/geometry';
 import { CamPath, CamShape, CamTab } from '../../cam/types';
 import { Rotary, rotaryOf } from '../../cam/rotary';
 import { carvedModel } from './vcarve-source';
+import { ROTARY_ROUND } from '../model-editor/operations/operation-rotary-round';
 import { CutBefore } from '../../cam/rotary-remaining';
 import {
   flatOperations,
@@ -75,6 +76,8 @@ type EntryInputs = OperationInputs & {
   before: Record<string, CutBefore[]> | null;
   /** Its model is carved all round as the stock turns (see `carvedModel`). */
   around: boolean;
+  /** For rounding the stock: where the stock ends along the rotary axis. */
+  ends: { from: number; to: number } | null;
   /**
    * For those too: the angles the relief is finished at, when each only
    * finishes what faces it, and how far round the relief any of its cuts
@@ -209,7 +212,20 @@ export function generateGcodeFromOperations(
                 : null,
             modelShapeId: carves ? carves.shapeId : undefined,
             modelMargin: carves?.margin,
-            turn: rotary && (carves?.turns || carves?.around) ? rotary : null,
+            turn:
+              rotary &&
+              (carves?.turns ||
+                carves?.around ||
+                operation.type === ROTARY_ROUND)
+                ? rotary
+                : null,
+            // Rounding the stock: its ends along the axis.
+            ends:
+              rotary && operation.type === ROTARY_ROUND
+                ? rotary.along === 'x'
+                  ? { from: stock.x, to: stock.x + stock.width }
+                  : { from: stock.y, to: stock.y + stock.height }
+                : null,
             around: !!carves?.around,
             before: before.get(operation.id) ?? null,
             angles: angles.get(operation.id) ?? null,
@@ -525,13 +541,15 @@ function createOperationEntry(
         ),
         input('angles').pipe(distinctJson()),
         input('around').pipe(distinctUntilChanged()),
+        input('ends').pipe(distinctJson()),
       ]).pipe(
-        map(([rotary, before, angles, around]) =>
+        map(([rotary, before, angles, around, ends]) =>
           rotary
             ? {
                 rotary,
                 angle,
                 ...(around ? { around } : {}),
+                ...(ends ? { ends } : {}),
                 before,
                 // Finished at one angle only, there's nothing to share out.
                 shared: (angles?.shared.length ?? 0) > 1 ? angles!.shared : [],

@@ -22,3 +22,4 @@ export * from './simulate-rotary-stock';
 export * from './route-relief';
 export * from './model-shape';
 export * from './check-clearances';
+export * from './route-rotary-round';

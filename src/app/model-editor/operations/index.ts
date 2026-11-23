@@ -110,6 +110,11 @@ import {
 } from './operation-rotate';
 
 import {
+  Definition as RotaryRoundDefinition,
+  ModelType as RotaryRoundModelType,
+} from './operation-rotary-round';
+
+import {
   Definition as FlipDefinition,
   ModelType as FlipModelType,
 } from './operation-flip';
@@ -138,6 +143,7 @@ const operations = [
   ImageEngraveClearDefinition,
   ReliefDefinition,
   ReliefRoughDefinition,
+  RotaryRoundDefinition,
   RotateDefinition,
   FlipDefinition,
 ];
@@ -149,6 +155,10 @@ const modelRelief = (field: FormlyFieldConfig) =>
 
 const cutsNothing = (field: FormlyFieldConfig) =>
   NO_TOOL.has(field.model?.type);
+
+/** Rounding the stock cuts the stock itself: no shape. */
+const roundsStock = (field: FormlyFieldConfig) =>
+  field.model?.type === RotaryRoundDefinition.type;
 
 /** A flip step only uses a tool for its dowel holes, and never a shape. */
 const isFlip = (field: FormlyFieldConfig) =>
@@ -195,6 +205,7 @@ const allowedBits: Record<
     needs: 'a ball nose (or another cutter, not a drill)',
   },
   [ReliefRoughDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
+  [RotaryRoundDefinition.type]: { bits: ROUND_CUTTERS, needs: 'an end mill' },
   [FlipDefinition.type]: {
     bits: [...ROUND_CUTTERS, 'drill'],
     needs: 'a drill or an end mill for the dowel holes',
@@ -253,6 +264,7 @@ export type ModelType = {
         | ImageEngraveClearModelType
         | ReliefModelType
         | ReliefRoughModelType
+        | RotaryRoundModelType
         | FlipModelType
         | RotateModelType
         | RotaryRepeatModelType
@@ -393,6 +405,7 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
         hide: (field: FormlyFieldConfig) =>
           borrowsShape.has(field.model?.type) ||
           cutsNothing(field) ||
+          roundsStock(field) ||
           isFlip(field),
         // A relief of a 3D model carves round the model unless it's given
         // a shape to carve within.
@@ -457,9 +470,11 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
                 // it on the table.
                 (NO_TOOL.has(t.type)
                   ? !inner && onRotary(field)
-                  : t.type === FlipDefinition.type
-                    ? !inner && onTable(field)
-                    : allowsBit(t.type, bitType)),
+                  : t.type === RotaryRoundDefinition.type
+                    ? !inner && onRotary(field) && allowsBit(t.type, bitType)
+                    : t.type === FlipDefinition.type
+                      ? !inner && onTable(field)
+                      : allowsBit(t.type, bitType)),
             )
             .map((t) => ({ value: t.type, label: t.label }));
         },
@@ -476,6 +491,7 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
         // A clearing (or rest machining) is wrapped as what it clears for.
         hide: (field: FormlyFieldConfig) =>
           cutsNothing(field) ||
+          roundsStock(field) ||
           !onRotary(field) ||
           belongsToAnother(field.model?.type),
         'props.description': (field: FormlyFieldConfig) => {
@@ -517,6 +533,7 @@ function operationFields(inner: boolean): FormlyFieldConfig[] {
           FlatPlugDefinition.type,
           ImageEngraveClearDefinition.type,
           ReliefRoughDefinition.type,
+          RotaryRoundDefinition.type,
         ],
       ),
     ),

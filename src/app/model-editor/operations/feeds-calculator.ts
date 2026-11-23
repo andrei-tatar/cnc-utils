@@ -84,6 +84,7 @@ export function operationCut(
     case 'v-carve-clear':
     case 'image-engrave-clear':
     case 'relief-rough':
+    case 'rotary-round':
       depth = op.depthPerStep ?? 0;
       engagement = op.toolEngagement ?? 1;
       break;
