@@ -118,6 +118,31 @@ export function rotaryClearance(rotary: Rotary): number {
 }
 
 /**
+ * How far above its top at 0° the blank reaches while it turns from one
+ * angle to another (degrees, the way the axis goes: `to` may be over a turn
+ * from `from`): what the bit has to be above for that turn — less than
+ * `rotaryClearance` when no corner comes up on the way.
+ */
+export function turnClearance(rotary: Rotary, from: number, to: number) {
+  if (rotary.round) {
+    return 0;
+  }
+  const [low, high] = from < to ? [from, to] : [to, from];
+  // A corner is up at these angles, every half turn.
+  const corner =
+    (Math.atan2(rotary.halfWidth, rotary.halfThickness) * 180) / Math.PI;
+  for (const up of [corner, -corner]) {
+    if (Math.ceil((low - up) / 180) <= Math.floor((high - up) / 180)) {
+      return rotaryClearance(rotary);
+    }
+  }
+  return (
+    Math.max(rotaryTop(rotary, from), rotaryTop(rotary, to)) -
+    rotary.halfThickness
+  );
+}
+
+/**
  * Where a point the machine reaches (design coordinates, Z from the top at
  * 0° — an operation's Z plus `rotaryShift`) is on the blank while it's
  * turned to `angle`, with the blank back at 0°: what the preview draws.

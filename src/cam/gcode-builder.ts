@@ -8,6 +8,7 @@ import {
   onBlank,
   rotaryClearance,
   rotaryShift,
+  turnClearance,
   wrapRadius,
   wrapShift,
 } from './rotary';
@@ -944,15 +945,29 @@ export class GCodeBuilder {
       }
     };
 
-    // The stock on a rotary axis: how far it's turned (null until it is),
-    // and safe height above its top at 0°, raised so the bit clears its
-    // corners as it turns.
+    // The stock on a rotary axis: how far it's turned (null until it is).
     const rotary = o.rotary ?? null;
     let angle: number | null = null;
     let a: number | null = null;
-    const safeHeight = o.safetyHeight + (rotary ? rotaryClearance(rotary) : 0);
-    /** Safe height in the frame of the stock as turned. */
-    const safeZ = () => safeHeight - (off.z - base.z);
+    /**
+     * Safe height in the frame of the stock as turned: that far above its
+     * top as it is now (its highest point, whichever way it's turned).
+     */
+    const safeZ = () => o.safetyHeight;
+    /**
+     * Where the bit goes to let the stock turn from one angle to another
+     * (in the frame it's in before the turn): safe height above the
+     * highest its corners come on the way — above all of them when it
+     * isn't known how it's turned.
+     */
+    const turnZ = (from: number | null, to: number) =>
+      o.safetyHeight +
+      (rotary
+        ? from === null
+          ? rotaryClearance(rotary)
+          : turnClearance(rotary, from, to)
+        : 0) -
+      (off.z - base.z);
     // Wrapping round a round stock (see `rotate`), and the inverse-time
     // feed mode (G93) its cuts are written in, if asked.
     let wrap = false;
@@ -985,7 +1000,7 @@ export class GCodeBuilder {
       const target = exactly ? to : nearest(to);
       if (to === angle && round(target) === a && wrapNow === wrap) return;
       leaveInverseTime();
-      move('G0', { z: safeZ() });
+      move('G0', { z: turnZ(a, target) });
       const from = a ?? 0;
       angle = to;
       wrap = wrapNow;

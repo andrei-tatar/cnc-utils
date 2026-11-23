@@ -5,6 +5,7 @@ import {
   operationPointOnBlank,
   Rotary,
   rotaryClearance,
+  turnClearance,
   rotaryOf,
   rotaryShift,
   sideUp,
@@ -170,16 +171,45 @@ describe('G-code with the stock on a rotary axis', () => {
       'G0 X50 Y40',
       'G1 Z-1 F300',
       'G1 X60 F1200',
+      // Between cuts, safe height above the top as it's turned.
+      'G0 Z5',
       `G0 Z${safe}`,
       'G0 A90',
       'G0 X50',
       // The top at 90° is 10 lower.
       'G1 Z-11 F300',
       'G1 X60 F1200',
+      'G0 Z-5',
       `G0 Z${safe}`,
       'G0 A0',
       'M30',
     ]);
+  });
+
+  it('goes only as high for a turn as what comes up on the way', () => {
+    // 40 across, 60 thick: a corner is up at 33.7°, then every half turn.
+    expect(turnClearance(rotary, 0, 90)).toBeCloseTo(
+      rotaryClearance(rotary),
+      9,
+    );
+    expect(turnClearance(rotary, 0, 10)).toBeCloseTo(
+      rotaryShift(rotary, 10),
+      9,
+    );
+    // Turning on to a lower side, the top it leaves is the highest.
+    expect(turnClearance(rotary, 90, 60)).toBeCloseTo(
+      rotaryShift(rotary, 60),
+      9,
+    );
+    expect(turnClearance(rotary, -10, -40)).toBeCloseTo(
+      rotaryClearance(rotary),
+      9,
+    );
+    const lines = GCodeBuilder.concatAll([cut(0), cut(10)])
+      .build(options)
+      .split('\n');
+    const up = Math.round((5 + rotaryShift(rotary, 10)) * 1000) / 1000;
+    expect(lines[lines.indexOf('G0 A10') - 1]).toBe(`G0 Z${up}`);
   });
 
   it('names the axis and turns it the other way when asked', () => {
