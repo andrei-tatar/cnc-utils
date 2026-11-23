@@ -385,5 +385,8 @@
   },
   "rest-steps-leave-stock": {
     "warnings": "Rest machining has its own steps now, so the step-depth check covers it (master's skipped it): its 2 mm steps are deeper than the 1 mm bit is wide."
+  },
+  "template-rotary-chess-knight": {
+    "material left": "Each angle now finishes only what faces it (and the floor round the model goes to the angle that looks down on the model's side there), so what the cuts at one angle leave differs by design: the sides are another angle's. The finished knight — what's under every angle's cuts together — is the same: of 57 859 mm³, 5 mm³ more is left (0.17 mm at its thickest, within the 0.2 mm an angle's bit must come to a point for it to be left to that angle) and 0.4 mm³ less."
   }
 }
