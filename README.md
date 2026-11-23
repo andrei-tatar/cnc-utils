@@ -16,9 +16,11 @@ The editor is worked top to bottom:
 6. **Stock** — the material: its size, where the G-code's zero is, what it's made of (a wood, a plastic or an aluminium alloy), and whether it lies on the table or is held on a rotary axis.
 7. **G-code** — how the program is written, and the machine it's for.
 
-The 3D preview updates as you edit: shape outlines, toolpaths with arrows for the direction of travel, coloured by depth or by feed rate (click the legend, or C), the stock and the G-code's zero. Expand a shape or an operation to highlight it and its toolpaths. **Click a shape** in the preview to open it in the editor; drag it to move it, and drag its points (a polyline's, a point list's, path data's points and curve handles) to reshape it. **Simulate** (S) shows the material left after every cut as a solid, at a quality you pick; the view options set the grid, its numbers and how the material looks (the stock's own colour, grey clay, or the cuts coloured by depth), and whether 3D models show. **Measure** (M) measures between two points. The preview also lists **checks before cutting**: cuts into the spoilboard, deeper than a bit's flutes or too heavy, rapids into material not cut yet, the collet nut coming down onto the stock, uncut material above the flutes, corners a round bit leaves rounded, parts cut free without tabs, toolpaths near a clamp, and more.
+The 3D preview updates as you edit: shape outlines, toolpaths with arrows for the direction of travel, coloured by depth or by feed rate (click the legend, or C), the stock and the G-code's zero. Expand a shape or an operation to highlight it and its toolpaths. **Click a shape** in the preview to open it in the editor; drag it to move it, and drag its points (a polyline's, a point list's, path data's points and curve handles) to reshape it. **Simulate** (S) shows the material left after every cut as a solid, at a quality you pick; the view options set the grids (G; one under the work and one for Z, on the walls behind it), their numbers and how the material looks (the stock's own colour, grey clay, or the cuts coloured by depth), and whether 3D models show. **Measure** (M) measures between two points. The preview also lists **checks before cutting**: cuts into the spoilboard, deeper than a bit's flutes or too heavy, rapids into material not cut yet, the collet nut coming down onto the stock, uncut material above the flutes, corners a round bit leaves rounded, parts cut free without tabs, toolpaths near a clamp, and more.
 
-**Download G-code** saves a `.nc` file with the whole project embedded as a comment, so **Load .nc** restores it exactly. The G-code menu can also split the program into one file per tool, write a cut list, and open a printable setup sheet. **Send to cncjs** loads the G-code straight into [cncjs](https://github.com/cncjs/cncjs) on your network, to run from there (see below); the G-code button can do that instead of downloading. Work is autosaved in the browser, can be saved as named projects (the project menu), and has undo / redo (Ctrl+Z, Ctrl+Shift+Z). Signed in with Google (optional), projects can also be kept in Firebase, so every browser you sign in from has them; the tool library then has a Firebase part too (copy or move tools between it and the browser's), and shapes can be imported from projects there. A **new project** can keep the tools and G-code options of the one before. **Share link** (in the G-code menu) gives a link that opens a copy of the project — the project travels in the link itself, never through a server. The shapes list's **Import** copies shapes from another saved project, optionally with the operations that cut them and their tools. **Templates** opens example projects, grouped by kind: boxes & casework, kitchen & gifts, signs & inlays, shop & machine, rotary axis.
+**View G-code** (N, the preview's `</>` button, or the G-code menu) opens the program beside the preview, linked to the toolpaths both ways: the lines selected there have their moves drawn over the toolpaths, with a dot where the bit ends up — walk the caret down the program and the bit walks along it — and a click on a toolpath goes to its line. Opening an operation in the editor scrolls to its G-code; operations can be folded, and picked from a list.
+
+**Download G-code** saves a `.nc` file with the whole project embedded as a comment, so **Load .nc** restores it exactly. The G-code menu can also split the program into one file per tool, write a cut list, and open a printable setup sheet. **Send to cncjs** loads the G-code straight into [cncjs](https://github.com/cncjs/cncjs) on your network, to run from there (see below); the G-code button can do that instead of downloading. Work is autosaved in the browser, can be saved as named projects (the project menu), and has undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Signed in with Google (optional), projects can also be kept in Firebase, so every browser you sign in from has them; the tool library then has a Firebase part too (copy or move tools between it and the browser's), and shapes can be imported from projects there. A **new project** can keep the tools and G-code options of the one before. **Share link** (in the G-code menu) gives a link that opens a copy of the project — the project travels in the link itself, never through a server. The shapes list's **Import** copies shapes from another saved project, optionally with the operations that cut them and their tools. **Templates** opens example projects, grouped by kind: boxes & casework, kitchen & gifts, signs & inlays, shop & machine, rotary axis.
 
 **Drop files** on the window: an `.svg` becomes a new shape, an `.stl` or `.3mf` a new 3D model, and a `.nc` file opens its project.
 
@@ -41,7 +43,7 @@ Every number field takes an expression: `width / 2 + 3`, `sqrt(2) * side`, `1/4i
 | panel with joints | a panel with finger joints, tenons or dovetails on its edges |
 | mortises, dado / groove | through slots for a panel's tenons; a groove as wide as a panel, for shelves and backs |
 | European hinge cup, bowtie | a 35 mm hinge cup with its screw holes; a butterfly key |
-| boolean | union, intersection, difference or xor of other shapes |
+| boolean | union, intersection, difference or xor of other shapes — drill points too: hole patterns joined, or only the points inside (or outside) another shape |
 | copy of a shape | another shape's result, for transforms of its own |
 | nest parts on a sheet, with a nest's parts | lay out copies of other shapes on sheets; place dados and grooves wherever a nest's part goes |
 
@@ -49,7 +51,7 @@ A shape can be marked as a **clamp** (a keep-out zone the checks watch). Each sh
 
 ### Tools
 
-End mills, ball noses, bull noses, V-bits, drills and keyhole cutters, each with its number in the G-code (`T<n>`), flutes, flute length and, for an end mill, its flute type (upcut, downcut, roughing). Feed rate, plunge rate and spindle speed can be set per tool and overridden per operation; by default each operation **calculates** them from the cut it makes, the bit, the stock's material and the machine. A tool can ramp into its cuts instead of plunging. The **library** keeps tools for every project, and exports / imports them as JSON.
+End mills, ball noses, tapered ball noses (for reliefs), bull noses, V-bits, drills and keyhole cutters, each with its number in the G-code (`T<n>`), flutes, flute length and, for an end mill, its flute type (upcut, downcut, compression, straight, roughing). A tool is edited in a dialog — nothing changes until Save — beside a **drawing of the bit** from its settings: to scale, with its dimensions on it and a shaped tip enlarged. Feed rate, plunge rate and spindle speed can be set per tool and overridden per operation; by default each operation **calculates** them from the cut it makes, the bit, the stock's material and the machine. A tool can ramp into its cuts instead of plunging. The **library** keeps tools for every project, and exports / imports them as JSON.
 
 ### Operations
 
@@ -67,7 +69,7 @@ End mills, ball noses, bull noses, V-bits, drills and keyhole cutters, each with
 | v-carve roughing | end mill | rough out a v-carve so the V-bit only finishes the walls |
 | v-carve inlay plug, flat inlay plug | V-bit / end mill | the plug for a v-carved or flat-bottomed inlay |
 | image engraving, and its clearing | V-bit / end mill | engrave a picture, each line as deep as the image is dark; smoothing takes out a picture's grain |
-| 3D relief, and its roughing | ball nose / end mill | carve a relief from a height map (light high, dark deep; a 16-bit PNG keeps its depth) or a 3D model shape, roughed out first with an end mill |
+| 3D relief, and its roughing | ball nose or tapered ball nose / end mill | carve a relief from a height map (light high, dark deep; a 16-bit PNG keeps its depth) or a 3D model shape, roughed out first with an end mill |
 | turn the board over | — | two-sided jobs: what's below it is cut on the back, with dowel holes to line the board up |
 | rotate, rotary repeat | — | with the stock on a rotary axis: turn it, or cut a list of operations at several angles |
 
@@ -91,12 +93,13 @@ Safe height, default feeds, rapid speed (for the time estimate), tool changes (`
 
 ### Agents (WebMCP)
 
-Where the browser supports WebMCP (Chrome 150+ with `chrome://flags/#enable-webmcp-testing`), the app registers tools an agent in the browser can call: reading and editing the project, the job summary and checks, G-code, downloads, templates and saved projects.
+Where the browser supports WebMCP (Chrome 150+ with `chrome://flags/#enable-webmcp-testing`), the app registers tools an agent in the browser can call: reading and editing the project (with undo / redo), the job summary and checks, G-code, the cut list and setup sheet, downloads, share links, templates, saved projects, importing parts and the tool library.
 
 ### Usage notes
 
 - Units are millimetres. Depths are entered as positive numbers below the surface; Z0 is the top of the stock (or its bottom, or the rotary axis — see the stock section), and travel moves happen at the safe height (5 mm by default).
 - The editor and preview are separated by a draggable divider (double-click it to reset). Sections and items can be collapsed, cloned, switched off, and reordered by dragging the ⠿ handle.
+- The toolbar's sun / moon button picks the theme: light, dark, or the device's setting. The preview follows it; the printed setup sheet stays light.
 - Text shapes download fonts on demand from [Fontsource](https://fontsource.org) via jsDelivr and cache them in the browser. Each project stores the exact font version, so it always produces the same outlines.
 
 > Always check the G-code (and the simulation) before running it on a machine.
