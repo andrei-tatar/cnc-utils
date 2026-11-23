@@ -65,6 +65,7 @@ import {
   SimulationInput,
   simulationInput,
 } from '../pipeline/simulation';
+import { rotarySimulator } from '../pipeline/rotary-simulation';
 import worker from '../../worker';
 import {
   clearanceInput,
@@ -766,6 +767,9 @@ export class CamService implements ShapeExporter {
 }
 
 /** The stock as the preview shows it. */
+/** Simulates a stock on a rotary axis, keeping each angle's result. */
+const simulateRotary = rotarySimulator();
+
 /** The material left (in the worker): a solid on a rotary axis. */
 function simulate(
   paths: CamPath[],
@@ -773,13 +777,7 @@ function simulate(
   cells: number,
 ): Observable<Simulation> {
   return input.rotary
-    ? worker.simulateRotaryStock(
-        paths,
-        input.tools,
-        input.rotary,
-        input.stock,
-        cells,
-      )
+    ? simulateRotary(paths, { ...input, rotary: input.rotary }, cells)
     : worker.simulateStock(paths, input.tools, input.stock, cells);
 }
 
