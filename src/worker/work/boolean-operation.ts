@@ -6,6 +6,11 @@ import {
 } from '../../cam/kernel';
 import { CamPolygon, CamShape } from '../../cam/types';
 import { GeometrySettings, useGeometry } from '../../cam/geometry';
+import {
+  combinePoints,
+  pointPolygons,
+  singlePoints,
+} from '../../cam/point-sets';
 
 /** A shape in a chain of boolean operations (see `applyBooleanOperations`). */
 export type BooleanOperand = {
@@ -34,6 +39,10 @@ export async function applyBooleanOperation(
  * Combines shapes in order: the first is the starting point, and each one
  * after it is combined with the result so far by its own operation.
  * `fillRule` decides what each shape covers.
+ *
+ * Single points (drill points) are combined too, as a set of points beside
+ * the region (`combinePoints`): a union of point patterns is all their
+ * points, subtracting an area takes out the points in it.
  */
 export async function applyBooleanOperations(
   operands: BooleanOperand[],
@@ -51,20 +60,23 @@ export async function applyBooleanOperations(
 
   // Each shape read through the fill rule (a clean region, which non-zero
   // reads as it is), then combined with the result so far.
+  const pointsOf = (shape: CamShape[]) =>
+    singlePoints(shape.flatMap((p) => p.polygons));
   let result = await normalize(polygonsOf(operands[0].shape), fillRule);
+  let points = pointsOf(operands[0].shape);
   for (let i = 1; i < operands.length; i++) {
-    const { shape, operation } = operands[i];
+    const { shape, operation = 'union' } = operands[i];
     const clip = await normalize(polygonsOf(shape), fillRule);
-    result = await booleanOperation(
-      result,
-      clip,
-      operation ?? 'union',
-      'non-zero',
+    points = combinePoints(
+      { region: result, points },
+      { region: clip, points: pointsOf(shape) },
+      operation,
     );
+    result = await booleanOperation(result, clip, operation, 'non-zero');
   }
 
   const output: CamShape = {
-    polygons: result,
+    polygons: [...result, ...pointPolygons(points)],
     sourceShapeId: resultShapeId,
   };
 

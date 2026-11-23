@@ -49,7 +49,8 @@ const field: FormlyFieldConfig = {
         inline: true,
         foldable: true,
         description:
-          'Combined in order: each shape with the result of the ones above it.',
+          'Combined in order: each shape with the result of the ones above it. ' +
+          'Drill points are combined too: a union of point patterns has all their points.',
       },
       validators: {
         twoShapes: {
